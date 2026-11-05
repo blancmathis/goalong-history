@@ -64,7 +64,8 @@ import LocalHistoryQueryCLI
     private var lockMarker: Date?? = .none
     /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
     private var guardMarker: Date?? = .none
-    private let guardClient: GoalongGuardClienting?
+    /// Read by `BlockingRuntime` only, to hand it to the red screen's keeper when the module is switched off.
+    let guardClient: GoalongGuardClienting?
     /// A protected red-screen range in progress (wall frame), set by `BlockingRuntime`: it arms the guard exactly like a
     /// severe block (T-048 B4). `.unknown` until the red screen has reported at launch: a marker it left stays.
     var redScreen: RedScreenGuardDemand = .until(nil)
@@ -219,17 +220,28 @@ import LocalHistoryQueryCLI
     }
     /// The one « protégé » predicate (`GoalongProtection`, trusted frame): the latest severe block or protected
     /// red-screen range. « Quitter » and SIGTERM read it.
-    var protectedUntil: Date? { protection(redScreenCounts: true) }
+    var protectedUntil: Date? { protection(redScreenCounts: true, keptMarker: true) }
     /// End the guard holds: the same predicate, a protected red-screen range counting only with the member's consent
     /// to the current `GuardConsent.text` (T-048 B5). A block arms it as before.
-    var guardUntil: Date? { protection(redScreenCounts: guardClient?.hasConsent ?? true) }
-    private func protection(redScreenCounts: Bool) -> Date? {
+    /// (`refresh` keeps the launch marker for the guard itself.)
+    var guardUntil: Date? { protection(redScreenCounts: guardClient?.hasConsent ?? true, keptMarker: false) }
+    private func protection(redScreenCounts: Bool, keptMarker: Bool) -> Date? {
+        let severe = severeUntil
         var red: Date?
         if redScreenCounts, case .until(let end?, _) = redScreen { red = trusted(end) }
-        return GoalongProtection.until(severe: severeUntil, redScreen: red, now: clock())
+        if keptMarker { red = red ?? keptRedScreenMarker(severe: severe) }
+        return GoalongProtection.until(severe: severe, redScreen: red, now: clock())
+    }
+    /// Launch, before the red screen reports: the `guard-until` its protected range left (`GoalongProtection.kept`).
+    private func keptRedScreenMarker(severe: Date?) -> Date? {
+        guard case .unknown = redScreen, let store, !storeFailed else { return nil }
+        let wall = wallFrame(clock())
+        return GoalongProtection.kept(GoalongGuardFiles.files(for: store.directory).readMarker(now: wall), now: wall,
+                                      severe: severe.map(wallFrame)).map(trusted)
     }
     /// The strongest stop rule of the protected red-screen range in progress, nil when none runs.
     var redScreenLock: BlockLock? {
+        if case .unknown = redScreen { return keptRedScreenMarker(severe: severeUntil) == nil ? nil : .locked }
         guard case .until(let end?, let lock) = redScreen, lock != .free, trusted(end) > clock() else { return nil }
         return lock
     }
@@ -1527,8 +1539,9 @@ import LocalHistoryQueryCLI
     static let shared = BlockingRuntime()
     @Published private(set) var controller: BlockingController?
 
-    init(controller: BlockingController? = nil, redScreenKeeper: @escaping @MainActor () -> RedScreenGuardKeeper? = RedScreenGuardKeeper.standard) {
-        self.controller = controller; self.makeKeeper = redScreenKeeper
+    init(controller: BlockingController? = nil, redScreenKeeper: @escaping @MainActor () -> RedScreenGuardKeeper? = RedScreenGuardKeeper.standard,
+         handOver: @escaping @MainActor (GoalongGuardClienting) -> RedScreenGuardKeeper? = RedScreenGuardKeeper.standard(client:)) {
+        self.controller = controller; self.makeKeeper = redScreenKeeper; self.handOver = handOver
     }
 
     /// The protected red-screen range (T-048 B4): it arms the guard like a severe block, module Blocage on or off.
@@ -1536,40 +1549,58 @@ import LocalHistoryQueryCLI
     /// Writes the marker while the module is off; its client goes to the controller when the module is switched on.
     private(set) var redScreenKeeper: RedScreenGuardKeeper?
     private let makeKeeper: @MainActor () -> RedScreenGuardKeeper?
+    private let handOver: @MainActor (GoalongGuardClienting) -> RedScreenGuardKeeper?
     func setRedScreenGuard(until end: Date?, lock: BlockLock = .locked) {
         guard redScreen != .until(end, lock: lock) else { return }
+        let first = redScreen == .unknown
         redScreen = .until(end, lock: lock)
-        syncRedScreenGuard()
+        syncRedScreenGuard(first: first)
     }
-    private func syncRedScreenGuard() {
+    private func syncRedScreenGuard(first: Bool = false) {
         if let controller { controller.redScreen = redScreen; controller.refresh(enforceLast: false); return }
-        guard case .until(let end, _) = redScreen, end != nil || redScreenKeeper != nil else { return }
+        guard case .until(let end, _) = redScreen else { return }
+        // First report, module off: a `guard-until` an earlier process left is removed and the client disarmed,
+        // as a controller does (T-048 B6). Otherwise nothing protected means no keeper and no BTM call.
+        guard end != nil || redScreenKeeper != nil || (first && guardFiles?.markerExists() == true) else { return }
         if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
         redScreenKeeper?.update(until: end)
+    }
+    /// The guard's gate and files, module off (`GoalongGuardGate`): a test runner or the gallery never reads the app's.
+    var guardAllowed: () -> Bool = { GoalongGuardGate.isAllowed }
+    var testGuardFiles: GuardFiles?
+    private var guardFiles: GuardFiles? { guardAllowed() ? testGuardFiles ?? GoalongGuardFiles.standard : nil }
+    /// Module off, launch, before the red screen reports: the marker its protected range left (`GoalongProtection.kept`).
+    private func keptMarker(now: Date) -> Date? {
+        guard case .unknown = redScreen, let files = guardFiles else { return nil }
+        return GoalongProtection.kept(files.readMarker(now: now), now: now, severe: nil)
     }
 
     /// The one « protégé » predicate (`GoalongProtection`), module Blocage on or off: SIGTERM reads it.
     func protectedUntil(now: Date = Date()) -> Date? { // wall: module off, the red screen's ends are wall dates
         if let controller { controller.refresh(enforceLast: false); return controller.protectedUntil }
-        guard case .until(let end, _) = redScreen else { return nil }
+        guard case .until(let end, _) = redScreen else { return keptMarker(now: now) }
         return GoalongProtection.until(severe: nil, redScreen: end, now: now)
     }
     /// « Quitter », module Blocage on or off: without the module, a protected range is stopped on its page first.
     func quitRule(now: Date = Date()) -> GoalongProtection.Quit { // wall: module off, the red screen's ends are wall dates
         if let controller { controller.refresh(enforceLast: false); return controller.quitRule }
+        if keptMarker(now: now) != nil { return .locked(redScreen: true) } // same as the controller (T-048 B6)
         guard case .until(let end?, let lock) = redScreen, lock != .free, end > now else { return .allowed }
-        // No blocking password without the module: a « Mot de passe » range is stopped on its page too.
-        return GoalongProtection.quit(blocksLocked: false, blocksPassword: false, redScreenLock: lock == .password ? .typing : lock)
+        // No blocking password without the module: a « Mot de passe » range holds as « Verrouillé », like its
+        // window (`RedScreenRules.effectiveLock`) and its page.
+        return GoalongProtection.quit(blocksLocked: false, blocksPassword: false, redScreenLock: lock == .password ? .locked : lock)
     }
     /// The consent sentence for a protected red-screen range (module on or off).
     var guardNeedsConsent: Bool {
         if let controller { return controller.guardNeedsConsent }
-        return redScreenKeeper?.client?.needsConsent ?? (GoalongGuardGate.isAllowed && !GuardConsent.isGiven(consentStore))
+        return redScreenKeeper?.client?.needsConsent ?? (guardAllowed() && !GuardConsent.isGiven(consentStore))
     }
     /// A confirmation that showed `GuardConsent.text` was accepted: a protected range in progress may arm the guard now.
+    /// Its message reads `guardNeedsConsent` here: the consent is recorded only where the text was shown (T-048 B6).
     func recordGuardConsent() {
         if let controller { controller.recordGuardConsent(); return }
-        if let client = redScreenKeeper?.client { client.recordConsent() } else if GoalongGuardGate.isAllowed { GuardConsent.record(consentStore) }
+        guard guardNeedsConsent else { return }
+        if let client = redScreenKeeper?.client { client.recordConsent() } else { GuardConsent.record(consentStore) }
         if case .until(let end, _) = redScreen, end != nil {
             if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
             redScreenKeeper?.update(until: end)
@@ -1624,6 +1655,11 @@ import LocalHistoryQueryCLI
                 controller.error = refusal
                 modules?.setEnabled(.blocking, true)
                 return
+            }
+            // One client, one armed state: during a protected range its client goes on to the keeper (T-048 B6).
+            if case .until(_?, _) = redScreen, redScreenKeeper == nil, let client = controller.guardClient, !(client is GoalongGuardMissing) {
+                client.onChange = nil
+                redScreenKeeper = handOver(client)
             }
             controller.shutdown()
             timerHUD?.hide(); timerHUD = nil

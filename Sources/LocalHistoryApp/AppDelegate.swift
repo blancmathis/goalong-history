@@ -529,12 +529,22 @@ import AppleScreenTime
             return approved
         }
 
+        /// What « Quitter » shows, pure (T-048 B6): one rule for a block and a protected red-screen range
+        /// (`GoalongProtection.quit`, T-048 B5), read from the runtime, module Blocage on or off.
+        enum QuitPrompt: Equatable { case quit, locked(redScreen: Bool), redScreenPage, password }
+        @MainActor static func quitPrompt(runtime: BlockingRuntime) -> QuitPrompt {
+            switch runtime.quitRule() {
+            case .allowed: return .quit
+            case .locked(let redScreen): return .locked(redScreen: redScreen)
+            case .redScreenPage: return .redScreenPage
+            case .password: return runtime.controller?.quitRequiresPassword == true ? .password : .quit
+            }
+        }
+
         private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
             MainActor.assumeIsolated {
-            // One rule for a block and a protected red-screen range (`GoalongProtection.quit`, T-048 B5).
-            let rule = BlockingRuntime.shared.quitRule()
-            switch rule {
-            case .allowed: return true
+            switch Self.quitPrompt(runtime: BlockingRuntime.shared) {
+            case .quit: return true
             case .locked(let redScreen):
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
@@ -555,7 +565,7 @@ import AppleScreenTime
                 return false
             case .password: break
             }
-            guard let controller = BlockingRuntime.shared.controller, controller.quitRequiresPassword else { return true }
+            guard let controller = BlockingRuntime.shared.controller else { return true }
             if consumeAuthorization, controller.consumeQuitAuthorization() { return true }
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true

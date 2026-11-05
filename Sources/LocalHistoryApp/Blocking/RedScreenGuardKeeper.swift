@@ -28,6 +28,14 @@ enum GoalongProtection {
         /// A password block or range: the blocking password approves this quit (the guard then lets it go).
         case password
     }
+    /// Launch, before the red screen reports: a future `guard-until` later than the blocks' own end was left by a
+    /// protected range. « Quitter » and SIGTERM hold it as a locked range, module Blocage on or off (T-048 B6).
+    /// Wall frame; the marker is whole seconds rounded up, hence the second of margin over `severe`.
+    static func kept(_ marker: GuardMarker?, now: Date, severe: Date?) -> Date? {
+        guard case .date(let kept)? = marker, kept > now, kept > (severe ?? .distantPast).addingTimeInterval(1) else { return nil }
+        return kept
+    }
+
     static func quit(blocksLocked: Bool, blocksPassword: Bool, redScreenLock: BlockLock?) -> Quit {
         if blocksLocked { return .locked(redScreen: false) }
         switch redScreenLock {
@@ -49,6 +57,11 @@ enum GoalongProtection {
     /// An installed copy only (`GoalongGuardGate`): a test runner or a build folder never arms a guard.
     static func standard() -> RedScreenGuardKeeper? {
         guard let client = GoalongGuardClient.standard() else { return nil }
+        return RedScreenGuardKeeper(client: client, files: GoalongGuardFiles.standard, runsTimers: true)
+    }
+    /// The module was switched off during a protected range: the controller's client carries on here (one client).
+    static func standard(client: GoalongGuardClienting) -> RedScreenGuardKeeper? {
+        guard GoalongGuardGate.isAllowed else { return nil }
         return RedScreenGuardKeeper(client: client, files: GoalongGuardFiles.standard, runsTimers: true)
     }
 

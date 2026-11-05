@@ -51,12 +51,13 @@ import XCTest
         let value = try XCTUnwrap(UserDefaults(suiteName: name))
         addTeardownBlock { value.removePersistentDomain(forName: name) }; return value
     }
-    private func blocking(_ clocks: Clocks, root: URL, client: FakeGuardClient?, document: BlockingDocument = BlockingDocument())
-        throws -> (BlockingController, GuardFiles) {
+    private func blocking(_ clocks: Clocks, root: URL, client: FakeGuardClient?, document: BlockingDocument = BlockingDocument(),
+                          redScreen: RedScreenGuardDemand = .until(nil), marker: Date? = nil) throws -> (BlockingController, GuardFiles) {
         let store = BlockingStore(directory: root.appendingPathComponent("Blocking", isDirectory: true))
         try store.save(document)
+        if let marker { XCTAssertTrue(GoalongGuardFiles.files(for: store.directory).writeMarker(until: marker)) }
         let c = BlockingController(document: document, clock: { clocks.now }, store: store, continuous: { clocks.up },
-                                   boot: { "boot-1" }, guardClient: client)
+                                   boot: { "boot-1" }, guardClient: client, redScreen: redScreen)
         c.refresh()
         return (c, GoalongGuardFiles.files(for: store.directory))
     }
@@ -214,11 +215,11 @@ import XCTest
     func testQuitWithTheBlockingModuleOff() {
         let now = wednesday22h
         let runtime = BlockingRuntime(controller: nil, redScreenKeeper: { nil })
-        XCTAssertEqual(runtime.quitRule(now: now), .allowed, "launch, before the red screen reports")
+        XCTAssertEqual(runtime.quitRule(now: now), .allowed, "launch, before the red screen reports, no marker left")
         runtime.setRedScreenGuard(until: rangeEnd, lock: .locked)
         XCTAssertEqual(runtime.quitRule(now: now), .locked(redScreen: true))
         runtime.setRedScreenGuard(until: rangeEnd, lock: .password)
-        XCTAssertEqual(runtime.quitRule(now: now), .redScreenPage)
+        XCTAssertEqual(runtime.quitRule(now: now), .locked(redScreen: true), "no password without the module: « Verrouillé », like its window")
         runtime.setRedScreenGuard(until: rangeEnd, lock: .typing)
         XCTAssertEqual(runtime.quitRule(now: now), .redScreenPage)
         XCTAssertEqual(runtime.quitRule(now: rangeEnd.addingTimeInterval(1)), .allowed, "range over")
@@ -247,7 +248,125 @@ import XCTest
             runtime.setRedScreenGuard(until: nil, lock: .free)
             XCTAssertTrue(AppDelegate.honoursTerminationSignal(runtime: runtime, sessionEnding: false, senderPID: 4242, installOverride: false))
         }
+        // Time passes the end, module off (no report of the end): SIGTERM is honoured again.
+        off.setRedScreenGuard(until: end, lock: .locked)
+        XCTAssertEqual(off.protectedUntil(now: end.addingTimeInterval(-1)), end)
+        XCTAssertNil(off.protectedUntil(now: end.addingTimeInterval(1)), "range over by the clock")
         XCTAssertNil(blocks.guardUntil, "no consent: the predicate holds, the guard stays off")
+    }
+
+    // MARK: T-048 B6
+
+    /// Module off: Concentration's lock message reads the runtime, and « Verrouiller » records a consent only where
+    /// that message showed `GuardConsent.text`.
+    func testLockConfirmationRecordsTheConsentOnlyWhereItsTextIsShown() throws {
+        let defaults = try defaults()
+        let runtime = BlockingRuntime(controller: nil, redScreenKeeper: { nil })
+        runtime.consentDefaults = defaults
+        runtime.guardAllowed = { false }
+        XCTAssertFalse(FocusComposer.lockMessage(runtime).contains(GuardConsent.text))
+        runtime.recordGuardConsent()
+        XCTAssertFalse(GuardConsent.isGiven(defaults), "text not shown: nothing recorded")
+        runtime.guardAllowed = { true }
+        XCTAssertTrue(FocusComposer.lockMessage(runtime).contains(GuardConsent.text), "module off: shown from the runtime's state")
+        runtime.recordGuardConsent()
+        XCTAssertTrue(GuardConsent.isGiven(defaults))
+    }
+
+    /// Module off, first report of the red screen (no range): a `guard-until` an earlier process left is removed and
+    /// the client disarmed, as a controller does.
+    func testFirstReportWithTheModuleOffClearsAStaleMarker() throws {
+        let clocks = Clocks(wednesday22h), client = FakeGuardClient(consent: true)
+        let files = GoalongGuardFiles.files(for: try root().appendingPathComponent("Blocking", isDirectory: true))
+        XCTAssertTrue(files.writeMarker(until: wednesday22h.addingTimeInterval(-60)))
+        var made = 0
+        let runtime = BlockingRuntime(controller: nil, redScreenKeeper: {
+            made += 1; return RedScreenGuardKeeper(client: client, files: files, clock: { clocks.now })
+        })
+        runtime.guardAllowed = { true }; runtime.testGuardFiles = files
+        XCTAssertNil(runtime.protectedUntil(now: clocks.now), "a past marker protects nothing")
+        runtime.setRedScreenGuard(until: nil, lock: .free)
+        XCTAssertEqual(made, 1)
+        XCTAssertFalse(files.markerExists())
+        XCTAssertEqual(client.updates, [nil])
+        runtime.setRedScreenGuard(until: nil, lock: .locked)
+        XCTAssertEqual(client.updates, [nil, nil], "the keeper stays: nil again, nothing armed")
+
+        // No marker left: no keeper, no BTM call.
+        let quiet = BlockingRuntime(controller: nil, redScreenKeeper: { XCTFail("nothing to put right"); return nil })
+        quiet.guardAllowed = { true }; quiet.testGuardFiles = files
+        quiet.setRedScreenGuard(until: nil, lock: .free)
+    }
+
+    /// Launch, before the red screen reports: a future marker its range left holds « Quitter » and SIGTERM, module
+    /// Blocage on or off, by one rule (`GoalongProtection.kept`).
+    func testLaunchMarkerHoldsQuitAndSigtermInBothModes() throws {
+        let clocks = Clocks(Date()) // wall: the SIGTERM path reads the runtime's wall clock
+        let kept = Date(timeIntervalSince1970: clocks.now.addingTimeInterval(3_600).timeIntervalSince1970.rounded(.up))
+        let (blocks, _) = try blocking(clocks, root: try root(), client: FakeGuardClient(consent: true), redScreen: .unknown, marker: kept)
+        let on = BlockingRuntime(controller: blocks, redScreenKeeper: { nil })
+        let files = GoalongGuardFiles.files(for: try root().appendingPathComponent("Blocking", isDirectory: true))
+        XCTAssertTrue(files.writeMarker(until: kept))
+        let off = BlockingRuntime(controller: nil, redScreenKeeper: { nil })
+        off.guardAllowed = { true }; off.testGuardFiles = files
+        for runtime in [on, off] {
+            XCTAssertEqual(runtime.protectedUntil()?.timeIntervalSince1970 ?? 0, kept.timeIntervalSince1970, accuracy: 1)
+            XCTAssertEqual(runtime.quitRule(), .locked(redScreen: true))
+            XCTAssertEqual(AppDelegate.quitPrompt(runtime: runtime), .locked(redScreen: true))
+            XCTAssertFalse(AppDelegate.honoursTerminationSignal(runtime: runtime, sessionEnding: false, senderPID: 4242, installOverride: false))
+            runtime.setRedScreenGuard(until: nil, lock: .free)
+            XCTAssertNil(runtime.protectedUntil(), "the red screen reported: its word wins")
+            XCTAssertEqual(runtime.quitRule(), .allowed)
+        }
+        XCTAssertEqual(GoalongProtection.kept(.date(kept), now: clocks.now, severe: kept.addingTimeInterval(-0.5)), nil,
+                       "a block's own marker (rounded up) is not a range")
+        XCTAssertEqual(GoalongProtection.kept(.invalid, now: clocks.now, severe: nil), nil)
+    }
+
+    /// Switching the module off during a protected range: the controller's client goes on to the keeper (one client).
+    func testSwitchingTheModuleOffDuringARangeKeepsOneClient() throws {
+        let root = try root(), clocks = Clocks(wednesday22h), client = FakeGuardClient(consent: true)
+        let (blocks, files) = try blocking(clocks, root: root, client: client)
+        var handed: [ObjectIdentifier] = []
+        let runtime = BlockingRuntime(controller: blocks, redScreenKeeper: { XCTFail("no second client"); return nil }, handOver: { given in
+            handed.append(ObjectIdentifier(given as AnyObject))
+            return RedScreenGuardKeeper(client: given, files: files, clock: { clocks.now })
+        })
+        runtime.setRedScreenGuard(until: rangeEnd, lock: .locked)
+        XCTAssertEqual(files.readMarker(now: clocks.now), .date(rangeEnd))
+        runtime.apply(enabled: false)
+        XCTAssertNil(runtime.controller)
+        XCTAssertEqual(handed, [ObjectIdentifier(client)])
+        XCTAssertTrue(runtime.redScreenKeeper?.client === client)
+        XCTAssertEqual(files.readMarker(now: clocks.now), .date(rangeEnd))
+        XCTAssertEqual(client.updates.last, .some(rangeEnd))
+    }
+
+    /// « Quitter », module off, locked range: the alert, not a free quit (`quitPrompt` is what the app delegate shows).
+    func testQuitPromptWithTheModuleOffAndALockedRange() {
+        let runtime = BlockingRuntime(controller: nil, redScreenKeeper: { nil })
+        let end = Date().addingTimeInterval(3_600) // wall: `quitPrompt` reads the runtime's wall clock
+        XCTAssertEqual(AppDelegate.quitPrompt(runtime: runtime), .quit)
+        runtime.setRedScreenGuard(until: end, lock: .locked)
+        XCTAssertEqual(AppDelegate.quitPrompt(runtime: runtime), .locked(redScreen: true))
+        runtime.setRedScreenGuard(until: end, lock: .typing)
+        XCTAssertEqual(AppDelegate.quitPrompt(runtime: runtime), .redScreenPage)
+        runtime.setRedScreenGuard(until: end, lock: .password)
+        XCTAssertEqual(AppDelegate.quitPrompt(runtime: runtime), .locked(redScreen: true))
+    }
+
+    /// The keeper's own timer ends the range: marker removed and client disarmed, without a new report.
+    func testKeeperTimerEndsTheRange() throws {
+        let client = FakeGuardClient(consent: true)
+        let files = GoalongGuardFiles.files(for: try root().appendingPathComponent("Blocking", isDirectory: true))
+        let keeper = RedScreenGuardKeeper(client: client, files: files, runsTimers: true)
+        let end = Date().addingTimeInterval(1.2) // wall: the keeper's timer runs on the wall clock
+        keeper.update(until: end)
+        XCTAssertTrue(files.markerExists())
+        XCTAssertNotNil(client.updates.last ?? nil)
+        for _ in 0..<300 where files.markerExists() { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) } // wall: lets the timer fire
+        XCTAssertFalse(files.markerExists(), "range over: marker removed")
+        XCTAssertEqual(client.updates.last, .some(nil), "client disarmed")
     }
 }
 #endif
