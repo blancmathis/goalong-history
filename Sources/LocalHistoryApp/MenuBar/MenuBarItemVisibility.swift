@@ -48,8 +48,11 @@ enum MenuBarItemVisibility: String, Equatable {
 
     var message: String? {
         switch self {
+        // Not always the switch: Control Centre can also keep a stored block for the bundle id while the switch
+        // shows on (T-048 C2, 2026-11-05). The app cannot tell the two apart, so the text names both cases.
         case .parkedBySystem:
-            return "macOS masque l’icône de Goalong. Réglages Système › Barre des menus › Autoriser dans la barre des menus : active Goalong History."
+            return "macOS masque l’icône de Goalong. Réglages Système › Barre des menus › Autoriser dans la barre des menus : "
+                + "si Goalong History est coupé, active-le ; s’il est déjà actif, coupe-le puis réactive-le, Goalong ouvert."
         case .underNotch: return "L’icône de Goalong est cachée sous l’encoche : la barre des menus est trop pleine."
         case .shown, .unknown: return nil
         }
