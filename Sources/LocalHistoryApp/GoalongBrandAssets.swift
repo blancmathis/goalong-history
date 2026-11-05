@@ -27,9 +27,11 @@
             let pixelsWide = Int(image.size.width) * scale, pixelsHigh = Int(image.size.height) * scale
             guard let rep = NSBitmapImageRep(
                 bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh, bitsPerSample: 8, samplesPerPixel: 4,
-                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-                let context = NSGraphicsContext(bitmapImageRep: rep) else { return image.tiffRepresentation ?? Data() }
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+            else { return image.tiffRepresentation ?? Data() }
+            // Set the point size before making the context: the context takes its scale from it.
             rep.size = image.size
+            guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return image.tiffRepresentation ?? Data() }
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = context
             image.draw(in: NSRect(origin: .zero, size: image.size), from: .zero, operation: .sourceOver, fraction: 1)

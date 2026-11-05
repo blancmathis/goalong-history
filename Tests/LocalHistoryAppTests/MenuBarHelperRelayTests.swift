@@ -244,6 +244,15 @@ final class MenuBarHelperRelayTests: XCTestCase {
         XCTAssertEqual(rep.pixelsWide, 54)
         XCTAssertEqual(rep.pixelsHigh, 54)
         XCTAssertEqual(rep.size, NSSize(width: 18, height: 18), "points stay 18: the extra pixels are Retina detail")
+        // The logo must fill the 3x canvas, not sit at 1x in a corner (context made before rep.size).
+        var minX = Int.max, maxX = -1, minY = Int.max, maxY = -1
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        XCTAssertGreaterThanOrEqual(maxX - minX, 30, "logo width covers most of the 54 px canvas")
+        XCTAssertGreaterThanOrEqual(maxY - minY, 15, "logo height is drawn at 3x")
         XCTAssertLessThan(data.count, 512 * 1024, "fits the relay payload limit")
         XCTAssertNotNil(MenuBarRelay.Message(userInfo: MenuBarRelay.Message.state(
             MenuBarRelay.State(image: data, title: "", toolTip: "", help: "", development: false)).userInfo))
