@@ -217,15 +217,36 @@ import LocalHistoryQueryCLI
             + lists.compactMap { $0.program.lockedUntil } + [freeze?.end].compactMap { $0 }
         return ends.filter { $0 > now }.max()
     }
-    /// End the guard holds (trusted frame): the latest severe block or protected red-screen range.
-    var guardUntil: Date? {
-        let now = clock()
+    /// The one « protégé » predicate (`GoalongProtection`, trusted frame): the latest severe block or protected
+    /// red-screen range. « Quitter » and SIGTERM read it.
+    var protectedUntil: Date? { protection(redScreenCounts: true) }
+    /// End the guard holds: the same predicate, a protected red-screen range counting only with the member's consent
+    /// to the current `GuardConsent.text` (T-048 B5). A block arms it as before.
+    var guardUntil: Date? { protection(redScreenCounts: guardClient?.hasConsent ?? true) }
+    private func protection(redScreenCounts: Bool) -> Date? {
         var red: Date?
-        if case .until(let end?) = redScreen { red = trusted(end) }
-        return [severeUntil, red].compactMap { $0 }.filter { $0 > now }.max()
+        if redScreenCounts, case .until(let end?, _) = redScreen { red = trusted(end) }
+        return GoalongProtection.until(severe: severeUntil, redScreen: red, now: clock())
+    }
+    /// The strongest stop rule of the protected red-screen range in progress, nil when none runs.
+    var redScreenLock: BlockLock? {
+        guard case .until(let end?, let lock) = redScreen, lock != .free, trusted(end) > clock() else { return nil }
+        return lock
+    }
+    /// « Quitter » during a protection: same rule for a block and a protected red-screen range.
+    var quitRule: GoalongProtection.Quit {
+        GoalongProtection.quit(blocksLocked: activeBlocks.contains { $0.lock == .locked && $0.end > clock() }
+                                   || lists.contains { $0.program.isLocked(at: clock()) } || (freeze?.end ?? .distantPast) > clock(),
+                               blocksPassword: activeBlocks.contains { $0.lock == .password }, redScreenLock: redScreenLock)
     }
     /// Confirmations that can arm the guard first add `GuardConsent.text`.
     var guardNeedsConsent: Bool { guardClient?.needsConsent ?? false }
+    /// The member accepted a confirmation that showed `GuardConsent.text` (or a protected range with it).
+    func recordGuardConsent() {
+        guard let guardClient, !guardClient.hasConsent else { return }
+        guardClient.recordConsent()
+        refresh(enforceLast: false)
+    }
     /// « Retirer le service de protection »: hidden while any lock is running or planned, a weekly locked or
     /// password range included. A planned locked block was confirmed with the service in place: at its start
     /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
@@ -253,9 +274,10 @@ import LocalHistoryQueryCLI
     }
 
     /// A password cannot override an overlapping hard lock or a freeze.
+    /// « Quitter » refused until the end: a locked block, program or freeze, or a locked red-screen range.
+    /// A « Difficile » range also refuses here: its text is typed on the red-screen page first.
     var quitIsLocked: Bool {
-        activeBlocks.contains { $0.lock == .locked && $0.end > clock() }
-            || lists.contains { $0.program.isLocked(at: clock()) } || (freeze?.end ?? .distantPast) > clock()
+        switch quitRule { case .locked, .redScreenPage: return true; case .allowed, .password: return false }
     }
     var requiresLaunchAtLogin: Bool {
         hasLocks || document.sessions.contains { $0.end > clock() && ($0.start > clock() || $0.lock != .free) }
@@ -951,7 +973,7 @@ import LocalHistoryQueryCLI
         if scheduledBlocks != scheduled { scheduledBlocks = scheduled }
         let passwordAvailable = document.passwordLock?.isValid == true
         if hasPassword != passwordAvailable { hasPassword = passwordAvailable }
-        let needsPassword = blocks.contains { $0.lock == .password }
+        let needsPassword = blocks.contains { $0.lock == .password } || redScreenLock == .password
         if quitRequiresPassword != needsPassword { quitRequiresPassword = needsPassword }
         // The markers are read against the wall clock (uninstall.sh, --unregister-guard, the guard): their
         // ends are written in the wall frame, again whenever the skew moves them (whole seconds, T-044 r7).
@@ -1514,17 +1536,48 @@ import LocalHistoryQueryCLI
     /// Writes the marker while the module is off; its client goes to the controller when the module is switched on.
     private(set) var redScreenKeeper: RedScreenGuardKeeper?
     private let makeKeeper: @MainActor () -> RedScreenGuardKeeper?
-    func setRedScreenGuard(until end: Date?) {
-        guard redScreen != .until(end) else { return }
-        redScreen = .until(end)
+    func setRedScreenGuard(until end: Date?, lock: BlockLock = .locked) {
+        guard redScreen != .until(end, lock: lock) else { return }
+        redScreen = .until(end, lock: lock)
         syncRedScreenGuard()
     }
     private func syncRedScreenGuard() {
         if let controller { controller.redScreen = redScreen; controller.refresh(enforceLast: false); return }
-        guard case .until(let end) = redScreen, end != nil || redScreenKeeper != nil else { return }
+        guard case .until(let end, _) = redScreen, end != nil || redScreenKeeper != nil else { return }
         if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
         redScreenKeeper?.update(until: end)
     }
+
+    /// The one « protégé » predicate (`GoalongProtection`), module Blocage on or off: SIGTERM reads it.
+    func protectedUntil(now: Date = Date()) -> Date? { // wall: module off, the red screen's ends are wall dates
+        if let controller { controller.refresh(enforceLast: false); return controller.protectedUntil }
+        guard case .until(let end, _) = redScreen else { return nil }
+        return GoalongProtection.until(severe: nil, redScreen: end, now: now)
+    }
+    /// « Quitter », module Blocage on or off: without the module, a protected range is stopped on its page first.
+    func quitRule(now: Date = Date()) -> GoalongProtection.Quit { // wall: module off, the red screen's ends are wall dates
+        if let controller { controller.refresh(enforceLast: false); return controller.quitRule }
+        guard case .until(let end?, let lock) = redScreen, lock != .free, end > now else { return .allowed }
+        // No blocking password without the module: a « Mot de passe » range is stopped on its page too.
+        return GoalongProtection.quit(blocksLocked: false, blocksPassword: false, redScreenLock: lock == .password ? .typing : lock)
+    }
+    /// The consent sentence for a protected red-screen range (module on or off).
+    var guardNeedsConsent: Bool {
+        if let controller { return controller.guardNeedsConsent }
+        return redScreenKeeper?.client?.needsConsent ?? (GoalongGuardGate.isAllowed && !GuardConsent.isGiven(consentStore))
+    }
+    /// A confirmation that showed `GuardConsent.text` was accepted: a protected range in progress may arm the guard now.
+    func recordGuardConsent() {
+        if let controller { controller.recordGuardConsent(); return }
+        if let client = redScreenKeeper?.client { client.recordConsent() } else if GoalongGuardGate.isAllowed { GuardConsent.record(consentStore) }
+        if case .until(let end, _) = redScreen, end != nil {
+            if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
+            redScreenKeeper?.update(until: end)
+        }
+    }
+    /// Read only behind `GoalongGuardGate.isAllowed`: the gallery and tests never touch the app suite.
+    var consentDefaults: UserDefaults?
+    private var consentStore: UserDefaults { consentDefaults ?? GuardConsent.standardDefaults }
 
     private var modules: GoalongModuleStore?
     private weak var monitor: ContextMonitor?

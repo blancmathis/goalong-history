@@ -407,7 +407,7 @@ import AppleScreenTime
                 ConcentrationRuntime.shared.start(monitor: contextMonitor)
                 BraiseRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .braise) }
                 // A protected red-screen range arms the guard like a severe block (T-048 B4).
-                BraiseRuntime.shared.guardSink = { BlockingRuntime.shared.setRedScreenGuard(until: $0) }
+                BraiseRuntime.shared.guardSink = { BlockingRuntime.shared.setRedScreenGuard(until: $0, lock: $1) }
                 BraiseRuntime.shared.start()
                 let panel = MenuBarPanelModel(
                     state: captureState, modules: .shared, concentration: { ConcentrationRuntime.shared.controller },
@@ -531,19 +531,31 @@ import AppleScreenTime
 
         private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
             MainActor.assumeIsolated {
-            guard let controller = BlockingRuntime.shared.controller else { return true }
-            controller.refresh(enforceLast: false)
-            if controller.quitIsLocked {
+            // One rule for a block and a protected red-screen range (`GoalongProtection.quit`, T-048 B5).
+            let rule = BlockingRuntime.shared.quitRule()
+            switch rule {
+            case .allowed: return true
+            case .locked(let redScreen):
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
-                alert.messageText = "Un blocage est verrouillé"
+                alert.messageText = redScreen ? "Une plage d’écran rouge est verrouillée" : "Un blocage est verrouillé"
                 alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
                 alert.addButton(withTitle: "Fermer la fenêtre")
                 alert.addButton(withTitle: "Annuler")
                 if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
                 return false
+            case .redScreenPage:
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "Une plage d’écran rouge est protégée"
+                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage dans Garde-fous › Écran rouge."
+                alert.addButton(withTitle: "Ouvrir Écran rouge")
+                alert.addButton(withTitle: "Annuler")
+                if alert.runModal() == .alertFirstButtonReturn { BraiseRuntime.shared.onOpen?() }
+                return false
+            case .password: break
             }
-            guard controller.quitRequiresPassword else { return true }
+            guard let controller = BlockingRuntime.shared.controller, controller.quitRequiresPassword else { return true }
             if consumeAuthorization, controller.consumeQuitAuthorization() { return true }
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true
@@ -592,13 +604,13 @@ import AppleScreenTime
                     guard let self else { return }
                     let honoured = MainActor.assumeIsolated {
                         Self.honoursTerminationSignal(
-                            controller: BlockingRuntime.shared.controller,
+                            runtime: BlockingRuntime.shared,
                             sessionEnding: Self.isPowerOffRecent(self.powerOffAt, now: Date()),
                             senderPID: TerminationSignalSender.take(),
                             installOverride: GoalongGuardFiles.overrideActive())
                     }
                     guard honoured else {
-                        Diagnostics.write("SIGTERM ignored during a severe block")
+                        Diagnostics.write("SIGTERM ignored during a severe block or a protected red-screen range")
                         return
                     }
                     self.terminatingForSignal = true
@@ -622,7 +634,8 @@ import AppleScreenTime
                 : externalSignal ? "signal_terminate" : userQuit ? "user_quit" : "system_or_application_exit"
         }
 
-        /// SIGTERM ends Goalong except during a severe block. There it is honoured only when the session
+        /// SIGTERM ends Goalong except during a protection (a severe block or a protected red-screen range, the one
+        /// `GoalongProtection` predicate). There it is honoured only when the session
         /// ends (a recent power-off notice), when launchd sends it (pid 1: system shutdown, `sudo reboot`),
         /// or when an installer runs with the documented override. Otherwise the kill -9 path answers.
         static func honoursTerminationSignal(severeBlock: Bool, sessionEnding: Bool, senderPID: Int32? = nil,
@@ -630,17 +643,12 @@ import AppleScreenTime
             !severeBlock || sessionEnding || senderPID == 1 || installOverride
         }
 
-        /// The SIGTERM decision with the live controller: refresh first, so a block that started since the
-        /// last sample counts, then read `severeUntil`.
-        @MainActor static func honoursTerminationSignal(controller: BlockingController?, sessionEnding: Bool,
+        /// The SIGTERM decision with the live state: the runtime refreshes its controller first, so a block that
+        /// started since the last sample counts, then reads the « protégé » predicate (module Blocage on or off).
+        @MainActor static func honoursTerminationSignal(runtime: BlockingRuntime, sessionEnding: Bool,
                                                         senderPID: Int32?, installOverride: Bool) -> Bool {
-            var severe = false
-            if let controller {
-                controller.refresh(enforceLast: false)
-                severe = controller.severeUntil != nil
-            }
-            return honoursTerminationSignal(severeBlock: severe, sessionEnding: sessionEnding, senderPID: senderPID,
-                                            installOverride: installOverride)
+            honoursTerminationSignal(severeBlock: runtime.protectedUntil() != nil, sessionEnding: sessionEnding,
+                                     senderPID: senderPID, installOverride: installOverride)
         }
 
         /// A power-off notice counts this long: a cancelled logout or shutdown must not open a lasting hole.

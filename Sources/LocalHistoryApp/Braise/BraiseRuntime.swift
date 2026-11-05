@@ -44,10 +44,10 @@ struct RedScreenState: Equatable {
     @Published private(set) var redScreen: RedScreenState
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { $redScreen.removeDuplicates().eraseToAnyPublisher() }
     var onOpen: (() -> Void)?
-    /// Receives `BraiseController.guardUntil` once at start, then on every change (the app wires it to
-    /// `BlockingRuntime.setRedScreenGuard`). nil in tests: no marker, no guard.
-    var guardSink: (@MainActor (Date?) -> Void)?
-    private var reportedGuard: Date?? = .none
+    /// Receives `BraiseController.guardUntil` and the strongest stop rule in progress once at start, then on every
+    /// change (the app wires it to `BlockingRuntime.setRedScreenGuard`). nil in tests: no marker, no guard.
+    var guardSink: (@MainActor (Date?, BlockLock) -> Void)?
+    private var reportedGuard: RedScreenGuardDemand?
     private let factory: @MainActor () throws -> BraiseController
     private let registersShortcut: Bool
     private let diagnostics: SupportDiagnostics
@@ -75,9 +75,9 @@ struct RedScreenState: Equatable {
         reportGuard()
     }
     private func reportGuard() {
-        let until = controller?.guardUntil
-        guard reportedGuard != .some(until) else { return }
-        reportedGuard = .some(until); guardSink?(until)
+        let until = controller?.guardUntil, lock = controller?.protectedWindow?.lock ?? .free
+        guard reportedGuard != .until(until, lock: lock) else { return }
+        reportedGuard = .until(until, lock: lock); guardSink?(until, lock)
     }
     /// The first explicit use builds the controller; later calls return it.
     @discardableResult func ensureController() -> BraiseController? {

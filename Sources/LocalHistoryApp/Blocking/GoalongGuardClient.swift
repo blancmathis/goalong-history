@@ -11,8 +11,13 @@ import GoalongGuardCore
 @MainActor protocol GoalongGuardClienting: AnyObject {
     /// Called by a refresh once the guard state may be stale (a ping answered, a status read).
     var onChange: (() -> Void)? { get set }
-    /// True until the guard was registered once: confirmations that can arm it show `GuardConsent.text`.
+    /// True until the member accepted the current `GuardConsent.text` and the guard is registered: confirmations
+    /// that can arm it show the text.
     var needsConsent: Bool { get }
+    /// The member accepted the current `GuardConsent.version`. A protected red-screen range arms the guard only then.
+    var hasConsent: Bool { get }
+    /// A confirmation that showed `GuardConsent.text` was accepted.
+    func recordConsent()
     /// The service is registered and could be removed (only outside a severe block; the caller checks).
     var canRemove: Bool { get }
     /// `severeUntil` from the controller, after the marker was written. Never raises an alert.
@@ -25,6 +30,8 @@ import GoalongGuardCore
 
 extension GoalongGuardClienting {
     func retry() {}
+    var hasConsent: Bool { !needsConsent }
+    func recordConsent() {}
 }
 
 /// Why the guard is unavailable, said where it shows (R-89: « Réessayer » + cause).
@@ -33,12 +40,21 @@ enum GuardFailure {
     static let unknownStatus = "Service de protection indisponible : macOS renvoie un état inconnu."
 }
 
-/// The one sentence a member reads before the first registration (spec K §6).
+/// The one sentence a member reads before the guard is registered (spec K §6).
 enum GuardConsent {
-    /// Adds the sentence only while the guard was never registered.
+    /// Adds the sentence only while consent is needed.
     static func message(_ base: String, needed: Bool) -> String { needed ? base + "\n\n" + text : base }
 
-    static let text = "Pour que ce blocage tienne même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. Aucun mot de passe n’est demandé. Il ne tourne que pendant les blocages verrouillés ou protégés par mot de passe."
+    static let text = "Pour que les blocages et les plages d’écran rouge protégées tiennent même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. Aucun mot de passe n’est demandé. Il ne tourne que pendant les blocages verrouillés ou protégés par mot de passe, et pendant les plages d’écran rouge protégées."
+
+    /// Raised whenever `text` covers more (2: protected red-screen ranges, T-048 B5): the text is shown once more.
+    static let version = 2
+    static let versionKey = "goalong.guard.consentVersion"
+    /// The app suite, for callers outside this file that do not import `AppleScreenTime`.
+    static var standardDefaults: UserDefaults { GoalongDefaults.standard }
+    static func isGiven(_ defaults: UserDefaults) -> Bool { defaults.integer(forKey: versionKey) >= version }
+    static func record(_ defaults: UserDefaults) { if !isGiven(defaults) { defaults.set(version, forKey: versionKey) } }
+    static func clear(_ defaults: UserDefaults) { defaults.removeObject(forKey: versionKey) }
 }
 
 /// Only an installed copy of Goalong or Goalong Dev may register its guard: never a translocated
@@ -366,9 +382,12 @@ struct GuardEscalation {
     var isWatchingForStop: Bool { stopWatch.isActive }
 
     var needsConsent: Bool {
+        guard GuardConsent.isGiven(defaults) else { return true }
         if let status { return status == .notRegistered || status == .notFound }
         return defaults.string(forKey: Self.registeredBuildKey) == nil
     }
+    var hasConsent: Bool { GuardConsent.isGiven(defaults) }
+    func recordConsent() { GuardConsent.record(defaults) }
     var canRemove: Bool { status == .enabled || status == .requiresApproval }
 
     func update(severeUntil: Date?) -> BlockingProtectionState.Component {
@@ -419,6 +438,8 @@ struct GuardEscalation {
         guard !armed, !isWorking else { return }
         closeConnection()
         defaults.removeObject(forKey: Self.registeredBuildKey)
+        // The member removed the service: no protected red-screen range brings it back before a new consent.
+        GuardConsent.clear(defaults)
         let service = service
         isWorking = true
         queue.async { [weak self] in

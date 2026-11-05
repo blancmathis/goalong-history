@@ -684,13 +684,14 @@ struct BlockingMeter: View {
             .onAppearWhenShown { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
             .alert((pending ?? plan(at: now)).lockTitle(lock), isPresented: $confirmingLock) {
                 Button("Annuler", role: .cancel) {}
-                Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { start(pending) } }
+                Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { controller.recordGuardConsent(); start(pending) } }
             } message: {
                 Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
             }
             .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
                 Button("Annuler", role: .cancel) {}
                 Button("Geler") {
+                    controller.recordGuardConsent()
                     // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
                     guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) } // wall: page input; the controller moves it to its trusted frame
                     controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])

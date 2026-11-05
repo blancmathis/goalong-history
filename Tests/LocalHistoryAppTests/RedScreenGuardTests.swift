@@ -77,7 +77,7 @@ import XCTest
         let runtime = BlockingRuntime(controller: blocks, redScreenKeeper: { XCTFail("module on: no keeper"); return nil })
         let red = try redScreen(clocks, root: root)
         let braise = BraiseRuntime(registersShortcut: false, defaults: try defaults(), factory: { red })
-        braise.guardSink = { runtime.setRedScreenGuard(until: $0) }
+        braise.guardSink = { runtime.setRedScreenGuard(until: $0, lock: $1) }
         braise.start()
         XCTAssertEqual(files.readMarker(now: clocks.now), .absent, "nothing protected yet")
         try red.saveRange(evening(.locked), intensity: 0.8)

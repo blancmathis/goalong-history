@@ -353,6 +353,11 @@ private struct RedScreenChallenge: Identifiable {
                     GoalongSegmentedControl("Arrêt", selection: lock, options: BlockLock.ordered.filter { $0 != .password }) { $0.title }
                     BlockingLockExplainer(lock: draft.range.effectiveLock)
                 }
+                // Same consent as a locked block (T-048 B5): a protected range arms the guard only once it is accepted.
+                if Self.showsConsent(lock: draft.range.effectiveLock, needed: blocking.guardNeedsConsent) {
+                    Text(GuardConsent.text).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("braise-guard-consent")
+                }
             }
             if let message = refusal ?? error { Text(message).foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true) }
             HStack {
@@ -364,7 +369,11 @@ private struct RedScreenChallenge: Identifiable {
                 Spacer()
                 Button("Annuler") { dismiss() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
                 Button("Enregistrer") {
-                    do { try controller.saveRange(draft.range, intensity: draft.intensity, enabled: draft.enabled); dismiss() }
+                    do {
+                        try controller.saveRange(draft.range, intensity: draft.intensity, enabled: draft.enabled)
+                        if Self.showsConsent(lock: draft.range.effectiveLock, needed: blocking.guardNeedsConsent) { blocking.recordGuardConsent() }
+                        dismiss()
+                    }
                     catch { self.error = error.localizedDescription }
                 }.buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                     .disabled(!RedScreenProgram.isUsable(draft.range) || !unreadableFields.isEmpty || refusal != nil)
@@ -372,6 +381,8 @@ private struct RedScreenChallenge: Identifiable {
         }.font(.system(size: 13)).padding(28).frame(width: 590)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
     }
+    /// A protected range (any stop rule but « Libre ») shows `GuardConsent.text` while consent is needed; saving it accepts.
+    static func showsConsent(lock: BlockLock, needed: Bool) -> Bool { lock != .free && needed }
     private func time(_ title: String, minute: Binding<Int>) -> some View {
         HStack(spacing: 10) {
             Text(title)

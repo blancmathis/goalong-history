@@ -324,7 +324,7 @@ struct FocusComposerDraft: Equatable {
         }
         .alert("Verrouiller chaque phase de travail ?", isPresented: $confirmingLock) {
             Button("Annuler", role: .cancel) {}
-            Button("Verrouiller") { begin() }
+            Button("Verrouiller") { BlockingRuntime.shared.recordGuardConsent(); begin() }
         } message: {
             Text(GuardConsent.message("Pendant le travail, ni la séance ni le blocage ne pourront être arrêtés ou passés avant la fin de la phase. Quitter Goalong ou redémarrer ne les arrête pas.",
                                       needed: BlockingRuntime.shared.controller?.guardNeedsConsent ?? false))

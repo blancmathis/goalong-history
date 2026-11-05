@@ -6,8 +6,37 @@ import GoalongGuardCore
 enum RedScreenGuardDemand: Equatable {
     /// At launch, before the red screen has reported: a marker its range left must stay.
     case unknown
-    /// The end of the protected ranges in progress; nil when none runs.
-    case until(Date?)
+    /// The end of the protected ranges in progress (nil when none runs) and the strongest of their stop rules.
+    case until(Date?, lock: BlockLock = .locked)
+}
+
+/// The one « protégé » predicate (T-048 B5): a severe block (locked or password, started) or a protected red-screen
+/// range is running. The guard's arming, « Quitter » and SIGTERM all read it; nothing else decides it.
+enum GoalongProtection {
+    /// End of the protection, nil when nothing is protected. `redScreen` counts only when given.
+    static func until(severe: Date?, redScreen: Date?, now: Date) -> Date? {
+        [severe, redScreen].compactMap { $0 }.filter { $0 > now }.max()
+    }
+
+    /// What « Quitter » asks during a protection: the same rule for a block and a protected range.
+    enum Quit: Equatable {
+        case allowed
+        /// A locked block, a locked program, a freeze or a locked range: Goalong stays open until the end.
+        case locked(redScreen: Bool)
+        /// A « Difficile » range: its text is typed on Garde-fous › Écran rouge, then Goalong may quit.
+        case redScreenPage
+        /// A password block or range: the blocking password approves this quit (the guard then lets it go).
+        case password
+    }
+    static func quit(blocksLocked: Bool, blocksPassword: Bool, redScreenLock: BlockLock?) -> Quit {
+        if blocksLocked { return .locked(redScreen: false) }
+        switch redScreenLock {
+        case .locked?: return .locked(redScreen: true)
+        case .typing?: return .redScreenPage
+        case .password?: return .password
+        case .free?, nil: return blocksPassword ? .password : .allowed
+        }
+    }
 }
 
 /// Arms Goalong's guard for a protected red-screen range while the Blocage module is off (no `BlockingController`).
@@ -37,11 +66,12 @@ enum RedScreenGuardDemand: Equatable {
         GoalongGuardFiles.reportHealth(files)
     }
 
-    /// Writes the range's end (or removes it), then tells the client: armed exactly while a protected range runs.
+    /// Writes the range's end (or removes it), then tells the client: armed exactly while a protected range runs and
+    /// the member accepted `GuardConsent.text` (without it the range runs without a guard, T-048 B5).
     func update(until end: Date?) {
         guard let client else { return }
         let now = clock()
-        until = end.flatMap { $0 > now ? $0 : nil }
+        until = client.hasConsent ? GoalongProtection.until(severe: nil, redScreen: end, now: now) : nil
         let wanted = until.map { GuardFiles.markerEnd($0, now: now) }
         if BlockingController.guardMarkerNeedsWrite(memo: memo, wanted: wanted, files: files, now: now),
            files.writeMarker(until: wanted) { memo = .some(wanted) }
