@@ -318,8 +318,15 @@ import XCTest
         XCTAssertEqual(opened, 0, "no page in the middle of the gesture"); XCTAssertNil(c.pendingStop)
         XCTAssertEqual(c.appliedIntensity, 0.8, accuracy: 0.0001); XCTAssertEqual(menu.slider.value, 0.8, accuracy: 0.0001)
         let notice = try XCTUnwrap(runtime.redScreen.notice)
-        XCTAssertTrue(notice.hasPrefix("Plage protégée jusqu’à 07:00 : 80"), notice); XCTAssertTrue(notice.hasSuffix("au moins"))
+        // Thursday 07:00 in Paris, written as the app writes it (system time zone and locale: CI runs in UTC).
+        let thursday7h = ISO8601DateFormatter().date(from: "2026-11-05T06:00:00Z")!
+        XCTAssertEqual(c.protectedWindow?.end, thursday7h)
+        let expected = "Plage protégée jusqu’à \(BraiseController.clockText(thursday7h)) : \(GoalongUIFormat.percent(80)) au moins"
+        XCTAssertEqual(notice, expected)
         XCTAssertFalse(menu.noticeItem.isHidden); XCTAssertEqual(menu.noticeItem.title.filter { !$0.isWhitespace }, notice.filter { !$0.isWhitespace }) // NSMenuItem normalizes the narrow spaces
+        // The page's slider (BraisePage: `set: { controller.slideIntensity($0) }`): same stop, same text under it, no window.
+        XCTAssertEqual(c.slideIntensity(0.1), .applied); XCTAssertEqual(opened, 0); XCTAssertNil(c.pendingStop)
+        XCTAssertEqual(c.appliedIntensity, 0.8, accuracy: 0.0001); XCTAssertEqual(c.sliderNotice, expected)
         runtime.setRedScreenIntensity(0.3) // the panel's slider
         XCTAssertEqual(opened, 0); XCTAssertNil(c.pendingStop)
         menu.slider.simulateDrag(to: 0.9)
@@ -332,6 +339,18 @@ import XCTest
         XCTAssertEqual(other.appliedIntensity, 0.7, accuracy: 0.0001); XCTAssertNotNil(other.sliderNotice)
         // The CLI keeps the rule of a weakening.
         XCTAssertEqual(other.setIntensity(0.1), .locked(until: try XCTUnwrap(other.protectedWindow?.end)))
+    }
+
+    /// Review B3 point 1: by default the red screen reads the blocks' continuous clock, which counts sleep
+    /// (`mach_continuous_time`), never `systemUptime`, which stops during sleep: holds then end at the same instant as blocks.
+    func testDefaultContinuousClockIsTheBlocksClock() throws {
+        let root = try root()
+        let c = try BraiseController(store: store(root), gamma: BraiseTestGamma(), runsTimers: false)
+        defer { c.shutdown() }
+        let blocks = BlockingClock.continuous(), red = c.continuousNow
+        XCTAssertEqual(red, blocks, accuracy: 0.5)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if blocks - uptime > 2 { XCTAssertGreaterThan(abs(red - uptime), 1, "the red screen would follow systemUptime") }
     }
 
     /// Raising the slider during a range strengthens that range until its end only: the manual red never turns on.

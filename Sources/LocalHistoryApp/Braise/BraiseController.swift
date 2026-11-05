@@ -183,6 +183,8 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @discardableResult func setIntensity(_ value: Double) -> RedScreenGuardResult {
         guardWeakening(.intensity(min(1, max(0, value.isFinite ? value : 1))))
     }
+    /// Reading of the continuous clock the holds follow (`BlockingClock.continuous` by default: sleep counts).
+    var continuousNow: Double { continuous() }
     /// The sliders (menu, panel, page) send one value per notch. During a protected range they never open the page or a
     /// sheet: they stop at the range's intensity and say so in place; going lower is « Arrêter la plage… » on the page.
     @discardableResult func slideIntensity(_ value: Double) -> RedScreenGuardResult {
