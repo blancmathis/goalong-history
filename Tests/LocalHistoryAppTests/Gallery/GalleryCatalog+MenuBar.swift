@@ -181,7 +181,7 @@ struct GalleryStatusButton: NSViewRepresentable {
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { subject.eraseToAnyPublisher() }
     func setRedScreen(_ on: Bool) { subject.value.on = on }
     func setRedScreenIntensity(_ value: Double) { subject.value.intensity = value }
-    func followRedScreenSchedule() { subject.value.followsSchedule = true }
+    func setRedScreenFollowsSchedule(_ on: Bool) { subject.value.followsSchedule = on }
     func restoreColors() { subject.value.on = false }
 }
 

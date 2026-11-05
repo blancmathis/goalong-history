@@ -25,14 +25,20 @@ enum MenuBarItemVisibility: String, Equatable {
     }
 
     /// Pure: the item's window frame against the screens' top bands (menu bar height, 24 pt at least).
+    /// Every screen counts: with « separate Spaces » each screen has a bar and the item may sit on any of
+    /// them, so reading only the first screen would show a false banner. A frame at the top or above it is shown: an auto-hidden bar and a
+    /// full-screen app move the item up there. Only a frame far from every top is parked (macOS 26 puts it
+    /// at the bottom left, e.g. (7, −7)).
     static func state(itemFrame: CGRect, screens: [Screen]) -> MenuBarItemVisibility {
         guard !screens.isEmpty, !itemFrame.isNull, !itemFrame.isEmpty else { return .unknown }
         for screen in screens {
             let height = max(screen.frame.maxY - screen.visibleFrame.maxY, 24)
             let band = CGRect(x: screen.frame.minX, y: screen.frame.maxY - height, width: screen.frame.width, height: height)
-            guard itemFrame.intersects(band) else { continue }
+            let horizontally = itemFrame.maxX > screen.frame.minX && itemFrame.minX < screen.frame.maxX
+            // In the band, or above it: the top of the screen, minus a few points of slack.
+            guard itemFrame.intersects(band) || (horizontally && itemFrame.minY >= band.minY - 4) else { continue }
             if let left = screen.topLeftArea, let right = screen.topRightArea, right.minX > left.maxX,
-               itemFrame.midX > left.maxX, itemFrame.midX < right.minX { return .underNotch }
+               itemFrame.midX > left.maxX, itemFrame.midX < right.minX, itemFrame.intersects(band) { return .underNotch }
             return .shown
         }
         return .parkedBySystem

@@ -118,8 +118,10 @@ final class BlockingEngineTests: XCTestCase {
         let runtime = BlockingRuntime(); runtime.start(modules: modules)
         XCTAssertNil(runtime.controller)
         XCTAssertEqual(DashboardSection.sidebarSections(modules: modules.enabled), DashboardSection.primarySections)
-        XCTAssertFalse(DashboardSection.sidebarSections(modules: [.blocking]).contains(.blocking))
-        XCTAssertEqual(DashboardSection.blocking.sidebarParent, .concentration)
+        // T-048 B2: Garde-fous (Blocages + Écran rouge) is a primary entry, module on or off.
+        XCTAssertTrue(DashboardSection.sidebarSections(modules: []).contains(.blocking))
+        XCTAssertEqual(DashboardSection.blocking.sidebarParent, .blocking)
+        XCTAssertEqual(DashboardSection.braise.sidebarParent, .blocking)
         XCTAssertTrue(SettingsPane.primary.contains(.modules))
     }
     func testModuleDisableRefusalPreservesSwitch() {

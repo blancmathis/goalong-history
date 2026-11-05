@@ -68,6 +68,11 @@ protocol GammaDisplayDriving: AnyObject {
     /// The system's own tables, when a saved one cannot be written back.
     func restoreSystemColors()
     func startGuardian(recoveryURL: URL) throws -> BraiseGuardian
+    /// A key that stays the same when the screen leaves and comes back (sleep, cable), even under a new ID.
+    func stableKey(_ display: UInt32) -> String?
+}
+extension GammaDisplayDriving {
+    func stableKey(_ display: UInt32) -> String? { nil }
 }
 
 /// The real screens. Under XCTest outside CI it is inert and fails the running test (GoalongHeadlessTestSupport):
@@ -112,6 +117,13 @@ final class CoreGraphicsDisplays: GammaDisplayDriving {
         return CGSetDisplayTransferByTable(table.displayID, UInt32(table.red.count), table.red, table.green, table.blue) == .success
     }
     func restoreSystemColors() { if !inert { CGDisplayRestoreColorSyncSettings() } }
+    func stableKey(_ display: UInt32) -> String? {
+        guard !inert else { return nil }
+        let vendor = CGDisplayVendorNumber(display), model = CGDisplayModelNumber(display), serial = CGDisplaySerialNumber(display)
+        // Without a serial number two identical screens would share a key: no key rather than a wrong origin.
+        guard vendor != 0 || model != 0, serial != 0 else { return nil }
+        return "\(vendor)-\(model)-\(serial)"
+    }
     func startGuardian(recoveryURL: URL) throws -> BraiseGuardian {
         guard !inert else { throw GammaError.watchdog }
         let process = Process(), pipe = Pipe(), ready = Pipe()
@@ -143,6 +155,10 @@ final class CoreGraphicsDisplays: GammaDisplayDriving {
 
 final class GammaController: BraiseGammaDriving {
     private var originals: [GammaTable] = []
+    /// Origins of the screens that left while red was on, by stable key: a screen that comes back still
+    /// red (wake, cable) gets its true origin back, never the red table it shows.
+    private var departed: [String: GammaTable] = [:]
+    private var keys: [UInt32: String] = [:]
     private var guardian: BraiseGuardian?
     private var animation: Timer?
     private var gains = Gains.neutral
@@ -164,6 +180,8 @@ final class GammaController: BraiseGammaDriving {
         guard !ids.isEmpty, ids.count <= 32 else { throw GammaError.unsupported }
         // Fail closed for all screens rather than silently leaving one unfiltered.
         originals = try ids.map { try screens.read($0) }
+        keys = Dictionary(ids.compactMap { id in screens.stableKey(id).map { (id, $0) } }, uniquingKeysWith: { a, _ in a })
+        departed = [:]
         recoveryURL = directory.appendingPathComponent("display-recovery-" + UUID().uuidString + ".json")
         try BraiseStore.write(JSONEncoder().encode(originals), to: recoveryURL)
         do { guardian = try screens.startGuardian(recoveryURL: recoveryURL) }
@@ -201,9 +219,10 @@ final class GammaController: BraiseGammaDriving {
         if !originals.allSatisfy({ screens.write($0.scaled(next)) }) { fail(); return }
         gains = next
     }
+    /// End of a fade. A screen plugged during the fade was skipped by `checkAfterSystemChange`: check again now.
     private func finish() {
         if !wantedActive { restore() }
-        else if !verify() { fail() }
+        else { checkAfterSystemChange() }
     }
     func verify() -> Bool {
         guard !originals.isEmpty else { return !wantedActive }
@@ -223,9 +242,30 @@ final class GammaController: BraiseGammaDriving {
         if ids != previous {
             // Do not briefly restore existing screens when an external monitor appears.
             do {
+                for table in originals where !ids.contains(table.displayID) {
+                    if let key = keys[table.displayID] { departed[key] = table }
+                }
                 var updated = originals.filter { ids.contains($0.displayID) }
-                for id in ids.subtracting(previous).sorted() { updated.append(try screens.read(id)) }
+                var tinted = false
+                for id in ids.subtracting(previous).sorted() {
+                    let key = screens.stableKey(id)
+                    if let key { keys[id] = key }
+                    if let key, let origin = departed.removeValue(forKey: key) {
+                        updated.append(GammaTable(displayID: id, red: origin.red, green: origin.green, blue: origin.blue))
+                        continue
+                    }
+                    let table = try screens.read(id)
+                    // Never take a table read while red is on as an origin: rebuild every origin from ColorSync.
+                    if Self.looksTinted(table) { tinted = true }
+                    updated.append(table)
+                }
                 guard !updated.isEmpty else { return }
+                if tinted {
+                    screens.restoreSystemColors()
+                    updated = try ids.sorted().map { try screens.read($0) }
+                    gains = .neutral
+                    guard !updated.contains(where: Self.looksTinted) else { fail(); return }
+                }
                 originals = updated
                 try BraiseStore.write(JSONEncoder().encode(originals), to: recoveryURL)
                 onDisplays?(originals.count)
@@ -236,6 +276,12 @@ final class GammaController: BraiseGammaDriving {
             if !verify() { fail() }
         }
     }
+    /// Green or blue more than 10 % under red at the top of the ramp: a red filter (ours or a leftover),
+    /// not a screen's own calibration.
+    static func looksTinted(_ table: GammaTable) -> Bool {
+        guard let r = table.red.last, let g = table.green.last, let b = table.blue.last, r > 0.05 else { return false }
+        return min(g, b) < r * 0.9
+    }
     private func fail() { restore(); onError?(GammaError.rejected.localizedDescription) }
     func restore() {
         animation?.invalidate(); animation = nil
@@ -243,7 +289,7 @@ final class GammaController: BraiseGammaDriving {
             let restored = originals.map { screens.write($0) }.allSatisfy { $0 }
             if !restored { screens.restoreSystemColors() }
         }
-        originals = []; gains = .neutral; target = .neutral; wantedActive = false
+        originals = []; departed = [:]; keys = [:]; gains = .neutral; target = .neutral; wantedActive = false
         disarm()
     }
     func recoverPending() { Self.recoverPending(in: directory, screens: screens) }

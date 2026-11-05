@@ -10,23 +10,57 @@ sont dans `Sources/LocalHistoryApp/Braise`. L’interface s’appelle **Écran r
 Aucun module à activer. La ligne **Écran rouge** est dans le panneau Goalong (clic
 gauche) et dans le menu Goalong (clic droit) : un interrupteur et un curseur d’intensité
 qui agit pendant le glissement. Le menu ajoute un sous-menu **Intensité** (25–100 %),
-**Suivre mes horaires**, **Rétablir les couleurs** et **Réglages de l’écran rouge…**,
-qui ouvre la page des horaires. Il n’y a qu’une icône Goalong : Braise n’a plus la sienne.
+**Suivre mes horaires**, **Rétablir les couleurs** et **Plages et réglages…**, qui ouvre
+**Garde-fous › Écran rouge**. Il n’y a qu’une icône Goalong : Braise n’a plus la sienne.
 
 Braise n’est plus dans **Réglages › Modules** : sans activation préalable, un interrupteur
 de module doublerait celui du menu. La clé `goalong.module.braise.enabled` d’une ancienne
 version est lue une fois au démarrage (le contrôleur démarre, couleurs inchangées), puis
 retirée.
 
-- **Auto** suit l’union des horaires activés ; les plages voisines ou superposées
-  ne font pas clignoter les couleurs. Les jours choisis sont ceux du début : lundi
-  22:00–08:00 finit mardi matin. Les changements d’heure utilisent l’heure locale.
-- **Activé** conserve le filtre sans heure de fin ; **Désactivé** restaure les couleurs.
+## Garde-fous et plages protégées (T-048 B2)
+
+La section **Garde-fous** de la barre latérale (⌘5) contient **Blocages** et **Écran
+rouge**. Les **plages protégées** de l’écran rouge (« tous les jours de 22 h à 7 h, rouge
+à 80 % », jours au choix) utilisent le modèle des blocages : `BlockProgram` et
+`BlockProgramRange` (jours ISO, lundi = 1), le même éditeur de plage et le même verrou
+(Libre / Difficile / Mot de passe / Verrouillé, voir `docs/BLOCKING.md` « Range lock »).
+Code : `RedScreenProgram.swift` (modèle et règles pures), `BraiseController.swift`.
+
+- **Manuel et plages se cumulent** : l’intensité la plus forte gagne. Couper le manuel ne
+  coupe jamais une plage en cours.
+- **Pendant une plage protégée**, tout affaiblissement suit la règle d’un blocage actif :
+  pas de minute perdue, pas de verrou abaissé, pas d’intensité qui baisse, « Suivre mes
+  horaires » reste coché. « Difficile » demande de taper le texte, « Mot de passe » le mot
+  de passe des blocages ; sans mot de passe, la plage compte comme verrouillée. Renforcer
+  est toujours libre. Les commandes de l’écran rouge (menu, panneau, ⌃ ⌥ ⌘ R, CLI `off`)
+  sont alors des affaiblissements : « Rétablir les couleurs » est grisé. Hors plage, elles
+  agissent tout de suite.
+- Une plage en cours est **tenue jusqu’à sa fin** sur une échéance monotone : avancer
+  l’horloge, changer de fuseau ou modifier le fichier ne l’abrège pas. Au changement
+  d’heure, la fin prend la seconde occurrence de l’heure répétée.
+- La **luminosité** est un confort : jamais verrouillée.
+- Une **panne technique** (écran incompatible, gamma refusé, gardien perdu) rend les
+  couleurs tout de suite, même pendant une plage verrouillée.
+- 32 plages au maximum. Une plage qui passe minuit compte pour le jour où elle commence.
+
+Stockage : `Braise/ranges.json` (mêmes protections que `settings.json`). À la première
+lecture, chaque horaire Braise devient une plage : jours convertis (Braise 1 = dimanche →
+ISO 7), fin 00:00 → 24:00, horaire désactivé ou invalide gardé comme plage éteinte,
+intensité reprise, mode Auto → « Suivre mes horaires ». `settings.json` n’est pas modifié :
+une version plus ancienne de Goalong retrouve ses horaires. Un `ranges.json` abîmé est mis
+de côté puis reconstruit depuis `settings.json`. Tests : `RedScreenRangesTests`.
+
+Écrans : l’origine gamma de chaque écran est gardée par clé stable (fabricant, modèle,
+numéro de série). Un écran rebranché pendant le rouge retrouve sa vraie origine. Sans clé,
+une table lue déjà rouge déclenche une remise ColorSync puis une relecture de toutes les
+origines. Tests : `RedScreenGammaOriginTests` (faux pilote).
+
 - Intensité 0–100 %, luminosité logicielle 20–100 %. À intensité 100 %, les canaux
   vert et bleu de la table gamma sont à zéro. La luminosité matérielle ne change pas.
-- **Pause 15 min**, **Reprendre**, ajout, modification, suppression et activation
-  des horaires (32 maximum) sont accessibles dans le panneau et la page.
-- **⌃ ⌥ ⌘ R** restaure immédiatement les couleurs et passe en mode Désactivé.
+- Ajout, modification, suppression et activation des plages sont dans
+  **Garde-fous › Écran rouge**.
+- **⌃ ⌥ ⌘ R** restaure immédiatement les couleurs hors plage protégée.
   Une collision de raccourci est signalée ; le menu et le panneau restent disponibles.
 - Le réglage de démarrage à la connexion concerne **toute l’app Goalong** et utilise
   son élément de connexion existant. Aucune inscription automatique lors de l’activation.
@@ -99,7 +133,9 @@ goalong braise login on | off
 goalong braise quit
 ```
 
-Jours : 1=dimanche, 2=lundi … 7=samedi. `show` ouvre la page Écran rouge.
+Jours en entrée de `schedule add` : 1=dimanche, 2=lundi … 7=samedi (syntaxe Braise).
+`schedule list` répond en jours ISO (1=lundi … 7=dimanche). Les commandes `schedule`
+agissent sur les plages et suivent les mêmes règles de verrou. `show` ouvre Garde-fous › Écran rouge.
 `off` restaure les couleurs en gardant le contrôleur chargé. `quit` est un alias de `disable` :
 il arrête **l’écran rouge seulement**, en gardant Goalong ouverte. `on` et `enable`
 démarrent le contrôleur au besoin. `status` indique `enabled:false` sans créer de

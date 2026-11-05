@@ -230,24 +230,28 @@ enum BlockingRules {
 
 enum BlockingSchedule {
     struct Window { var rangeID: UUID; var start: Date; var end: Date }
-    static func windows(of program: BlockProgram, at now: Date, calendar: Calendar = .current) -> [Window] {
+    /// `endPolicy`: a range ending in the repeated hour of a fall-back night ends at its first
+    /// occurrence (blocking) or its last (the red screen keeps the old Braise schedules, T-048 B2).
+    static func windows(of program: BlockProgram, at now: Date, calendar: Calendar = .current,
+                        endPolicy: Calendar.RepeatedTimePolicy = .first) -> [Window] {
         var result: [Window] = []
         for offset in -1...8 {
             guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) else { continue }
             for range in program.ranges where range.weekdays.contains(isoWeekday(day, calendar: calendar)) {
                 guard let start = minute(range.startMinute, on: day, calendar: calendar),
                       let endDay = calendar.date(byAdding: .day, value: range.crossesMidnight ? 1 : 0, to: day),
-                      let end = minute(range.endMinute, on: endDay, calendar: calendar), end > start else { continue }
+                      let end = minute(range.endMinute, on: endDay, calendar: calendar, repeated: endPolicy), end > start else { continue }
                 result.append(Window(rangeID: range.id, start: start, end: end))
             }
         }
         return result.sorted { $0.start < $1.start }
     }
-    private static func minute(_ value: Int, on day: Date, calendar: Calendar) -> Date? {
+    private static func minute(_ value: Int, on day: Date, calendar: Calendar,
+                               repeated: Calendar.RepeatedTimePolicy = .first) -> Date? {
         if value == 1440 { return calendar.date(byAdding: .day, value: 1, to: day) }
         // Civil time, not 24-hour arithmetic: missing times advance; repeated times use first occurrence.
         return calendar.date(bySettingHour: value / 60, minute: value % 60, second: 0, of: day,
-                             matchingPolicy: .nextTime, repeatedTimePolicy: .first, direction: .forward)
+                             matchingPolicy: .nextTime, repeatedTimePolicy: repeated, direction: .forward)
     }
     static func currentWindow(of program: BlockProgram, at now: Date, calendar: Calendar = .current) -> Window? {
         var merged: [Window] = []

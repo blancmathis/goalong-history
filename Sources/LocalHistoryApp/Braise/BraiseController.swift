@@ -6,9 +6,45 @@ import Foundation
 import LocalHistoryQueryCLI
 import ServiceManagement
 
+/// A command that takes red away (T-048 B2). Outside a range it acts at once; during a range it is
+/// a weakening and follows the rule of an active block (docs/BLOCKING.md « Range lock »).
+enum RedScreenWeakening: Equatable {
+    case manualOff, unfollow, pause, emergency
+    case intensity(Double)
+}
+
+enum RedScreenGuardResult: Equatable {
+    case applied
+    /// A protected range runs: the page asks for the text or the password, then applies the command.
+    case needsStop(lock: BlockLock, end: Date)
+    /// « Verrouillé »: nothing stops it before `until`.
+    case locked(until: Date)
+}
+
+enum RedScreenStopResult: Equatable {
+    case stopped
+    case wrongText
+    case password(BlockingPasswordResult)
+    case locked(until: Date)
+}
+
+/// A range change refused while a protected range runs, or an invalid range.
+struct RedScreenRefusal: LocalizedError, Equatable {
+    var message: String
+    var isLock: Bool
+    var errorDescription: String? { message }
+}
+
 @MainActor final class BraiseController: ObservableObject {
     @Published private(set) var preferences: Preferences
+    @Published private(set) var ranges: RedScreenProgram
+    /// The range windows in progress (scheduled or held), minus the ones stopped for today.
+    @Published private(set) var windows: [RedScreenWindow] = []
     @Published private(set) var active = false
+    /// What is on screen: the strongest of the manual red and the ranges in progress.
+    @Published private(set) var appliedIntensity = 0.0
+    /// The command waiting for a stop (text or password) on the page.
+    @Published private(set) var pendingStop: RedScreenWeakening?
     @Published private(set) var displayCount = 0
     @Published private(set) var nextEvent = ""
     @Published private(set) var errorMessage: String?
@@ -18,11 +54,18 @@ import ServiceManagement
     @Published private(set) var loginEnabled = false
     @Published private(set) var loginApprovalRequired = false
     var stateChanged: (() -> Void)?
+    /// A protected range needs the page (Garde-fous › Écran rouge) to be stopped.
+    var onStopRequired: (() -> Void)?
     private let store: BraiseStore
     private let gamma: BraiseGammaDriving
     private let clock: () -> Date
+    private let uptime: () -> TimeInterval
     private let calendar: Calendar
     private let runsTimers: Bool
+    private let passwordAvailable: @MainActor () -> Bool
+    private let checkPassword: @MainActor (String) -> BlockingPasswordResult
+    /// Monotonic end of each hold: a forward clock jump does not end a protected range early.
+    private var holdDeadlines: [UUID: TimeInterval] = [:]
     private var running = true
     private var boundaryTimer: Timer?
     private var maintenanceTimer: Timer?
@@ -30,14 +73,28 @@ import ServiceManagement
     private var saveTask: DispatchWorkItem?
 
     init(store: BraiseStore, gamma: BraiseGammaDriving, runsTimers: Bool = true,
-         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent) throws {
+         clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
+         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         hasPassword: @escaping @MainActor () -> Bool = { BlockingRuntime.shared.controller?.hasPassword ?? false },
+         verifyPassword: @escaping @MainActor (String) -> BlockingPasswordResult = {
+             BlockingRuntime.shared.controller?.verifyRedScreenPassword($0)
+                 ?? .refused(reason: "Les blocages sont arrêtés : aucun mot de passe n’est disponible.")
+         }) throws {
         self.store = store; self.gamma = gamma; self.runsTimers = runsTimers
-        self.clock = clock; self.calendar = calendar
+        self.clock = clock; self.calendar = calendar; self.uptime = uptime
+        self.passwordAvailable = hasPassword; self.checkPassword = verifyPassword
         let loaded = try store.loadRecovering()
-        preferences = loaded.preferences; recoveryNotice = loaded.notice
+        preferences = loaded.preferences
+        let loadedRanges = try store.loadRanges(migratingFrom: loaded.preferences)
+        ranges = loadedRanges.ranges
+        let notices = [loaded.notice, loadedRanges.notice].compactMap { $0 }
+        recoveryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
         gamma.onError = { [weak self] message in
             guard let self, self.running else { return }
+            // A technical fault always gives the colors back now, protected ranges included.
             self.preferences.mode = .off; self.preferences.pauseUntil = nil; self.active = false
+            for window in self.windows { self.ranges.skips[window.rangeID] = window.end; self.ranges.holds[window.rangeID] = nil }
+            self.holdDeadlines = [:]
             self.errorMessage = message; self.saveNow(); self.evaluate()
         }
         gamma.onDisplays = { [weak self] count in self?.displayCount = count }
@@ -81,15 +138,13 @@ import ServiceManagement
         evaluate(); gamma.checkAfterSystemChange()
     }
 
+    /// Comfort settings (brightness) and the manual intensity outside a range. Weakening commands go through `guardWeakening`.
     func update(_ change: (inout Preferences) -> Void) {
         guard running else { return }
         change(&preferences); preferences.sanitize(); errorMessage = nil
         evaluate(); saveSoon()
     }
-    func setMode(_ mode: FilterMode) { update { $0.mode = mode; $0.pauseUntil = nil } }
-    func emergencyOff() { gamma.restore(); setMode(.off); saveNow() }
-    func pause() { update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) } }
-    func resume() { update { $0.pauseUntil = nil } }
+    var hasBlockingPassword: Bool { passwordAvailable() }
     func refreshLoginStatus() {
         let status = SMAppService.mainApp.status
         loginEnabled = status == .enabled
@@ -103,46 +158,228 @@ import ServiceManagement
         refreshLoginStatus()
         if !ok { throw GoalongFocusError.storageFailed }
     }
-    func saveRule(_ rule: ScheduleRule) throws {
-        guard rule.isValid else { throw GoalongFocusError.invalidArgument }
-        guard preferences.rules.count < 32 || preferences.rules.contains(where: { $0.id == rule.id }) else { throw GoalongFocusError.invalidArgument }
-        update { value in
-            if let i = value.rules.firstIndex(where: { $0.id == rule.id }) { value.rules[i] = rule }
-            else { value.rules.append(rule) }
+
+    // MARK: Manual red and the B1 commands
+
+    /// The manual switch. On: red at the manual intensity. Off: never drops the ranges; during a range it is a weakening.
+    @discardableResult func setManual(_ on: Bool) -> RedScreenGuardResult {
+        guard on else { return guardWeakening(.manualOff) }
+        update { $0.mode = .on; $0.pauseUntil = nil }; return .applied
+    }
+    /// « Suivre mes horaires ». Unchecking it during a range is a weakening.
+    @discardableResult func setFollows(_ on: Bool) -> RedScreenGuardResult {
+        guard on else { return guardWeakening(.unfollow) }
+        guard running else { return .applied }
+        ranges.follows = true; errorMessage = nil; saveRangesNow(); evaluate(); return .applied
+    }
+    /// ⌃⌥⌘R, « Rétablir les couleurs ».
+    @discardableResult func emergencyOff() -> RedScreenGuardResult { guardWeakening(.emergency) }
+    @discardableResult func pause() -> RedScreenGuardResult { guardWeakening(.pause) }
+    func resume() { update { $0.pauseUntil = nil } }
+    /// The intensity slider. During a range, below the range's intensity is a weakening; at or above it the manual red takes over.
+    @discardableResult func setIntensity(_ value: Double) -> RedScreenGuardResult {
+        guardWeakening(.intensity(min(1, max(0, value.isFinite ? value : 1))))
+    }
+
+    /// Outside a range: at once. Free ranges only: they stop for today, then the command applies.
+    /// A protected range: « Verrouillé » refuses with its end; « Difficile » and « Mot de passe » open the page.
+    func guardWeakening(_ action: RedScreenWeakening) -> RedScreenGuardResult {
+        guard running else { return .applied }
+        let now = clock()
+        refreshWindows(now)
+        var relevant = windows
+        switch action {
+        case .intensity(let value): relevant = relevant.filter { $0.intensity > value + 0.0001 }
+        case .pause: relevant = relevant.filter(\.isProtected)
+        default: break
+        }
+        if let strong = RedScreenRules.strongest(relevant) {
+            if strong.lock == .locked {
+                errorMessage = Self.lockedText(until: strong.end, now: now); stateChanged?()
+                return .locked(until: strong.end)
+            }
+            pendingStop = action; errorMessage = nil; stateChanged?(); onStopRequired?()
+            return .needsStop(lock: strong.lock, end: strong.end)
+        }
+        if !relevant.isEmpty { skip(relevant); saveRangesNow() }
+        apply(action)
+        return .applied
+    }
+
+    /// The page's stop: text or password per the strongest protected range in progress, then the waiting command.
+    func stopActiveRanges(typed: String? = nil, challenge: String? = nil, password: String? = nil) -> RedScreenStopResult {
+        guard running else { return .stopped }
+        let now = clock()
+        refreshWindows(now)
+        if let strong = RedScreenRules.strongest(windows) {
+            switch strong.lock {
+            case .locked:
+                errorMessage = Self.lockedText(until: strong.end, now: now); stateChanged?()
+                return .locked(until: strong.end)
+            case .typing:
+                guard let typed, let challenge, !challenge.isEmpty, typed == challenge else { return .wrongText }
+            case .password:
+                let result = checkPassword(password ?? "")
+                guard result == .ok else { return .password(result) }
+            case .free: break
+            }
+        }
+        var targets = windows
+        if case .intensity(let value)? = pendingStop { targets = targets.filter { $0.intensity > value + 0.0001 } }
+        skip(targets); saveRangesNow()
+        if let action = pendingStop { pendingStop = nil; apply(action) } else { evaluate() }
+        return .stopped
+    }
+    func cancelStop() { pendingStop = nil; stateChanged?() }
+
+    private func skip(_ list: [RedScreenWindow]) {
+        for window in list {
+            ranges.skips[window.rangeID] = max(window.end, ranges.skips[window.rangeID] ?? window.end)
+            ranges.holds[window.rangeID] = nil; holdDeadlines[window.rangeID] = nil
         }
     }
-    func deleteRule(_ id: UUID) { update { $0.rules.removeAll { $0.id == id } } }
+
+    private func apply(_ action: RedScreenWeakening) {
+        switch action {
+        case .manualOff: update { $0.mode = .off; $0.pauseUntil = nil }
+        case .unfollow: ranges.follows = false; errorMessage = nil; saveRangesNow(); evaluate()
+        case .pause: update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) }
+        case .emergency: gamma.restore(); update { $0.mode = .off; $0.pauseUntil = nil }; saveNow()
+        case .intensity(let value):
+            // During a range the slider is the red on screen: the manual red carries it.
+            let inRange = !windows.isEmpty
+            update { $0.intensity = value; if inRange { $0.mode = .on; $0.pauseUntil = nil } }
+        }
+    }
+
+    // MARK: Ranges
+
+    /// Adds or replaces a range. While a protected range runs, only stricter changes pass (docs/BLOCKING.md).
+    func saveRange(_ range: BlockProgramRange, intensity: Double, enabled: Bool = true) throws {
+        guard RedScreenProgram.isUsable(range) else { throw RedScreenRefusal(message: "Choisissez au moins un jour et deux heures différentes.", isLock: false) }
+        if range.effectiveLock == .password, !passwordAvailable(), ranges.program.ranges.first(where: { $0.id == range.id })?.effectiveLock != .password {
+            throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Blocages).", isLock: false)
+        }
+        var next = ranges
+        if let i = next.program.ranges.firstIndex(where: { $0.id == range.id }) { next.program.ranges[i] = range }
+        else {
+            guard next.program.ranges.count < RedScreenProgram.maximumRanges else {
+                throw RedScreenRefusal(message: "32 plages au maximum.", isLock: false)
+            }
+            next.program.ranges.append(range)
+        }
+        next.intensities[range.id] = min(1, max(0, intensity.isFinite ? intensity : 1))
+        if enabled { next.disabled.remove(range.id) } else { next.disabled.insert(range.id) }
+        try commitRanges(next)
+    }
+    func deleteRange(_ id: UUID) throws {
+        var next = ranges
+        next.program.ranges.removeAll { $0.id == id }; next.intensities[id] = nil; next.disabled.remove(id)
+        try commitRanges(next)
+    }
+    func setRangeEnabled(_ id: UUID, _ enabled: Bool) throws {
+        guard let range = ranges.program.ranges.first(where: { $0.id == id }) else { throw RedScreenRefusal(message: "Plage introuvable.", isLock: false) }
+        if enabled, !RedScreenProgram.isUsable(range) { throw RedScreenRefusal(message: "Cette plage n’a pas de jour ou dure zéro minute.", isLock: false) }
+        var next = ranges
+        if enabled { next.disabled.remove(id) } else { next.disabled.insert(id) }
+        try commitRanges(next)
+    }
+    /// The refusal text of a change, nil when allowed (the editor shows it before saving).
+    func refusal(for next: RedScreenProgram) -> String? {
+        let now = clock()
+        refreshWindows(now)
+        guard let strong = RedScreenRules.strongest(windows),
+              let reason = RedScreenRules.weakening(from: ranges, to: next, hasPassword: passwordAvailable()) else { return nil }
+        return "Plage protégée en cours (\(strong.lock.title.lowercased())) : \(reason) \(Self.lockedText(until: strong.end, now: now))"
+    }
+    private func commitRanges(_ next: RedScreenProgram) throws {
+        guard running else { return }
+        if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
+        var value = next; value.sanitize()
+        ranges = value; errorMessage = nil; saveRangesNow(); evaluate()
+    }
+
+    // MARK: Evaluation
+
+    /// Windows in progress, holds kept or pushed after a forward clock jump, stale skips dropped.
+    private func refreshWindows(_ now: Date) {
+        let up = uptime()
+        var changed = false
+        for (id, hold) in ranges.holds where hold.end <= now {
+            if let deadline = holdDeadlines[id], deadline > up {
+                ranges.holds[id]?.end = now.addingTimeInterval(deadline - up)
+            } else { ranges.holds[id] = nil; holdDeadlines[id] = nil }
+            changed = true
+        }
+        for (id, date) in ranges.skips where date <= now { ranges.skips[id] = nil; changed = true }
+        // Published only when it changes: the editor asks `refusal(for:)` from its body, and an equal value set again
+        // would ask for a new body at once (the editor spun the main thread; gallery watchdog, T-048 B2).
+        let fresh = RedScreenRules.activeWindows(ranges, at: now, calendar: calendar, hasPassword: passwordAvailable())
+        if fresh != windows { windows = fresh }
+        for window in windows where window.isProtected {
+            let held = ranges.holds[window.rangeID]
+            let merged = RedScreenProgram.Hold(end: max(window.end, held?.end ?? window.end),
+                                               lock: [window.lock, held?.lock ?? .free].max { $0.strength < $1.strength }!,
+                                               intensity: max(window.intensity, held?.intensity ?? 0))
+            if held != merged { ranges.holds[window.rangeID] = merged; changed = true }
+            let deadline = up + merged.end.timeIntervalSince(now)
+            if held != merged || holdDeadlines[window.rangeID] == nil {
+                holdDeadlines[window.rangeID] = max(holdDeadlines[window.rangeID] ?? deadline, deadline)
+            }
+        }
+        if changed { saveRangesNow() }
+    }
+
     var isPaused: Bool { preferences.pauseUntil.map { $0 > clock() } ?? false }
     var stateLabel: String { isPaused ? "En pause" : active ? "Filtre actif" : "Couleurs naturelles" }
+    /// The protected range in progress, if any.
+    var protectedWindow: RedScreenWindow? { RedScreenRules.strongest(windows) }
 
     func evaluate() {
         guard running else { return }
         let now = clock()
         if let end = preferences.pauseUntil, end <= now { preferences.pauseUntil = nil; saveSoon() }
-        let planned = ScheduleEngine.isActive(preferences.rules, at: now, calendar: calendar)
-        active = !isPaused && (preferences.mode == .on || (preferences.mode == .auto && planned))
-        gamma.set(active: active, intensity: preferences.intensity, brightness: preferences.brightness,
+        refreshWindows(now)
+        let paused = isPaused
+        let manual = preferences.mode == .on && !paused
+        // A pause hides the manual red and the free ranges, never a protected range.
+        let shown = windows.filter { !paused || $0.isProtected }
+        let rangeIntensity = shown.map(\.intensity).max()
+        active = manual || rangeIntensity != nil
+        appliedIntensity = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
+        gamma.set(active: active, intensity: active ? appliedIntensity : preferences.intensity, brightness: preferences.brightness,
                   animated: runsTimers && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         boundaryTimer?.invalidate(); boundaryTimer = nil
-        let next = ScheduleEngine.nextTransition(preferences.rules, after: now, calendar: calendar)
         var events: [Date] = []
         if let end = preferences.pauseUntil { events.append(end) }
-        if preferences.mode == .auto, let next { events.append(next.date) }
+        if let next = RedScreenRules.nextBoundary(ranges, after: now, calendar: calendar) { events.append(next) }
         if runsTimers, let nearest = events.min() {
             let timer = Timer(fire: nearest, interval: 0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.evaluate() } }
             timer.tolerance = 0.1; RunLoop.main.add(timer, forMode: .common); boundaryTimer = timer
         }
-        if let end = preferences.pauseUntil { nextEvent = "En pause jusqu’à \(Self.clockText(end))" }
-        else {
-            switch preferences.mode {
-            case .on: nextEvent = "Activé manuellement, sans horaire de fin"
-            case .off: nextEvent = "Choisissez Auto pour suivre vos horaires."
-            case .auto:
-                if let next { nextEvent = "\(next.active ? "Activation" : "Désactivation") \(Self.when(next.date))" }
-                else { nextEvent = active ? "Plages continues, filtre actif" : "Aucune plage active" }
-            }
-        }
+        nextEvent = eventText(now: now, paused: paused, manual: manual)
         stateChanged?()
+    }
+
+    private func eventText(now: Date, paused: Bool, manual: Bool) -> String {
+        if let strong = protectedWindow { return "Plage protégée jusqu’à \(Self.clockText(strong.end))" }
+        if paused, let end = preferences.pauseUntil { return "En pause jusqu’à \(Self.clockText(end))" }
+        if let window = windows.max(by: { $0.end < $1.end }) { return "Plage en cours jusqu’à \(Self.clockText(window.end))" }
+        if manual { return "Activé manuellement, sans horaire de fin" }
+        guard ranges.follows else { return "Cochez « Suivre mes horaires » pour suivre vos plages." }
+        let next = BlockingSchedule.windows(of: ranges.enabledProgram, at: now, calendar: calendar, endPolicy: .last)
+            .filter { $0.start > now }.map(\.start).min()
+        if let next { return "Prochaine plage \(Self.when(next))" }
+        return "Aucune plage prévue"
+    }
+
+    /// « Verrouillé jusqu’à 07:00 (encore 2 h 05). »
+    nonisolated static func lockedText(until end: Date, now: Date) -> String {
+        "Verrouillé jusqu’à \(GoalongUIFormat.time(end)) (encore \(remainingText(end.timeIntervalSince(now))))."
+    }
+    nonisolated static func remainingText(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded(.up)))
+        return minutes < 60 ? "\(minutes) min" : String(format: "%d h %02d", minutes / 60, minutes % 60)
     }
     static func clockText(_ date: Date) -> String { GoalongUIFormat.time(date) }
     private static func when(_ date: Date) -> String { whenText(date, now: GoalongToday.now) }
@@ -161,14 +398,22 @@ import ServiceManagement
     func saveNow() {
         saveTask?.cancel(); saveTask = nil
         do { try store.save(preferences) } catch { errorMessage = "Réglages non enregistrés. Vérifiez l’espace et l’accès au dossier Braise." }
+        saveRangesNow()
+    }
+    private func saveRangesNow() {
+        do { try store.saveRanges(ranges) } catch { errorMessage = "Plages non enregistrées. Vérifiez l’espace et l’accès au dossier Braise." }
     }
     func persistCommand() throws {
         saveNow(); if errorMessage != nil { throw GoalongFocusError.storageFailed }
     }
     func probe() -> [[String: Any]] { gamma.probe() }
     var status: [String: Any] {
-        let gains = ChannelGains(intensity: preferences.intensity, brightness: preferences.brightness)
+        let gains = ChannelGains(intensity: appliedIntensity, brightness: preferences.brightness)
+        let guardWindow = protectedWindow
         return ["schema": 1, "module": "braise", "enabled": true, "mode": preferences.mode.rawValue,
+                "follows": ranges.follows, "ranges": ranges.program.ranges.count, "rangesActive": windows.count,
+                "protectedLock": guardWindow?.lock.rawValue ?? "", "protectedUntil": guardWindow.map { ISO8601DateFormatter().string(from: $0.end) } ?? "",
+                "appliedIntensity": appliedIntensity,
                 "active": active, "paused": isPaused, "intensity": preferences.intensity,
                 "brightness": preferences.brightness, "displayCount": displayCount, "nextEvent": nextEvent,
                 "shortcutAvailable": shortcutAvailable, "error": errorMessage ?? "",

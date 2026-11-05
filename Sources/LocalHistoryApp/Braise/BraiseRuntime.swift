@@ -14,6 +14,8 @@ struct RedScreenState: Equatable {
     var on = false
     var intensity = 1.0
     var followsSchedule = false
+    /// A protected range runs: commands that take red away ask for the page.
+    var isProtected = false
 }
 
 /// The « Écran rouge » line of Goalong's menu (left-click panel and right-click menu).
@@ -22,7 +24,7 @@ struct RedScreenState: Equatable {
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { get }
     func setRedScreen(_ on: Bool)
     func setRedScreenIntensity(_ value: Double)
-    func followRedScreenSchedule()
+    func setRedScreenFollowsSchedule(_ on: Bool)
     func restoreColors()
 }
 
@@ -71,6 +73,7 @@ struct RedScreenState: Equatable {
         do {
             let value = try factory(); controller = value; error = nil
             value.stateChanged = { [weak self] in self?.sync() }
+            value.onStopRequired = { [weak self] in self?.onOpen?() }
             if registersShortcut { shortcut = BraiseShortcut(controller: value) }
             sync(); return value
         } catch {
@@ -92,24 +95,28 @@ struct RedScreenState: Equatable {
     private func sync() {
         guard let controller else { return }
         let p = controller.preferences
-        let next = RedScreenState(on: controller.active, intensity: p.intensity, followsSchedule: p.mode == .auto)
+        let next = RedScreenState(on: controller.active, intensity: controller.active ? controller.appliedIntensity : p.intensity,
+                                  followsSchedule: controller.ranges.follows, isProtected: controller.protectedWindow != nil)
         if redScreen != next { redScreen = next }
-        let armed = p.mode != .off
+        // Ranges followed or held keep the controller across launches, like a manual red.
+        let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty
         if defaults.object(forKey: Self.armedKey) as? Bool != armed { defaults.set(armed, forKey: Self.armedKey) }
         if defaults.object(forKey: Self.intensityKey) as? Double != p.intensity { defaults.set(p.intensity, forKey: Self.intensityKey) }
     }
 
     // MARK: RedScreenControlling
+    /// Off is the manual switch going off: during a range it follows the weakening rule (T-048 B2).
     func setRedScreen(_ on: Bool) {
-        if on { ensureController()?.setMode(.on) }
-        else { controller?.emergencyOff() }
+        if on { ensureController()?.setManual(true) }
+        else { controller?.setManual(false) }
     }
     func setRedScreenIntensity(_ value: Double) {
-        let clamped = min(1, max(0, value))
-        guard let controller = ensureController() else { return }
-        controller.update { $0.intensity = clamped }
+        guard value.isFinite, let controller = ensureController() else { return }
+        controller.setIntensity(value)
     }
-    func followRedScreenSchedule() { ensureController()?.setMode(.auto) }
+    func setRedScreenFollowsSchedule(_ on: Bool) {
+        if on { ensureController()?.setFollows(true) } else { controller?.setFollows(false) }
+    }
     /// Same as ⌃⌥⌘R. Without a controller nothing was ever changed: no call at all.
     func restoreColors() { controller?.emergencyOff() }
 
@@ -118,7 +125,11 @@ struct RedScreenState: Equatable {
         let off = Data("{\"schema\":1,\"module\":\"braise\",\"enabled\":false}".utf8)
         switch request.command {
         case "braise disable", "braise quit":
-            controller?.emergencyOff(); stop(keepsSetting: false); return off
+            if let controller {
+                try Self.require(controller.emergencyOff())
+                if controller.ranges.follows { try Self.require(controller.setFollows(false)) }
+            }
+            stop(keepsSetting: false); return off
         case "braise status":
             guard let controller else { return off }
             return try JSONSerialization.data(withJSONObject: controller.status, options: [.sortedKeys])
@@ -134,27 +145,48 @@ struct RedScreenState: Equatable {
         let o = request.options
         switch request.command {
         case "braise enable": break
-        case "braise on": controller.setMode(.on)
-        case "braise off": controller.emergencyOff()
-        case "braise auto": controller.setMode(.auto)
-        case "braise pause": controller.pause()
+        case "braise on": controller.setManual(true)
+        case "braise off": try Self.require(controller.emergencyOff())
+        case "braise auto": controller.setFollows(true)
+        case "braise pause": try Self.require(controller.pause())
         case "braise resume": controller.resume()
-        case "braise intensity": controller.update { $0.intensity = Double(o["value"]!)! / 100 }
+        case "braise intensity": try Self.require(controller.setIntensity(Double(o["value"]!)! / 100))
         case "braise brightness": controller.update { $0.brightness = Double(o["value"]!)! / 100 }
-        case "braise schedule": return try JSONEncoder().encode(controller.preferences.rules)
+        case "braise schedule": return try Self.schedule(controller.ranges)
         case "braise rule-add":
-            try controller.saveRule(ScheduleRule(weekdays: Set(o["days"]!.split(separator: ",").compactMap { Int($0) }),
-                                                startMinute: GoalongBraiseCLI.minute(o["start"]!)!, endMinute: GoalongBraiseCLI.minute(o["end"]!)!))
+            // CLI days stay Braise's (Sunday = 1); the ranges count from Monday = 1.
+            let days = Set(o["days"]!.split(separator: ",").compactMap { Int($0) }.compactMap(RedScreenProgram.isoWeekday(fromFoundation:)))
+            let end = GoalongBraiseCLI.minute(o["end"]!)!
+            let range = BlockProgramRange(weekdays: days, startMinute: GoalongBraiseCLI.minute(o["start"]!)!, endMinute: end == 0 ? 1_440 : end)
+            try Self.mapRefusal { try controller.saveRange(range, intensity: controller.preferences.intensity) }
         case "braise rule-remove", "braise rule-enable", "braise rule-disable":
             let id = UUID(uuidString: o["id"]!)!
-            guard controller.preferences.rules.contains(where: { $0.id == id }) else { throw GoalongFocusError.notFound }
-            if request.command == "braise rule-remove" { controller.deleteRule(id) }
-            else { controller.update { p in if let i = p.rules.firstIndex(where: { $0.id == id }) { p.rules[i].enabled = request.command == "braise rule-enable" } } }
+            guard controller.ranges.program.ranges.contains(where: { $0.id == id }) else { throw GoalongFocusError.notFound }
+            try Self.mapRefusal {
+                if request.command == "braise rule-remove" { try controller.deleteRange(id) }
+                else { try controller.setRangeEnabled(id, request.command == "braise rule-enable") }
+            }
         case "braise login": try controller.setLogin(o["value"] == "on")
         default: throw GoalongFocusError.invalidArgument
         }
         try controller.persistCommand()
         return try JSONSerialization.data(withJSONObject: controller.status, options: [.sortedKeys])
+    }
+    /// A command a protected range refused: the CLI says « locked », the page shows why.
+    private static func require(_ result: RedScreenGuardResult) throws {
+        if result != .applied { throw GoalongFocusError.locked }
+    }
+    private static func mapRefusal(_ body: () throws -> Void) throws {
+        do { try body() } catch let refusal as RedScreenRefusal { throw refusal.isLock ? GoalongFocusError.locked : GoalongFocusError.invalidArgument }
+    }
+    /// `braise schedule`: ranges with ISO weekdays (Monday = 1), minutes, intensity 0…1, lock.
+    static func schedule(_ ranges: RedScreenProgram) throws -> Data {
+        let rows: [[String: Any]] = ranges.program.ranges.map { range in
+            ["id": range.id.uuidString, "weekdays": range.weekdays.sorted(), "startMinute": range.startMinute,
+             "endMinute": range.endMinute, "intensity": ranges.intensity(of: range.id),
+             "enabled": !ranges.disabled.contains(range.id), "lock": range.effectiveLock.rawValue]
+        }
+        return try JSONSerialization.data(withJSONObject: ["follows": ranges.follows, "ranges": rows], options: [.sortedKeys])
     }
 }
 

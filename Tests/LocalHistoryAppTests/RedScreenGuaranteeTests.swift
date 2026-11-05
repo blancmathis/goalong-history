@@ -17,6 +17,10 @@ final class FakeGammaScreens: GammaDisplayDriving {
     private(set) var gammaCalls = 0
     private(set) var guardians = 0
     private(set) var disarmed = 0
+    /// Every table written, in order.
+    private(set) var written: [GammaTable] = []
+    /// Stable keys (vendor-model-serial); none by default.
+    var keys: [UInt32: String] = [:]
     private final class Guardian: BraiseGuardian {
         let onDisarm: () -> Void
         init(_ onDisarm: @escaping () -> Void) { self.onDisarm = onDisarm }
@@ -29,6 +33,16 @@ final class FakeGammaScreens: GammaDisplayDriving {
     }
     func plug(_ id: UInt32) { online.append(id); original[id] = Self.ramp(id); current[id] = Self.ramp(id) }
     func unplug(_ id: UInt32) { online.removeAll { $0 == id } }
+    /// The screen comes back (wake, cable) still showing the table it had when it left, under `newID` if given.
+    func comeBack(_ id: UInt32, as newID: UInt32? = nil) {
+        let target = newID ?? id
+        if target != id {
+            original[target] = original[id].map { GammaTable(displayID: target, red: $0.red, green: $0.green, blue: $0.blue) }
+            current[target] = current[id].map { GammaTable(displayID: target, red: $0.red, green: $0.green, blue: $0.blue) }
+            keys[target] = keys[id]
+        }
+        online.append(target)
+    }
     func isNormal(_ id: UInt32) -> Bool { current[id] == original[id] }
     /// Green and blue lowered on this screen, red kept.
     func isRed(_ id: UInt32) -> Bool {
@@ -46,13 +60,14 @@ final class FakeGammaScreens: GammaDisplayDriving {
     func write(_ table: GammaTable) -> Bool {
         gammaCalls += 1
         guard online.contains(table.displayID) else { return false }
-        current[table.displayID] = table; return true
+        current[table.displayID] = table; written.append(table); return true
     }
     func restoreSystemColors() { gammaCalls += 1; for id in online { current[id] = original[id] } }
     func startGuardian(recoveryURL: URL) throws -> BraiseGuardian {
         gammaCalls += 1; guardians += 1
         return Guardian { [weak self] in self?.disarmed += 1 }
     }
+    func stableKey(_ display: UInt32) -> String? { keys[display] }
 }
 
 final class RedScreenGuaranteeTests: XCTestCase {
@@ -80,7 +95,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
     @MainActor func testStopRestoresEveryScreenAndClosesTheGuardian() throws {
         let store = store(try root()), screens = FakeGammaScreens([1, 2])
         let controller = try controller(store, screens); defer { controller.shutdown() }
-        controller.setMode(.on)
+        controller.setManual(true)
         XCTAssertTrue(screens.isRed(1)); XCTAssertTrue(screens.isRed(2))
         XCTAssertEqual(screens.guardians, 1); XCTAssertEqual(recoveryFiles(store).count, 1)
         controller.emergencyOff()
@@ -103,7 +118,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
     @MainActor func testCrashGuardianThenRelaunchComeBackToNormal() throws {
         let store = store(try root()), screens = FakeGammaScreens([1, 2])
         let crashed = try controller(store, screens)
-        crashed.setMode(.on); crashed.saveNow()
+        crashed.setManual(true); crashed.saveNow()
         XCTAssertTrue(screens.isRed(1)); XCTAssertTrue(screens.isRed(2))
         let saved = try XCTUnwrap(recoveryFiles(store).first)
         // The guardian, after the crash.
@@ -112,7 +127,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
 
         // A crash where the guardian died too: red stays on the screens and its file stays.
         let store2 = self.store(try root()), screens2 = FakeGammaScreens([1, 2])
-        let stuck = try controller(store2, screens2); stuck.setMode(.on); stuck.saveNow()
+        let stuck = try controller(store2, screens2); stuck.setManual(true); stuck.saveNow()
         XCTAssertTrue(screens2.isRed(1)); XCTAssertEqual(recoveryFiles(store2).count, 1)
         let relaunched = try controller(store2, screens2) // recoverPending first, then mode .on again
         defer { relaunched.shutdown() }
@@ -125,7 +140,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
     @MainActor func testPluggedScreenTurnsRedAndUnpluggedScreenLeavesTheOthersRed() throws {
         let store = store(try root()), screens = FakeGammaScreens([1])
         let controller = try controller(store, screens); defer { controller.shutdown() }
-        controller.setMode(.on); XCTAssertTrue(screens.isRed(1))
+        controller.setManual(true); XCTAssertTrue(screens.isRed(1))
         screens.plug(2); controller.handleSystemChange()
         XCTAssertTrue(screens.isRed(1)); XCTAssertTrue(screens.isRed(2), "the new screen is red too")
         XCTAssertEqual(controller.displayCount, 2)
@@ -143,7 +158,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
         XCTAssertEqual(screens.gammaCalls, 0, "a controller with red off reads no table")
         screens.plug(2); controller.handleSystemChange(); screens.unplug(1); controller.handleSystemChange()
         XCTAssertEqual(screens.gammaCalls, 0)
-        controller.setMode(.on); controller.emergencyOff(); screens.resetCounters()
+        controller.setManual(true); controller.emergencyOff(); screens.resetCounters()
         screens.plug(3); controller.handleSystemChange(); controller.evaluate()
         XCTAssertEqual(screens.gammaCalls, 0); XCTAssertEqual(screens.guardians, 0)
         XCTAssertTrue(screens.isNormal(2)); XCTAssertTrue(screens.isNormal(3))
@@ -217,7 +232,7 @@ final class RedScreenGuaranteeTests: XCTestCase {
         XCTAssertEqual(runtime.redScreen.intensity, 0.5, accuracy: 0.0001); XCTAssertEqual(menu.slider.value, 0.5, accuracy: 0.0001)
         click(menu.restoreItem)
         XCTAssertTrue(screens.isNormal(1)); XCTAssertTrue(screens.isNormal(2)); XCTAssertEqual(menu.toggleItem.state, .off)
-        click(menu.scheduleItem); XCTAssertEqual(menu.scheduleItem.state, .on); XCTAssertEqual(runtime.controller?.preferences.mode, .auto)
+        click(menu.scheduleItem); XCTAssertEqual(menu.scheduleItem.state, .on); XCTAssertEqual(runtime.controller?.ranges.follows, true)
         click(menu.settingsItem); XCTAssertEqual(opened, 1)
     }
 

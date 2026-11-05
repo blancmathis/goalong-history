@@ -40,9 +40,10 @@ final class BraiseModuleTests: XCTestCase {
     func testNavigationAndDefaultOff() throws {
         XCTAssertFalse(try modules().isEnabled(.braise))
         XCTAssertFalse(DashboardSection.sidebarSections(modules: []).contains(.braise))
-        // T-048 B1: the red screen lives in the menu, not in Modules nor in the sidebar.
+        // T-048 B2: the red screen lives in Garde-fous (the .blocking entry), not in Modules nor as its own entry.
         XCTAssertFalse(DashboardSection.sidebarSections(modules: [.braise]).contains(.braise))
-        XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.braise, .settings])
+        XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.blocking, .settings])
+        XCTAssertEqual(DashboardSection.blocking.title, "Garde-fous")
         XCTAssertFalse(GoalongModule.listed.contains(.braise))
         XCTAssertEqual(GoalongModule.braise.title, "Écran rouge")
     }
@@ -119,9 +120,13 @@ final class BraiseModuleTests: XCTestCase {
         _ = try runtime.handle(GoalongBraiseCLI.parse(["pause"])); XCTAssertFalse(controller.active)
         now = now.addingTimeInterval(15 * 60); controller.evaluate(); XCTAssertTrue(controller.active)
         _ = try runtime.handle(GoalongBraiseCLI.parse(["schedule", "add", "2,3", "21:30", "07:00"]))
-        let id = try XCTUnwrap(controller.preferences.rules.last?.id).uuidString
-        _ = try runtime.handle(GoalongBraiseCLI.parse(["schedule", "disable", id])); XCTAssertFalse(controller.preferences.rules.last!.enabled)
-        _ = try runtime.handle(GoalongBraiseCLI.parse(["schedule", "remove", id])); XCTAssertEqual(controller.preferences.rules.count, 1)
+        let count = controller.ranges.program.ranges.count
+        let added = try XCTUnwrap(controller.ranges.program.ranges.last)
+        XCTAssertEqual(added.weekdays, [1, 2], "Braise days (Monday = 2) become ISO days (Monday = 1)")
+        XCTAssertEqual(added.startMinute, 21 * 60 + 30); XCTAssertEqual(added.endMinute, 7 * 60)
+        let id = added.id.uuidString
+        _ = try runtime.handle(GoalongBraiseCLI.parse(["schedule", "disable", id])); XCTAssertTrue(controller.ranges.disabled.contains(added.id))
+        _ = try runtime.handle(GoalongBraiseCLI.parse(["schedule", "remove", id])); XCTAssertEqual(controller.ranges.program.ranges.count, count - 1)
         var opened = false; runtime.onOpen = { opened = true }
         _ = try runtime.handle(GoalongBraiseCLI.parse(["show"])); XCTAssertTrue(opened)
         controller.emergencyOff(); XCTAssertFalse(controller.active); XCTAssertEqual(controller.preferences.mode, .off)
@@ -142,7 +147,8 @@ final class BraiseModuleTests: XCTestCase {
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
         let controller = try BraiseController(store: store, gamma: gamma, runsTimers: false, clock: { now })
         defer { controller.shutdown() }
-        controller.update { $0.mode = .auto; $0.rules = [ScheduleRule(startMinute: 21 * 60, endMinute: 7 * 60)] }
+        try controller.saveRange(BlockProgramRange(weekdays: Set(1...7), startMinute: 21 * 60, endMinute: 7 * 60, lock: nil), intensity: 1)
+        controller.setFollows(true)
         XCTAssertTrue(controller.active)
         NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
         controller.evaluate()
@@ -153,7 +159,7 @@ final class BraiseModuleTests: XCTestCase {
         let store = BraiseStore(directory: root.appendingPathComponent("Braise"), legacySettings: root.appendingPathComponent("missing"))
         let controller = try BraiseController(store: store, gamma: gamma, runsTimers: false)
         defer { controller.shutdown() }
-        controller.setMode(.on)
+        controller.setManual(true)
         XCTAssertFalse(controller.active); XCTAssertEqual(controller.preferences.mode, .off)
         XCTAssertNotNil(controller.errorMessage)
         XCTAssertEqual(try store.load().mode, .off)

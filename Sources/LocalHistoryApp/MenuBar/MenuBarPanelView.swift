@@ -690,8 +690,17 @@
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
-                if model.redScreen.followsSchedule {
-                    Text("Suit vos horaires").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                HStack(spacing: 6) {
+                    if model.redScreen.followsSchedule {
+                        Text(model.redScreen.isProtected ? "Plage protégée en cours" : "Suit vos horaires")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    }
+                    Spacer(minLength: 0)
+                    // Review B1 point 7: the ranges live in Garde-fous › Écran rouge.
+                    Button("Plages…") { model.openRedScreenSettings() }
+                        .buttonStyle(.link).font(.system(size: 12))
+                        .help("Ouvrir Garde-fous › Écran rouge")
+                        .accessibilityIdentifier("menubar-red-screen-ranges")
                 }
             }
         }

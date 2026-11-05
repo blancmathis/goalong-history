@@ -317,14 +317,23 @@ import LocalHistoryQueryCLI
         if current.program.isLocked(at: clock()), (next.program.lockedUntil ?? .distantPast) < (current.program.lockedUntil ?? .distantPast) {
             return .refused("Le verrou du programme ne peut pas être raccourci.")
         }
-        let oldMinutes = Self.programCoverage(current.program), newMinutes = Self.programCoverage(next.program)
-        if !oldMinutes.isSubset(of: newMinutes) { return .refused(prefix + "le programme peut seulement s’allonger.") }
-        for lock in BlockLock.allCases where lock != .free {
-            let old = Self.programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
-            let new = Self.programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
-            if !old.isSubset(of: new) { return .refused(prefix + "le verrou d’une plage peut seulement monter.") }
+        if let weakening = Self.programWeakening(current.program, next.program, effectiveLock: effectiveLock) {
+            return .refused(prefix + weakening)
         }
         return .allowed
+    }
+
+    /// The program part of « stricter only », shared with the red screen's ranges (T-048 B2): no covered
+    /// minute is lost, and no minute loses its lock strength. Nil = the change only adds or hardens.
+    nonisolated static func programWeakening(_ current: BlockProgram, _ next: BlockProgram,
+                                             effectiveLock: (BlockLock) -> BlockLock) -> String? {
+        if !programCoverage(current).isSubset(of: programCoverage(next)) { return "le programme peut seulement s’allonger." }
+        for lock in BlockLock.allCases where lock != .free {
+            let old = programCoverage(BlockProgram(ranges: current.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            let new = programCoverage(BlockProgram(ranges: next.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            if !old.isSubset(of: new) { return "le verrou d’une plage peut seulement monter." }
+        }
+        return nil
     }
 
     /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
@@ -779,10 +788,21 @@ import LocalHistoryQueryCLI
 
     func typingChallenge(for id: UUID) -> String {
         if let value = challenges[id] { return value }
-        let alphabet = Array("abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789")
-        let value = String((0..<120).map { _ in alphabet.randomElement()! })
+        let value = Self.newTypingChallenge()
         challenges[id] = value
         return value
+    }
+
+    /// 120 letters and digits without look-alikes. Also the red screen's « Difficile » text.
+    nonisolated static func newTypingChallenge() -> String {
+        let alphabet = Array("abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789")
+        return String((0..<120).map { _ in alphabet.randomElement()! })
+    }
+
+    /// The red screen's « Mot de passe » ranges use the blocking password, its attempts and its waits.
+    func verifyRedScreenPassword(_ password: String) -> BlockingPasswordResult {
+        guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
+        return verifyPassword(password)
     }
 
     /// The password lets one break more pass once the day's breaks are used: never under a hard lock or a freeze.
@@ -1449,7 +1469,7 @@ import LocalHistoryQueryCLI
     }
 
     /// Every (weekday, minute-of-week) the program covers, at minute resolution.
-    static func programCoverage(_ program: BlockProgram) -> Set<Int> {
+    nonisolated static func programCoverage(_ program: BlockProgram) -> Set<Int> {
         var minutes = Set<Int>()
         for range in program.ranges {
             for day in range.weekdays {

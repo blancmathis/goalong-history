@@ -4,7 +4,7 @@ import Combine
 
 /// The « Écran rouge » items of Goalong's right-click menu. Standard items stay reachable with the
 /// keyboard and VoiceOver; the slider row adds a live, continuous control for the pointer.
-@MainActor final class RedScreenMenu: NSObject {
+@MainActor final class RedScreenMenu: NSObject, NSMenuItemValidation {
     static let intensitySteps = [0.25, 0.5, 0.75, 1.0]
     private let control: any RedScreenControlling
     private let onOpenSettings: () -> Void
@@ -13,7 +13,7 @@ import Combine
     let intensityItem = NSMenuItem(title: "Intensité", action: nil, keyEquivalent: "")
     let scheduleItem = NSMenuItem(title: "Suivre mes horaires", action: nil, keyEquivalent: "")
     let restoreItem = NSMenuItem(title: "Rétablir les couleurs", action: nil, keyEquivalent: "r")
-    let settingsItem = NSMenuItem(title: "Réglages de l’écran rouge…", action: nil, keyEquivalent: "")
+    let settingsItem = NSMenuItem(title: "Plages et réglages de l’écran rouge…", action: nil, keyEquivalent: "")
     let separator = NSMenuItem.separator()
     let slider: RedScreenMenuSliderView
     private let intensityMenu = NSMenu(title: "Intensité")
@@ -46,12 +46,17 @@ import Combine
         toggleItem.setAccessibilityValueDescription(state.on ? "activé" : "désactivé")
         scheduleItem.state = state.followsSchedule ? .on : .off
         restoreItem.isEnabled = state.on
+        restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par Garde-fous › Écran rouge." : nil
         slider.value = state.intensity
         let percent = Int((state.intensity * 100).rounded())
         for item in intensityMenu.items { item.state = Int(((item.representedObject as? Double ?? 0) * 100).rounded()) == percent ? .on : .off }
     }
     @objc private func toggle() { control.setRedScreen(!control.redScreen.on) }
-    @objc private func followSchedule() { control.followRedScreenSchedule() }
+    @objc private func followSchedule() { control.setRedScreenFollowsSchedule(!control.redScreen.followsSchedule) }
+    /// The menu auto-enables items with a target: « Rétablir les couleurs » is greyed here while red is off.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item === restoreItem ? control.redScreen.on : true
+    }
     @objc private func restore() { control.restoreColors() }
     @objc private func openSettings() { onOpenSettings() }
     @objc private func chooseIntensity(_ sender: NSMenuItem) {
@@ -91,7 +96,12 @@ final class RedScreenMenuSliderView: NSView {
         ])
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    @objc private func changed() { label.stringValue = Self.percent(slider.doubleValue); onChange(slider.doubleValue) }
+    @objc private func changed() {
+        // VoiceOver reads the new value at each step, not the one set at opening.
+        let text = Self.percent(slider.doubleValue)
+        label.stringValue = text; slider.setAccessibilityValueDescription(text); onChange(slider.doubleValue)
+    }
+    var accessibilityValueText: String? { slider.accessibilityValueDescription() }
     /// Test hook: the same path as a drag.
     func simulateDrag(to value: Double) { slider.doubleValue = value; changed() }
     static func percent(_ value: Double) -> String { GoalongUIFormat.percent(value * 100) }

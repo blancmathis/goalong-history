@@ -6,7 +6,7 @@ import XCTest
 final class JevMonitoringUXTests: XCTestCase {
     func testMonitoringIsItsOwnPrimaryDestination() {
         // Jev lives in Réglages › Jev; the old destination still opens it.
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .settings])
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .concentration, .blocking, .settings])
         XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .settings)
         XCTAssertFalse(ConcentrationHubPage.tabs.contains(.monitoring))
         XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Jev")
@@ -55,7 +55,7 @@ final class JevMonitoringUXTests: XCTestCase {
 
     func testMenuAndSidebarReachThePageWithoutTruncatingItsName() throws {
         let root = try source("DashboardRootView.swift")
-        XCTAssertTrue(root.contains("case .concentration, .distractions, .blocking:\n                ConcentrationHubPage(model: model)"))
+        XCTAssertTrue(root.contains("case .concentration, .distractions:\n                ConcentrationHubPage(model: model)"))
         XCTAssertTrue(root.contains("case .settings, .monitoring:\n                SettingsPage(model: model)"))
         XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
