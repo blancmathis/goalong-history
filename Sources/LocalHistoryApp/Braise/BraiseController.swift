@@ -45,6 +45,8 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @Published private(set) var appliedIntensity = 0.0
     /// The command waiting for a stop (text or password) on the page.
     @Published private(set) var pendingStop: RedScreenWeakening?
+    /// Shown next to the sliders when a protected range stopped them at its intensity (« … : 80 % au moins »).
+    @Published private(set) var sliderNotice: String?
     @Published private(set) var displayCount = 0
     @Published private(set) var nextEvent = ""
     @Published private(set) var errorMessage: String?
@@ -59,13 +61,13 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     private let store: BraiseStore
     private let gamma: BraiseGammaDriving
     private let clock: () -> Date
-    private let uptime: () -> TimeInterval
+    /// The clock of the blocks (`BlockingClock`): counts during sleep, ignores wall clock changes.
+    private let continuous: () -> Double
+    private let bootID: () -> String
     private let calendar: Calendar
     private let runsTimers: Bool
     private let passwordAvailable: @MainActor () -> Bool
     private let checkPassword: @MainActor (String) -> BlockingPasswordResult
-    /// Monotonic end of each hold: a forward clock jump does not end a protected range early.
-    private var holdDeadlines: [UUID: TimeInterval] = [:]
     private var running = true
     private var boundaryTimer: Timer?
     private var maintenanceTimer: Timer?
@@ -74,14 +76,14 @@ struct RedScreenRefusal: LocalizedError, Equatable {
 
     init(store: BraiseStore, gamma: BraiseGammaDriving, runsTimers: Bool = true,
          clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
-         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         continuous: @escaping () -> Double = BlockingClock.continuous, boot: @escaping () -> String = BlockingClock.bootID,
          hasPassword: @escaping @MainActor () -> Bool = { BlockingRuntime.shared.controller?.hasPassword ?? false },
          verifyPassword: @escaping @MainActor (String) -> BlockingPasswordResult = {
              BlockingRuntime.shared.controller?.verifyRedScreenPassword($0)
                  ?? .refused(reason: "Les blocages sont arrêtés : aucun mot de passe n’est disponible.")
          }) throws {
         self.store = store; self.gamma = gamma; self.runsTimers = runsTimers
-        self.clock = clock; self.calendar = calendar; self.uptime = uptime
+        self.clock = clock; self.calendar = calendar; self.continuous = continuous; self.bootID = boot
         self.passwordAvailable = hasPassword; self.checkPassword = verifyPassword
         let loaded = try store.loadRecovering()
         preferences = loaded.preferences
@@ -94,7 +96,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             // A technical fault always gives the colors back now, protected ranges included.
             self.preferences.mode = .off; self.preferences.pauseUntil = nil; self.active = false
             for window in self.windows { self.ranges.skips[window.rangeID] = window.end; self.ranges.holds[window.rangeID] = nil }
-            self.holdDeadlines = [:]
+            self.ranges.raise = nil
             self.errorMessage = message; self.saveNow(); self.evaluate()
         }
         gamma.onDisplays = { [weak self] count in self?.displayCount = count }
@@ -176,9 +178,26 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @discardableResult func emergencyOff() -> RedScreenGuardResult { guardWeakening(.emergency) }
     @discardableResult func pause() -> RedScreenGuardResult { guardWeakening(.pause) }
     func resume() { update { $0.pauseUntil = nil } }
-    /// The intensity slider. During a range, below the range's intensity is a weakening; at or above it the manual red takes over.
+    /// The intensity command (CLI). During a range, below the range's intensity is a weakening; at or above it the range is
+    /// strengthened until its end.
     @discardableResult func setIntensity(_ value: Double) -> RedScreenGuardResult {
         guardWeakening(.intensity(min(1, max(0, value.isFinite ? value : 1))))
+    }
+    /// The sliders (menu, panel, page) send one value per notch. During a protected range they never open the page or a
+    /// sheet: they stop at the range's intensity and say so in place; going lower is « Arrêter la plage… » on the page.
+    @discardableResult func slideIntensity(_ value: Double) -> RedScreenGuardResult {
+        guard running else { return .applied }
+        var wanted = min(1, max(0, value.isFinite ? value : 1))
+        refreshWindows(clock())
+        var notice: String?
+        if let strong = protectedWindow, let floor = windows.filter(\.isProtected).map(\.intensity).max(), wanted < floor - 0.0001 {
+            wanted = floor
+            notice = "Plage protégée jusqu’à \(Self.clockText(strong.end)) : \(GoalongUIFormat.percent(floor * 100)) au moins"
+        }
+        if sliderNotice != notice { sliderNotice = notice }
+        // Held at the floor, the value on screen may not change: redraw so the page's thumb goes back to it.
+        if notice != nil { objectWillChange.send() }
+        return guardWeakening(.intensity(wanted))
     }
 
     /// Outside a range: at once. Free ranges only: they stop for today, then the command applies.
@@ -235,7 +254,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     private func skip(_ list: [RedScreenWindow]) {
         for window in list {
             ranges.skips[window.rangeID] = max(window.end, ranges.skips[window.rangeID] ?? window.end)
-            ranges.holds[window.rangeID] = nil; holdDeadlines[window.rangeID] = nil
+            ranges.holds[window.rangeID] = nil
         }
     }
 
@@ -246,9 +265,17 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         case .pause: update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) }
         case .emergency: gamma.restore(); update { $0.mode = .off; $0.pauseUntil = nil }; saveNow()
         case .intensity(let value):
-            // During a range the slider is the red on screen: the manual red carries it.
-            let inRange = !windows.isEmpty
-            update { $0.intensity = value; if inRange { $0.mode = .on; $0.pauseUntil = nil } }
+            // Read after the skips above: a range just stopped is no longer in progress.
+            refreshWindows(clock())
+            if let until = windows.map(\.end).max() {
+                // During a range the slider strengthens the ranges in progress until their end only; the manual red
+                // (switch and its intensity) is left as it was, so nothing stays red after the range.
+                ranges.raise = RedScreenProgram.Raise(intensity: value, until: until); saveRangesNow()
+                if preferences.mode == .on { update { $0.intensity = value } } else { errorMessage = nil; evaluate() }
+            } else {
+                if ranges.raise != nil { ranges.raise = nil; saveRangesNow() }
+                update { $0.intensity = value }
+            }
         }
     }
 
@@ -285,11 +312,12 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         try commitRanges(next)
     }
     /// The refusal text of a change, nil when allowed (the editor shows it before saving).
+    /// Read-only: the editor asks it from its body, where publishing or writing ranges.json is not allowed.
     func refusal(for next: RedScreenProgram) -> String? {
         let now = clock()
-        refreshWindows(now)
-        guard let strong = RedScreenRules.strongest(windows),
-              let reason = RedScreenRules.weakening(from: ranges, to: next, hasPassword: passwordAvailable()) else { return nil }
+        let current = brought(now)
+        guard let strong = RedScreenRules.strongest(current.windows),
+              let reason = RedScreenRules.weakening(from: current.value, to: next, hasPassword: passwordAvailable()) else { return nil }
         return "Plage protégée en cours (\(strong.lock.title.lowercased())) : \(reason) \(Self.lockedText(until: strong.end, now: now))"
     }
     private func commitRanges(_ next: RedScreenProgram) throws {
@@ -301,33 +329,43 @@ struct RedScreenRefusal: LocalizedError, Equatable {
 
     // MARK: Evaluation
 
-    /// Windows in progress, holds kept or pushed after a forward clock jump, stale skips dropped.
-    private func refreshWindows(_ now: Date) {
-        let up = uptime()
-        var changed = false
-        for (id, hold) in ranges.holds where hold.end <= now {
-            if let deadline = holdDeadlines[id], deadline > up {
-                ranges.holds[id]?.end = now.addingTimeInterval(deadline - up)
-            } else { ranges.holds[id] = nil; holdDeadlines[id] = nil }
-            changed = true
+    /// The ranges brought to `now`, without touching any state: each hold ends on the continuous clock of the blocks
+    /// (`BlockingClock`, counts during sleep, ignores clock changes) within its boot, and on the wall clock after a reboot
+    /// (the blocks' rule without a sample of this boot); stale skips and raise dropped; protected windows held.
+    private func brought(_ now: Date) -> (value: RedScreenProgram, windows: [RedScreenWindow]) {
+        let up = continuous(), boot = bootID()
+        var value = ranges
+        for (id, hold) in value.holds {
+            if hold.boot == boot, let deadline = hold.deadline {
+                let remaining = deadline - up
+                if remaining <= 0 { value.holds[id] = nil }
+                // The end shown follows the continuous clock: a clock set forward or back moves it, the time left stays.
+                else if abs(hold.end.timeIntervalSince(now) - remaining) > 1 { value.holds[id]?.end = now.addingTimeInterval(remaining) }
+            } else if hold.end <= now { value.holds[id] = nil }
         }
-        for (id, date) in ranges.skips where date <= now { ranges.skips[id] = nil; changed = true }
-        // Published only when it changes: the editor asks `refusal(for:)` from its body, and an equal value set again
-        // would ask for a new body at once (the editor spun the main thread; gallery watchdog, T-048 B2).
-        let fresh = RedScreenRules.activeWindows(ranges, at: now, calendar: calendar, hasPassword: passwordAvailable())
-        if fresh != windows { windows = fresh }
+        for (id, date) in value.skips where date <= now { value.skips[id] = nil }
+        if let raise = value.raise, raise.until <= now { value.raise = nil }
+        let windows = RedScreenRules.activeWindows(value, at: now, calendar: calendar, hasPassword: passwordAvailable())
         for window in windows where window.isProtected {
-            let held = ranges.holds[window.rangeID]
-            let merged = RedScreenProgram.Hold(end: max(window.end, held?.end ?? window.end),
-                                               lock: [window.lock, held?.lock ?? .free].max { $0.strength < $1.strength }!,
-                                               intensity: max(window.intensity, held?.intensity ?? 0))
-            if held != merged { ranges.holds[window.rangeID] = merged; changed = true }
-            let deadline = up + merged.end.timeIntervalSince(now)
-            if held != merged || holdDeadlines[window.rangeID] == nil {
-                holdDeadlines[window.rangeID] = max(holdDeadlines[window.rangeID] ?? deadline, deadline)
+            let held = value.holds[window.rangeID]
+            var merged = held ?? RedScreenProgram.Hold(end: window.end, lock: window.lock, intensity: window.intensity)
+            merged.lock = [window.lock, merged.lock].max { $0.strength < $1.strength }!
+            merged.intensity = max(window.intensity, merged.intensity)
+            if held?.boot != boot || held?.deadline == nil || window.end > merged.end.addingTimeInterval(1) {
+                merged.end = max(merged.end, window.end)
+                merged.boot = boot; merged.deadline = up + merged.end.timeIntervalSince(now)
             }
+            if held != merged { value.holds[window.rangeID] = merged }
         }
-        if changed { saveRangesNow() }
+        return (value, windows)
+    }
+
+    /// Applies `brought(now)`: ranges.json is written when a hold, skip or raise changed.
+    private func refreshWindows(_ now: Date) {
+        let current = brought(now)
+        if current.value != ranges { ranges = current.value; saveRangesNow() }
+        // Published only when it changes: an equal value set again would ask every view for a new body.
+        if current.windows != windows { windows = current.windows }
     }
 
     var isPaused: Bool { preferences.pauseUntil.map { $0 > clock() } ?? false }
@@ -344,7 +382,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         let manual = preferences.mode == .on && !paused
         // A pause hides the manual red and the free ranges, never a protected range.
         let shown = windows.filter { !paused || $0.isProtected }
-        let rangeIntensity = shown.map(\.intensity).max()
+        var rangeIntensity = shown.map(\.intensity).max()
+        // The slider's raise strengthens the ranges in progress only (point 4 of review B2).
+        if let raise = ranges.raise, raise.until > now, let level = rangeIntensity { rangeIntensity = max(level, raise.intensity) }
+        if protectedWindow == nil, sliderNotice != nil { sliderNotice = nil }
         active = manual || rangeIntensity != nil
         appliedIntensity = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
         gamma.set(active: active, intensity: active ? appliedIntensity : preferences.intensity, brightness: preferences.brightness,

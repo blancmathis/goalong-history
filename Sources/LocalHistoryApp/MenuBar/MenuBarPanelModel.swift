@@ -112,6 +112,8 @@ import LocalHistoryCore
     func setRedScreenIntensity(_ value: Double) {
         guard value.isFinite else { return }
         redScreenControl?.setRedScreenIntensity(value)
+        // A protected range may hold the value (same state, nothing published): redraw so the thumb goes back to it.
+        objectWillChange.send()
     }
     func openRedScreenSettings() { onOpenSection(.braise) }
     private let redScreenControl: (any RedScreenControlling)?

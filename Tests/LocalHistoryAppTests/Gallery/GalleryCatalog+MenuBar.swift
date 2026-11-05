@@ -193,7 +193,7 @@ struct GalleryMenuItems: NSViewRepresentable {
         let stack = NSStackView()
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
-        for item in items {
+        for item in items where !item.isHidden { // as the real menu: a hidden item takes no row
             if item.isSeparatorItem { let line = NSBox(); line.boxType = .separator; stack.addArrangedSubview(line); continue }
             if let view = item.view { item.view = nil; stack.addArrangedSubview(view); continue }
             let mark = item.state == .on ? "✓ " : "   "

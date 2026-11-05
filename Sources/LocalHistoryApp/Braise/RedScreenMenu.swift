@@ -10,6 +10,8 @@ import Combine
     private let onOpenSettings: () -> Void
     let toggleItem = NSMenuItem(title: "Écran rouge", action: nil, keyEquivalent: "")
     let sliderItem = NSMenuItem()
+    /// « Plage protégée jusqu’à 07:00 : 80 % au moins », under the slider while a protected range holds it.
+    let noticeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let intensityItem = NSMenuItem(title: "Intensité", action: nil, keyEquivalent: "")
     let scheduleItem = NSMenuItem(title: "Suivre mes horaires", action: nil, keyEquivalent: "")
     let restoreItem = NSMenuItem(title: "Rétablir les couleurs", action: nil, keyEquivalent: "r")
@@ -19,12 +21,13 @@ import Combine
     private let intensityMenu = NSMenu(title: "Intensité")
     private var watch: AnyCancellable?
 
-    var items: [NSMenuItem] { [toggleItem, sliderItem, intensityItem, scheduleItem, restoreItem, settingsItem] }
+    var items: [NSMenuItem] { [toggleItem, sliderItem, noticeItem, intensityItem, scheduleItem, restoreItem, settingsItem] }
 
     init(control: any RedScreenControlling, onOpenSettings: @escaping () -> Void) {
         self.control = control; self.onOpenSettings = onOpenSettings
-        slider = RedScreenMenuSliderView(onChange: { [weak control] in control?.setRedScreenIntensity($0) })
+        slider = RedScreenMenuSliderView(onChange: { _ in })
         super.init()
+        slider.onChange = { [weak self] in self?.slide($0) }
         for (item, action) in [(toggleItem, #selector(toggle)), (scheduleItem, #selector(followSchedule)),
                                (restoreItem, #selector(restore)), (settingsItem, #selector(openSettings))] {
             item.target = self; item.action = action
@@ -32,6 +35,7 @@ import Combine
         // Same chord as the global shortcut, shown so it can be learned here.
         restoreItem.keyEquivalentModifierMask = [.control, .option, .command]
         sliderItem.view = slider
+        noticeItem.isEnabled = false
         for step in Self.intensitySteps {
             let item = NSMenuItem(title: GoalongUIFormat.percent(step * 100), action: #selector(chooseIntensity(_:)), keyEquivalent: "")
             item.target = self; item.representedObject = step; intensityMenu.addItem(item)
@@ -48,6 +52,7 @@ import Combine
         restoreItem.isEnabled = state.on
         restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par Garde-fous › Écran rouge." : nil
         slider.value = state.intensity
+        noticeItem.title = state.notice ?? ""; noticeItem.isHidden = state.notice == nil
         let percent = Int((state.intensity * 100).rounded())
         for item in intensityMenu.items { item.state = Int(((item.representedObject as? Double ?? 0) * 100).rounded()) == percent ? .on : .off }
     }
@@ -55,8 +60,10 @@ import Combine
     @objc private func followSchedule() { control.setRedScreenFollowsSchedule(!control.redScreen.followsSchedule) }
     /// The menu auto-enables items with a target: « Rétablir les couleurs » is greyed here while red is off.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        item === restoreItem ? control.redScreen.on : true
+        item === noticeItem ? false : item === restoreItem ? control.redScreen.on : true
     }
+    /// A protected range may hold the value where it is (same state, nothing published): the thumb goes back to it.
+    private func slide(_ value: Double) { control.setRedScreenIntensity(value); refresh(control.redScreen) }
     @objc private func restore() { control.restoreColors() }
     @objc private func openSettings() { onOpenSettings() }
     @objc private func chooseIntensity(_ sender: NSMenuItem) {
@@ -68,7 +75,7 @@ import Combine
 final class RedScreenMenuSliderView: NSView {
     private let slider = NSSlider(value: 1, minValue: 0, maxValue: 1, target: nil, action: nil)
     private let label = NSTextField(labelWithString: GoalongUIFormat.percent(100))
-    private let onChange: (Double) -> Void
+    var onChange: (Double) -> Void
     var value: Double {
         get { slider.doubleValue }
         set { slider.doubleValue = newValue; label.stringValue = Self.percent(newValue)

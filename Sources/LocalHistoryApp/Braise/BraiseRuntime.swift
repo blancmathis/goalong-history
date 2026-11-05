@@ -16,6 +16,8 @@ struct RedScreenState: Equatable {
     var followsSchedule = false
     /// A protected range runs: commands that take red away ask for the page.
     var isProtected = false
+    /// A protected range stopped the slider at its intensity: the short text shown next to it.
+    var notice: String?
 }
 
 /// The « Écran rouge » line of Goalong's menu (left-click panel and right-click menu).
@@ -96,7 +98,8 @@ struct RedScreenState: Equatable {
         guard let controller else { return }
         let p = controller.preferences
         let next = RedScreenState(on: controller.active, intensity: controller.active ? controller.appliedIntensity : p.intensity,
-                                  followsSchedule: controller.ranges.follows, isProtected: controller.protectedWindow != nil)
+                                  followsSchedule: controller.ranges.follows, isProtected: controller.protectedWindow != nil,
+                                  notice: controller.sliderNotice)
         if redScreen != next { redScreen = next }
         // Ranges followed or held keep the controller across launches, like a manual red.
         let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty
@@ -112,7 +115,7 @@ struct RedScreenState: Equatable {
     }
     func setRedScreenIntensity(_ value: Double) {
         guard value.isFinite, let controller = ensureController() else { return }
-        controller.setIntensity(value)
+        controller.slideIntensity(value)
     }
     func setRedScreenFollowsSchedule(_ on: Bool) {
         if on { ensureController()?.setFollows(true) } else { controller?.setFollows(false) }

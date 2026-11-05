@@ -139,7 +139,11 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                         Toggle("Suivre mes horaires", isOn: Binding(get: { controller.ranges.follows }, set: { controller.setFollows($0) }))
                             .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("braise-follows")
                         slider("Intensité du rouge", value: Binding(get: { controller.active ? controller.appliedIntensity : controller.preferences.intensity },
-                                                                    set: { controller.setIntensity($0) }), range: 0...1)
+                                                                    set: { controller.slideIntensity($0) }), range: 0...1)
+                        if let notice = controller.sliderNotice {
+                            Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .accessibilityIdentifier("braise-slider-notice")
+                        }
                         slider("Luminosité du filtre", value: Binding(get: { controller.preferences.brightness }, set: { n in controller.update { $0.brightness = n } }), range: 0.2...1)
                         Text("Le rouge manuel et les plages se cumulent : le plus fort l’emporte. La luminosité est un confort : elle ne touche pas aux plages.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)

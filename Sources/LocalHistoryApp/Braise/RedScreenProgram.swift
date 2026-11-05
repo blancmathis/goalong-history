@@ -12,6 +12,16 @@ struct RedScreenProgram: Codable, Equatable {
         var end: Date
         var lock: BlockLock
         var intensity: Double
+        /// `BlockingClock.continuous` seconds at which the hold ends, valid in `boot` only: sleep counts, clock changes
+        /// do not, and a relaunch in the same boot finds it in ranges.json. Nil in files of B2.
+        var deadline: Double?
+        /// `BlockingClock.bootID` of `deadline`.
+        var boot: String?
+    }
+    /// The slider moved above the ranges in progress: their red is this strong until `until` (end of those ranges).
+    struct Raise: Codable, Equatable {
+        var intensity: Double
+        var until: Date
     }
 
     var version = RedScreenProgram.currentVersion
@@ -25,6 +35,7 @@ struct RedScreenProgram: Codable, Equatable {
     /// Window stopped for today (« Arrêter »): range → end of that window.
     var skips: [UUID: Date] = [:]
     var holds: [UUID: Hold] = [:]
+    var raise: Raise?
 
     static let maximumRanges = 32
 
@@ -41,6 +52,7 @@ struct RedScreenProgram: Codable, Equatable {
         intensities = intensities.filter { known.contains($0.key) }.mapValues { $0.isFinite ? min(1, max(0, $0)) : 1 }
         disabled = disabled.intersection(known)
         holds = holds.mapValues { var hold = $0; hold.intensity = hold.intensity.isFinite ? min(1, max(0, hold.intensity)) : 1; return hold }
+        if let level = raise?.intensity { raise?.intensity = level.isFinite ? min(1, max(0, level)) : 1 }
     }
 
     /// One Braise rule → one range with the same meaning. Braise counts weekdays from Sunday = 1 and

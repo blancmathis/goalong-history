@@ -9,6 +9,9 @@ struct GammaTable: Codable, Equatable {
     var red: [Float]
     var green: [Float]
     var blue: [Float]
+    /// Read while red was already on (a screen plugged or back during red, not matched by a stable key): it may hold a
+    /// faint red or a lower brightness that `looksTinted` misses. Never written back: ColorSync restores that screen.
+    var unsure: Bool?
     var isValid: Bool {
         (2...16384).contains(red.count) && red.count == green.count && green.count == blue.count
             && (red + green + blue).allSatisfy { $0.isFinite && (0...1).contains($0) }
@@ -251,10 +254,11 @@ final class GammaController: BraiseGammaDriving {
                     let key = screens.stableKey(id)
                     if let key { keys[id] = key }
                     if let key, let origin = departed.removeValue(forKey: key) {
-                        updated.append(GammaTable(displayID: id, red: origin.red, green: origin.green, blue: origin.blue))
+                        updated.append(GammaTable(displayID: id, red: origin.red, green: origin.green, blue: origin.blue, unsure: origin.unsure))
                         continue
                     }
-                    let table = try screens.read(id)
+                    var table = try screens.read(id)
+                    table.unsure = true
                     // Never take a table read while red is on as an origin: rebuild every origin from ColorSync.
                     if Self.looksTinted(table) { tinted = true }
                     updated.append(table)
@@ -262,6 +266,7 @@ final class GammaController: BraiseGammaDriving {
                 guard !updated.isEmpty else { return }
                 if tinted {
                     screens.restoreSystemColors()
+                    // ColorSync's own tables: true origins, written back as they are.
                     updated = try ids.sorted().map { try screens.read($0) }
                     gains = .neutral
                     guard !updated.contains(where: Self.looksTinted) else { fail(); return }
@@ -285,10 +290,7 @@ final class GammaController: BraiseGammaDriving {
     private func fail() { restore(); onError?(GammaError.rejected.localizedDescription) }
     func restore() {
         animation?.invalidate(); animation = nil
-        if !originals.isEmpty {
-            let restored = originals.map { screens.write($0) }.allSatisfy { $0 }
-            if !restored { screens.restoreSystemColors() }
-        }
+        if !originals.isEmpty { Self.writeBack(originals, screens: screens) }
         originals = []; departed = [:]; keys = [:]; gains = .neutral; target = .neutral; wantedActive = false
         disarm()
     }
@@ -305,9 +307,15 @@ final class GammaController: BraiseGammaDriving {
         guard let data = try? BraiseStore.read(url, maximumBytes: 8 * 1024 * 1024),
               let tables = try? JSONDecoder().decode([GammaTable].self,from:data),
               !tables.isEmpty, tables.count <= 32, tables.allSatisfy({ $0.isValid }) else { return }
-        let results = tables.map { screens.write($0) }
-        if results.contains(false) { screens.restoreSystemColors() }
+        writeBack(tables, screens: screens)
         try? FileManager.default.removeItem(at:url)
+    }
+    /// The origins back on screen. A screen whose origin is unsure gets ColorSync's tables (first, as it resets every
+    /// screen); the sure origins are written over them. ColorSync again if a write fails.
+    static func writeBack(_ tables: [GammaTable], screens: GammaDisplayDriving) {
+        let sure = tables.filter { $0.unsure != true }
+        if sure.count < tables.count { screens.restoreSystemColors() }
+        if !sure.map({ screens.write($0) }).allSatisfy({ $0 }) { screens.restoreSystemColors() }
     }
     static func recoverPending(in directory: URL, screens: GammaDisplayDriving) {
         guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }

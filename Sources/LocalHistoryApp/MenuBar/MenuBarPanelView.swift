@@ -690,6 +690,10 @@
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
+                if let notice = model.redScreen.notice {
+                    Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 6) {
                     if model.redScreen.followsSchedule {
                         Text(model.redScreen.isProtected ? "Plage protégée en cours" : "Suit vos horaires")
