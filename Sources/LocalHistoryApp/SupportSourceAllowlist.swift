@@ -24,6 +24,7 @@ enum SupportSourceAllowlist {
         "AnalysisEvidenceCapsuleStore.swift",
         "AnalysisProofStore.swift",
         "AppAttestManager.swift",
+        "AppBackupArchiver.swift",
         "AppDelegate.swift",
         "AppPaths.swift",
         "AppleScreenTimeDashboardModel.swift",
