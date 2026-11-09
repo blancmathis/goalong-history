@@ -215,6 +215,7 @@ enum SupportSourceAllowlist {
         "MenuBarController.swift",
         "MenuBarHelperHost.swift",
         "MenuBarItemVisibility.swift",
+        "MenuBarPanelDismissal.swift",
         "MenuBarPanelModel.swift",
         "MenuBarPanelView.swift",
         "MinuteSealer.swift",
