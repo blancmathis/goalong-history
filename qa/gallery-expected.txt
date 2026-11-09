@@ -2748,3 +2748,6 @@ surveillance/a-configurer--   # T-048 B2 : entrée « Garde-fous » ajoutée à 
 temps-ecran/vide--   # T-048 B2 : entrée « Garde-fous » ajoutée à la barre latérale (avant Réglages)
 terminal/aide--   # T-048 B2 : entrée « Garde-fous » ajoutée à la barre latérale (avant Réglages)
 terminal/installe--   # T-048 B2 : entrée « Garde-fous » ajoutée à la barre latérale (avant Réglages)
+braise/page--   # T-048 D2 : section « Verrou de luminosité » (aucun écran pilotable dans la galerie)
+braise/editeur-de-regle--   # T-048 D2 : option « Verrouiller aussi la luminosité » dans l'éditeur de plage
+braise/verrou-luminosite--   # T-048 D2 : nouvel état, verrou protégé « Difficile », écran externe non pilotable
