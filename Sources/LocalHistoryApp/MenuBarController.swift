@@ -18,6 +18,8 @@
         /// (a click in another process), and the relayed click then arrives: it must not reopen the panel.
         private var panelClosedAt: TimeInterval?
         static let reopenGuard: TimeInterval = 0.3
+        /// T-048 D1: outside click and Esc close the panel even though Goalong was not active.
+        @MainActor private lazy var panelDismissal = MenuBarPanelDismissal { [weak self] in self?.closePanel() }
         private let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
 
         private let state: CaptureState
@@ -151,6 +153,7 @@
                 panelTimer?.invalidate(); panelTimer = nil
                 panelModel?.stopRefreshing()
                 relayAnchor?.orderOut(nil)
+                panelDismissal.end()
                 panelClosedAt = ProcessInfo.processInfo.systemUptime
             }
         }
@@ -194,7 +197,6 @@
         @MainActor func showFromHelper(menu: Bool, frame: CGRect) {
             guard !frame.isEmpty else { return }
             if menu || panelModel == nil { showClassicMenu(helperFrame: frame); return }
-            if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
             togglePanel(relativeTo: relayAnchorView(at: frame))
         }
 
@@ -240,6 +242,8 @@
                 return
             }
             if popover.isShown { closePanel(); return }
+            // The click that just closed the panel (outside-click watch or transient popover) is not a reopen.
+            if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
             model.refresh()
             if let host = popover.contentViewController as? NSHostingController<MenuBarPanelView> {
                 // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
@@ -249,7 +253,9 @@
                     popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(ideal.height))
                 }
             }
+            panelDismissal.begin()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.popover.isShown else { return }

@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — le panneau de la barre des menus se ferme comme attendu
+
+- **Le panneau ouvert depuis l’icône de Goalong se ferme d’un clic ailleurs** (autre app, bureau, autre icône de la barre des menus) et avec Échap, comme un menu. Depuis 0.6.178 (icône portée par l’app d’aide), seul un second clic sur l’icône le fermait. Goalong passe au premier plan à l’ouverture du panneau, qui reçoit donc le clavier ; Échap rend la main à l’app d’avant.
+
 ## À publier — galerie des écrans
 
 - **Développement (sans effet pour les membres) : `make gallery`.** Une commande rend chaque écran de Goalong, dans ses principaux états, en clair, en sombre et en contraste renforcé pour les écrans clés, en images PNG (301 images aujourd’hui, environ 75 s), avec une page `index.html` (filtres, clair et sombre côte à côte, base, actuel et diff avec curseur). Les pages avec données lisent une journée et 28 jours fictifs écrits avec les formats de Goalong. Le rendu n’ouvre aucune fenêtre visible, ne prend pas le focus, ne lance pas Goalong, n’utilise ni le réseau, ni les vraies données ou préférences, ni les vraies autorisations, et fige la date au vendredi 23 octobre 2026, 09:41. Deux rendus du même commit donnent les mêmes pixels. `make gallery-diff` liste les images changées (pourcentage, zone) contre la base de la même version de macOS et de Xcode, `make gallery-accept` met à jour cette base (refusée si l’arbre n’est pas propre ou si une image n’est pas correcte), `make gallery-clean` supprime les rendus locaux. Chaque rendu signale aussi les images identiques entre états différents. `make test` rend quatre écrans clés et vérifie les gardes de la galerie (réseau, processus, vrai dossier personnel).

@@ -19,10 +19,12 @@ final class MenuBarHelper: NSObject {
     private var timers: [Timer] = []
     private let launch: MenuBarRelay.Launch
     private let hostID: String
+    private let host: NSRunningApplication
 
-    init(launch: MenuBarRelay.Launch, hostID: String) {
+    init(launch: MenuBarRelay.Launch, hostID: String, host: NSRunningApplication) {
         self.launch = launch
         self.hostID = hostID
+        self.host = host
     }
 
     func start() {
@@ -100,6 +102,8 @@ final class MenuBarHelper: NSObject {
     @objc private func clicked() {
         let event = NSApplication.shared.currentEvent
         let menu = event?.type == .rightMouseUp || event?.modifierFlags.contains(.option) == true
+        // T-048 D1: the click is ours; let Goalong take the focus for its panel (keyboard, Esc, outside click).
+        if #available(macOS 14.0, *) { NSApplication.shared.yieldActivation(to: host) }
         send(.click(menu: menu, frame: item?.button?.window?.frame ?? .zero))
     }
 
@@ -129,7 +133,7 @@ let hostExit = DispatchSource.makeProcessSource(identifier: launch.hostPID, even
 hostExit.setEventHandler { exit(0) }
 hostExit.activate()
 if host.isTerminated { exit(0) }
-let helper = MenuBarHelper(launch: launch, hostID: hostID)
+let helper = MenuBarHelper(launch: launch, hostID: hostID, host: host)
 helper.start()
 app.run()
 #endif
