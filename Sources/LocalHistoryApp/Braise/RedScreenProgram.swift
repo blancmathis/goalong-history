@@ -17,6 +17,8 @@ struct RedScreenProgram: Codable, Equatable {
         var deadline: Double?
         /// `BlockingClock.bootID` of `deadline`.
         var boot: String?
+        /// Hardware brightness the range holds (T-048 D2), nil = none. Absent in older files.
+        var brightness: Double? = nil
     }
     /// The slider moved above the ranges in progress: their red is this strong until `until` (end of those ranges).
     struct Raise: Codable, Equatable {
@@ -36,10 +38,15 @@ struct RedScreenProgram: Codable, Equatable {
     var skips: [UUID: Date] = [:]
     var holds: [UUID: Hold] = [:]
     var raise: Raise?
+    /// Hardware brightness of each range (« Verrou de luminosité », T-048 D2), 0.05…1. Absent = the range leaves it.
+    var brightness: [UUID: Double]?
+    /// The manual brightness lock, nil = off (T-048 D2).
+    var brightnessLock: BrightnessLockState?
 
     static let maximumRanges = 32
 
     func intensity(of id: UUID) -> Double { intensities[id] ?? 1 }
+    func brightness(of id: UUID) -> Double? { brightness?[id] }
     /// The ranges that can turn red on.
     var enabledProgram: BlockProgram {
         BlockProgram(ranges: program.ranges.filter { !disabled.contains($0.id) }, lockedUntil: program.lockedUntil)
@@ -53,6 +60,10 @@ struct RedScreenProgram: Codable, Equatable {
         disabled = disabled.intersection(known)
         holds = holds.mapValues { var hold = $0; hold.intensity = hold.intensity.isFinite ? min(1, max(0, hold.intensity)) : 1; return hold }
         if let level = raise?.intensity { raise?.intensity = level.isFinite ? min(1, max(0, level)) : 1 }
+        let levels = (brightness ?? [:]).filter { known.contains($0.key) }.mapValues(BrightnessLockRules.clamp)
+        brightness = levels.isEmpty ? nil : levels
+        holds = holds.mapValues { var hold = $0; hold.brightness = hold.brightness.map(BrightnessLockRules.clamp); return hold }
+        if let level = brightnessLock?.level { brightnessLock?.level = BrightnessLockRules.clamp(level) }
     }
 
     /// One Braise rule → one range with the same meaning. Braise counts weekdays from Sunday = 1 and
@@ -94,6 +105,8 @@ struct RedScreenWindow: Equatable {
     var end: Date
     var lock: BlockLock
     var intensity: Double
+    /// Hardware brightness the window holds (T-048 D2), nil = none.
+    var brightness: Double? = nil
     var isProtected: Bool { lock != .free }
 }
 
@@ -117,7 +130,7 @@ enum RedScreenRules {
             if let skip = value.skips[window.rangeID], skip > now { continue }
             let lock = effectiveLock(ranges[window.rangeID]?.effectiveLock ?? .free, hasPassword: hasPassword)
             let candidate = RedScreenWindow(rangeID: window.rangeID, start: window.start, end: window.end, lock: lock,
-                                            intensity: value.intensity(of: window.rangeID))
+                                            intensity: value.intensity(of: window.rangeID), brightness: value.brightness(of: window.rangeID))
             if let existing = result[window.rangeID], existing.end >= candidate.end { continue }
             result[window.rangeID] = candidate
         }
@@ -126,7 +139,8 @@ enum RedScreenRules {
             if let existing = result[id], existing.end >= hold.end, existing.lock.strength >= hold.lock.strength { continue }
             let lock = effectiveLock(hold.lock, hasPassword: hasPassword)
             result[id] = RedScreenWindow(rangeID: id, start: result[id]?.start ?? now, end: max(hold.end, result[id]?.end ?? hold.end),
-                                         lock: lock, intensity: max(hold.intensity, result[id]?.intensity ?? 0))
+                                         lock: lock, intensity: max(hold.intensity, result[id]?.intensity ?? 0),
+                                         brightness: [hold.brightness, result[id]?.brightness].compactMap { $0 }.min())
         }
         return result.values.sorted { ($0.end, $0.rangeID.uuidString) < ($1.end, $1.rangeID.uuidString) }
     }
@@ -159,6 +173,13 @@ enum RedScreenRules {
             let before = BlockingController.programCoverage(BlockProgram(ranges: old.ranges.filter { current.intensity(of: $0.id) >= level }))
             let after = BlockingController.programCoverage(BlockProgram(ranges: new.ranges.filter { next.intensity(of: $0.id) >= level }))
             if !before.isSubset(of: after) { return "l’intensité d’une plage peut seulement monter." }
+        }
+        // Brightness (T-048 D2): darker is stricter. Every minute held at or below a level keeps that cover.
+        for level in Set(old.ranges.compactMap { current.brightness(of: $0.id) }).sorted() {
+            let before = BlockingController.programCoverage(BlockProgram(ranges: old.ranges.filter { (current.brightness(of: $0.id) ?? 2) <= level }))
+            let after = BlockingController.programCoverage(BlockProgram(ranges: new.ranges.filter {
+                (next.brightness(of: $0.id) ?? 2) <= level + BrightnessLockRules.tolerance }))
+            if !before.isSubset(of: after) { return "la luminosité d’une plage peut seulement baisser." }
         }
         return nil
     }

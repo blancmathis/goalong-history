@@ -180,6 +180,14 @@ extension GalleryCatalog {
                 }
             }),
             panel("braise/page", width: 900, height: 1_050) { ctx in AnyView(BraisePageContent(controller: try braise(ctx))) },
+            // T-048 D2: brightness lock on, protected « Difficile » until 17:00; the built-in screen is held, an external one is not.
+            panel("braise/verrou-luminosite", width: 900, height: 1_250) { ctx in
+                let screens = FakeBrightness(screens: [BrightnessDisplay(id: 1, builtIn: true, controllable: true),
+                                                       BrightnessDisplay(id: 7, builtIn: false, controllable: false)], level: 0.4)
+                let controller = try braise(ctx, brightness: screens)
+                try controller.setBrightnessLock(BrightnessLockState(level: 0.4, lock: .typing, end: GalleryClock.at(17, 0)))
+                return AnyView(BraisePageContent(controller: controller))
+            },
             panel("braise/echec-demarrage", width: 900, height: 420) { _ in
                 AnyView(BraiseUnavailableView(error: "L’écran rouge n’a pas pu démarrer. Aucun filtre n’a été appliqué.",
                                               onRetry: {}, onTurnOn: {}, onPrepare: {}))
@@ -193,11 +201,11 @@ extension GalleryCatalog {
         ]
     }
 
-    @MainActor static func braise(_ ctx: GalleryContext) throws -> BraiseController {
-        let root = AppPaths.applicationSupportDirectory.appendingPathComponent("gallery-braise", isDirectory: true)
+    @MainActor static func braise(_ ctx: GalleryContext, brightness: DisplayBrightnessDriving = NoDisplayBrightness()) throws -> BraiseController {
+        let root = AppPaths.applicationSupportDirectory.appendingPathComponent(brightness is NoDisplayBrightness ? "gallery-braise" : "gallery-braise-brightness", isDirectory: true)
         let store = BraiseStore(directory: root, legacySettings: root.appendingPathComponent("missing"))
         let controller = try BraiseController(store: store, gamma: BraiseTestGamma(), runsTimers: false,
-                                             clock: { GalleryClock.at(15, 10) })
+                                             clock: { GalleryClock.at(15, 10) }, brightness: brightness)
         controller.setManual(true)
         try controller.saveRange(BlockProgramRange(weekdays: Set(1...5), startMinute: 21 * 60, endMinute: 7 * 60, lock: nil), intensity: 0.8)
         ctx.keep(controller)

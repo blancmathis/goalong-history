@@ -39,7 +39,8 @@ Code : `RedScreenProgram.swift` (modèle et règles pures), `BraiseController.sw
 - Une plage en cours est **tenue jusqu’à sa fin** sur une échéance monotone : avancer
   l’horloge, changer de fuseau ou modifier le fichier ne l’abrège pas. Au changement
   d’heure, la fin prend la seconde occurrence de l’heure répétée.
-- La **luminosité** est un confort : jamais verrouillée.
+- La **luminosité logicielle** du filtre est un confort : jamais verrouillée. La luminosité
+  matérielle se verrouille à part, avec le verrou de luminosité ci-dessous.
 - Une **panne technique** (écran incompatible, gamma refusé, gardien perdu) rend les
   couleurs tout de suite, même pendant une plage verrouillée.
 - 32 plages au maximum. Une plage qui passe minuit compte pour le jour où elle commence.
@@ -50,6 +51,33 @@ ISO 7), fin 00:00 → 24:00, horaire désactivé ou invalide gardé comme plage 
 intensité reprise, mode Auto → « Suivre mes horaires ». `settings.json` n’est pas modifié :
 une version plus ancienne de Goalong retrouve ses horaires. Un `ranges.json` abîmé est mis
 de côté puis reconstruit depuis `settings.json`. Tests : `RedScreenRangesTests`.
+
+## Verrou de luminosité (T-048 D2)
+
+Page Écran rouge, section **Verrou de luminosité**. Mathis choisit un niveau de luminosité
+matérielle (5–100 %). Tant que le verrou est allumé, tout changement (touches F1/F2, Centre
+de contrôle, Réglages, luminosité automatique) est ramené au niveau en 100 ms environ.
+Code : `BrightnessLock.swift` (état, règles pures, pilote, `BrightnessEnforcer`),
+`BraiseController` (« Brightness lock »). Tests : `BrightnessLockTests` (faux pilote).
+
+- **Pilote** : macOS n’a pas d’API publique. `DisplayServices.framework` (privé) est ouvert
+  par `dlopen` ; un framework ou un symbole absent rend le verrou indisponible (la page le
+  dit, l’interrupteur est grisé). Le pilote est inerte sous XCTest : aucun test ne touche la
+  vraie luminosité. Les écrans que DisplayServices ne règle pas (écrans externes, en
+  général) sont listés « ne peut pas être réglé par Goalong » et laissés tels quels.
+- **Protection** : le verrou peut être protégé jusqu’à une heure (24 h au plus) avec la
+  règle d’arrêt d’une plage (Difficile, Mot de passe, Verrouillé ; sans mot de passe =
+  Verrouillé). Pendant la protection, baisser le niveau ou renforcer agit tout de suite ;
+  éteindre, monter le niveau ou affaiblir la protection suit la règle d’arrêt. La fin suit
+  l’horloge continue des plages (avancer l’horloge ne l’abrège pas). À la fin, le verrou reste
+  allumé, « Libre ». La protection arme le gardien et « Quitter » comme une plage protégée
+  (`guardUntil`, `guardLock`).
+- **Plages** : une plage peut aussi tenir une luminosité (« Verrouiller aussi la
+  luminosité »). Le niveau à l’écran est le plus sombre du verrou et des plages en cours.
+  Pendant une plage protégée, la luminosité d’une plage peut seulement baisser.
+- Éteindre le verrou ne remet pas l’ancienne luminosité : l’écran reste au niveau verrouillé.
+- Stockage : `Braise/ranges.json` (`brightnessLock`, `brightness` par plage ; champs
+  optionnels, un ancien fichier se lit toujours).
 
 Écrans : l’origine gamma de chaque écran est gardée par clé stable (fabricant, modèle,
 numéro de série). Un écran rebranché pendant le rouge retrouve sa vraie origine. Sans clé,
@@ -144,8 +172,8 @@ contrôleur. `probe` renvoie `[]` tant que le contrôleur n’existe pas. `login
 ## Frontières et vérification
 
 Aucune sortie réseau, nouvelle permission, capture d’écran, texte de clavier, événement
-d’entrée global enregistré, overlay, composant privilégié ni changement de luminosité
-matérielle. Le raccourci utilise Carbon `RegisterEventHotKey`, pas un event tap.
+d’entrée global enregistré, overlay ni composant privilégié. La luminosité matérielle ne change que par le verrou de
+luminosité (DisplayServices, allumé par Mathis). Le raccourci utilise Carbon `RegisterEventHotKey`, pas un event tap.
 Le gamma et le lancement du gardien sont limités au seul pilote audité ; les inventaires
 de sécurité et l’allowlist des sources de diagnostic incluent Braise.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## À publier — verrou de luminosité
+
+- **Garde-fous › Écran rouge : verrou de luminosité.** Choisissez une luminosité d’écran : tant que le verrou est allumé, les touches de luminosité, le Centre de contrôle et Réglages sont ramenés à ce niveau en une fraction de seconde. Le verrou peut être protégé jusqu’à une heure (Difficile, Mot de passe ou Verrouillé, comme une plage) : l’éteindre ou monter le niveau demande alors le texte ou le mot de passe, ou attend la fin. Une plage d’écran rouge peut aussi tenir une luminosité. Seuls les écrans que macOS laisse régler (en général l’écran intégré) sont tenus ; la page dit quels écrans ne peuvent pas l’être.
+
 ## À publier — le panneau de la barre des menus se ferme comme attendu
 
 - **Le panneau ouvert depuis l’icône de Goalong se ferme d’un clic ailleurs** (autre app, bureau, autre icône de la barre des menus) et avec Échap, comme un menu. Depuis 0.6.178 (icône portée par l’app d’aide), seul un second clic sur l’icône le fermait. Goalong passe au premier plan à l’ouverture du panneau, qui reçoit donc le clavier ; Échap rend la main à l’app d’avant.
