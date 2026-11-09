@@ -180,6 +180,20 @@ if [[ -f "$BRAISE_GAMMA" ]]; then
   fi
 fi
 
+# The brightness lock (T-048 D2) is the only private-framework load: DisplayServices, read-only path, in one file.
+BRIGHTNESS_DRIVER="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BrightnessLock.swift"
+while IFS= read -r match; do
+  file="${match%%:*}"
+  if [[ "$file" != "$BRIGHTNESS_DRIVER" ]]; then
+    echo "dlopen or DisplayServices outside the reviewed brightness driver: $match" >&2
+    failed=true
+  fi
+done < <(grep -R -nE '(^|[^[:alnum:]_])dlopen[[:space:]]*\(|DisplayServices\.framework|"DisplayServices[A-Z]' "${CODE_ROOTS[@]}" || true)
+if [[ -f "$BRIGHTNESS_DRIVER" ]] && ! grep -Fq 'static let path = "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"' "$BRIGHTNESS_DRIVER"; then
+  echo "Brightness driver must load only the fixed DisplayServices path." >&2
+  failed=true
+fi
+
 # User-confirmed recovery may only DELETE one Goalong approval. No grant, shell,
 # arbitrary executable, environment inheritance, database mutation, or reset All.
 PERMISSION_REPAIR="$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift"
@@ -940,4 +954,4 @@ if [[ "$failed" == true ]]; then
   exit 1
 fi
 
-echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher, confirmed single-service Goalong permission reset and same-executable Braise restoration guardian; public gamma APIs are confined to the Braise driver; output-only Ambiance audio is confined to one file with microphone APIs and rights prohibited everywhere; first-party networking is confined to confirmed website pairing, reviewed sends, separately consented bounded Jev classification and explicit pinned Ambiance pack downloads; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."
+echo "Privacy-boundary audit passed: sensitive capture APIs remain prohibited; Apple Screen Time and Agent Activity sources remain direct-read and read-only; the CLI cannot bypass Goalong consent; Agent Activity persists only bounded metadata; Process execution is confined to the fixed Codex bridge, bundled one-shot self-relauncher, confirmed single-service Goalong permission reset and same-executable Braise restoration guardian; public gamma APIs are confined to the Braise driver; private DisplayServices brightness is confined to the brightness-lock driver; output-only Ambiance audio is confined to one file with microphone APIs and rights prohibited everywhere; first-party networking is confined to confirmed website pairing, reviewed sends, separately consented bounded Jev classification and explicit pinned Ambiance pack downloads; retired uploaders remain absent; the only remote Swift dependency is exact-pinned Sparkle for signed, user-approved updates."

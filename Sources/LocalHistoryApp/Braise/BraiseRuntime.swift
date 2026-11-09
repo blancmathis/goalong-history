@@ -60,7 +60,7 @@ struct RedScreenState: Equatable {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let store = BraiseStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Braise", isDirectory: true),
                                legacySettings: support.appendingPathComponent("Braise/settings.json"))
-        return try BraiseController(store: store, gamma: GammaController(directory: store.directory))
+        return try BraiseController(store: store, gamma: GammaController(directory: store.directory), brightness: DisplayServicesBrightness())
     }) {
         self.factory = factory; self.registersShortcut = registersShortcut; self.diagnostics = diagnostics; self.defaults = defaults
         let stored = defaults.object(forKey: Self.intensityKey) as? Double
@@ -75,7 +75,7 @@ struct RedScreenState: Equatable {
         reportGuard()
     }
     private func reportGuard() {
-        let until = controller?.guardUntil, lock = controller?.protectedWindow?.lock ?? .free
+        let until = controller?.guardUntil, lock = controller?.guardLock ?? .free
         guard reportedGuard != .until(until, lock: lock) else { return }
         reportedGuard = .until(until, lock: lock); guardSink?(until, lock)
     }
@@ -112,8 +112,8 @@ struct RedScreenState: Equatable {
                                   followsSchedule: controller.ranges.follows, isProtected: controller.protectedWindow != nil,
                                   notice: controller.sliderNotice)
         if redScreen != next { redScreen = next }
-        // Ranges followed or held keep the controller across launches, like a manual red.
-        let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty
+        // Ranges followed or held, and a brightness lock, keep the controller across launches, like a manual red.
+        let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty || controller.ranges.brightnessLock != nil
         if defaults.object(forKey: Self.armedKey) as? Bool != armed { defaults.set(armed, forKey: Self.armedKey) }
         if defaults.object(forKey: Self.intensityKey) as? Double != p.intensity { defaults.set(p.intensity, forKey: Self.intensityKey) }
         reportGuard()
