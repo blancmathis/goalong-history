@@ -10,60 +10,69 @@ permissions:
   contents: read
 
 jobs:
-  build-test-package:
+  # Two macOS jobs run side by side: debug build + tests, and release bundle + package.
+  # `build-test-package` (the required check, and the gate-receipt job read by
+  # scripts/local_deploy_policy.py) passes only when both passed on the same commit.
+  quality-tests:
     runs-on: macos-15
     timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Record the checked-out commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Environment
         run: |
           sw_vers
           xcrun swift --version
 
-      - name: Validate scripts
+      - name: SwiftPM cache key
+        id: spm-key
         run: |
-          bash -n Install.command Uninstall.command install.sh uninstall.sh
-          find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-          python3 -m py_compile \
-            scripts/check_computer_history_answer.py \
-            scripts/check_computer_history_memory.py \
-            scripts/generate_security_artifacts.py \
-            scripts/probe_computer_history_parity.py \
-            scripts/verify_security_capabilities.py \
-            scripts/test_probe_computer_history_parity.py \
-            scripts/local_auto_deploy.py \
-            scripts/install_local_auto_deploy.py \
-            scripts/local_deploy_policy.py \
-            scripts/authenticated_release_state.py \
-            scripts/deferred_release_deltas.py \
-            scripts/verify_cli_plist.py
-          bash scripts/test_check_computer_history_memory.sh
-          bash scripts/test_probe_computer_history_parity.sh
-          bash scripts/test_public_install_safety.sh
-          bash scripts/test_install_from_source_safety.sh
-          bash scripts/test_install_cli_link.sh
-          bash scripts/test_uninstall_and_quit.sh
-          bash scripts/test_release_signing_policy.sh
-          bash scripts/test_verify_published_update_feed.sh
-          bash scripts/test_build_number_policy.sh
-          bash scripts/test_local_try.sh
-          xcrun swiftc -typecheck scripts/verify_update_archive.swift
-          python3 scripts/test_update_policy.py
-          python3 scripts/test_permission_requirement_policy.py
-          python3 scripts/test_release_publication_policy.py
-          python3 scripts/test_deferred_release_deltas.py
-          python3 scripts/test_background_continuity.py
-          python3 scripts/test_prepare_presigned_release.py
-          python3 scripts/test_site_submission_policy.py
-          bash scripts/test_validate_computer_history_upgrade_safety.sh
-          bash scripts/validate_computer_history_parity.sh --help >/dev/null
+          # The toolchain and the OS image are part of the key: a restored .build never
+          # crosses compilers. Sources are not part of the key on purpose: SwiftPM rebuilds
+          # what changed, and the most recent cache of this branch (or of main) is reused.
+          toolchain="$( { sw_vers; xcrun swift --version; xcode-select -p; } 2>&1 | shasum -a 256 | cut -c1-16)"
+          echo "prefix=spm-debug-v1-${{ runner.os }}-${{ runner.arch }}-${ImageVersion:-none}-$toolchain-${{ hashFiles('Package.resolved', 'Package.swift') }}-" >> "$GITHUB_OUTPUT"
 
-      - name: Cryptographic update verification
-        run: bash scripts/test_update_verification.sh
+      - name: Restore SwiftPM build cache
+        id: spm-cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: .build
+          key: ${{ steps.spm-key.outputs.prefix }}${{ github.sha }}
+          restore-keys: ${{ steps.spm-key.outputs.prefix }}
 
-      - name: Privacy-boundary and dependency audit
-        run: ./scripts/audit_privacy_boundaries.sh
+      - name: Build tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/swift-build.log"
+          set +e
+          xcrun swift build --build-tests 2>&1 | tee "$LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ $STATUS -ne 0 ]]; then
+            if grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$LOG"; then
+              echo "SWIFT_TEST_FLAGS=-Xswiftc -DLOCALHISTORY_NO_APP_ATTEST" >> "$GITHUB_ENV"
+              xcrun swift build --build-tests -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST 2>&1 | tee "$LOG"
+              STATUS=${PIPESTATUS[0]}
+            fi
+            [[ $STATUS -eq 0 ]] || exit "$STATUS"
+          fi
+
+      - name: Save SwiftPM build cache
+        # Pull requests only read the cache: main (and manual runs) write it, so PR runs
+        # do not churn the 10 GB repository cache.
+        if: github.event_name != 'pull_request' && steps.spm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: .build
+          key: ${{ steps.spm-key.outputs.prefix }}${{ github.sha }}
 
       - name: Tests
         shell: bash
@@ -74,17 +83,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$GOALONG_TEST_HOME"
           LOG="$RUNNER_TEMP/swift-test.log"
-          set +e
-          xcrun swift test 2>&1 | tee "$LOG"
-          STATUS=${PIPESTATUS[0]}
-          set -e
-          if [[ $STATUS -ne 0 ]]; then
-            if grep -Eq "AppAttestManager\.swift:[0-9]+:[0-9]+: (error|fatal error):|error: no such module 'DeviceCheck'|error: cannot find 'DCAppAttestService'" "$LOG"; then
-              xcrun swift test -Xswiftc -DLOCALHISTORY_NO_APP_ATTEST 2>&1 | tee "$LOG"
-              STATUS=${PIPESTATUS[0]}
-            fi
-            [[ $STATUS -eq 0 ]] || exit "$STATUS"
-          fi
+          # Same build as the step above (with its App Attest fallback flag, if it was needed).
+          # shellcheck disable=SC2086
+          xcrun swift test --skip-build ${SWIFT_TEST_FLAGS:-} 2>&1 | tee "$LOG"
           # Skipped-test report (also in the job summary). Report only on CI: the hosted runner
           # can skip host-dependent tests (display, WindowServer, Keychain) that this Mac does not.
           # `make test` on the owner's Mac is strict.
@@ -99,12 +100,6 @@ jobs:
 
       - name: Isolated-HOME recording and navigation tests
         run: ./scripts/test_isolated_home.sh --skip-build
-
-      - name: Goalong Dev control tests (no build, no launch)
-        run: bash scripts/test_dev_app.sh
-
-      - name: Release and Goalong Dev identity refusals (skips without the signing key)
-        run: bash scripts/test_stable_release_identity.sh
 
       - name: Exercise full-row disclosure interactions
         timeout-minutes: 2
@@ -172,6 +167,74 @@ jobs:
           done
           TZ=Europe/Paris xcrun swift test --skip-build --filter C044R11C2EdgeTests
 
+
+  quality-package:
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Record the checked-out commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Environment
+        run: |
+          sw_vers
+          xcrun swift --version
+
+      - name: Validate scripts
+        run: |
+          bash -n Install.command Uninstall.command install.sh uninstall.sh
+          find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          python3 -m py_compile \
+            scripts/check_computer_history_answer.py \
+            scripts/check_computer_history_memory.py \
+            scripts/generate_security_artifacts.py \
+            scripts/probe_computer_history_parity.py \
+            scripts/verify_security_capabilities.py \
+            scripts/test_probe_computer_history_parity.py \
+            scripts/local_auto_deploy.py \
+            scripts/install_local_auto_deploy.py \
+            scripts/local_deploy_policy.py \
+            scripts/authenticated_release_state.py \
+            scripts/deferred_release_deltas.py \
+            scripts/verify_cli_plist.py
+          bash scripts/test_check_computer_history_memory.sh
+          bash scripts/test_probe_computer_history_parity.sh
+          bash scripts/test_public_install_safety.sh
+          bash scripts/test_install_from_source_safety.sh
+          bash scripts/test_install_cli_link.sh
+          bash scripts/test_uninstall_and_quit.sh
+          bash scripts/test_release_signing_policy.sh
+          bash scripts/test_verify_published_update_feed.sh
+          bash scripts/test_build_number_policy.sh
+          bash scripts/test_local_try.sh
+          xcrun swiftc -typecheck scripts/verify_update_archive.swift
+          python3 scripts/test_update_policy.py
+          python3 scripts/test_permission_requirement_policy.py
+          python3 scripts/test_release_publication_policy.py
+          python3 scripts/test_deferred_release_deltas.py
+          python3 scripts/test_background_continuity.py
+          python3 scripts/test_prepare_presigned_release.py
+          python3 scripts/test_site_submission_policy.py
+          bash scripts/test_validate_computer_history_upgrade_safety.sh
+          bash scripts/validate_computer_history_parity.sh --help >/dev/null
+
+      - name: Cryptographic update verification
+        run: bash scripts/test_update_verification.sh
+
+      - name: Privacy-boundary and dependency audit
+        run: ./scripts/audit_privacy_boundaries.sh
+
+      - name: Goalong Dev control tests (no build, no launch)
+        run: bash scripts/test_dev_app.sh
+
+      - name: Release and Goalong Dev identity refusals (skips without the signing key)
+        run: bash scripts/test_stable_release_identity.sh
+
       - name: Build installable app bundle
         env:
           LOCALHISTORY_VERSION: 0.6.0-ci
@@ -212,6 +275,40 @@ jobs:
             dist/sbom.spdx.json
             dist/release-manifest.json
           retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+
+
+  build-test-package:
+    needs: [quality-tests, quality-package]
+    # always(): a skipped required check would count as passed.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require both macOS jobs on one commit
+        env:
+          TESTS_RESULT: ${{ needs.quality-tests.result }}
+          PACKAGE_RESULT: ${{ needs.quality-package.result }}
+          TESTS_COMMIT: ${{ needs.quality-tests.outputs.commit }}
+          PACKAGE_COMMIT: ${{ needs.quality-package.outputs.commit }}
+        run: |
+          if [[ "$TESTS_RESULT" != success || "$PACKAGE_RESULT" != success ]]; then
+            echo "quality-tests=$TESTS_RESULT quality-package=$PACKAGE_RESULT" >&2
+            exit 1
+          fi
+          if [[ ! "$TESTS_COMMIT" =~ ^[0-9a-f]{40}$ || "$TESTS_COMMIT" != "$PACKAGE_COMMIT" ]]; then
+            echo "The two jobs tested different commits: $TESTS_COMMIT / $PACKAGE_COMMIT" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.quality-tests.outputs.commit }}
+          persist-credentials: false
+
+      - name: Check the receipt checkout is the tested commit
+        env:
+          TESTED: ${{ needs.quality-tests.outputs.commit }}
+        run: test "$(git rev-parse HEAD)" = "$TESTED"
 
       - name: Record successful exact-checkout gate
         run: python3 scripts/write_gate_receipt.py
