@@ -2947,3 +2947,35 @@ surveillance/a-configurer--   # Définition du travail (PR 2) : la destination o
 temps-ecran/vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
 terminal/aide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
 terminal/installe--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+blocages/blocage-en-cours--   # page Blocages : « Écran rouge » et réglage manuel sortent de la page, textes de règle et de protection nettoyés
+blocages/depliants--   # page Blocages : sections retirées (réglage manuel, Suivre mes horaires), textes nettoyés
+blocages/editeur-horaire--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle ; Horaires refuse 7 j 00–24 verrouillé
+blocages/editeur-horaire-sans-ecran-rouge--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle
+blocages/editeur-jev--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle ; Jev : « Quand » une seule fois, textes entiers, niveaux d’arrêt grisés
+blocages/editeur-maintenant--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle
+blocages/editeur-regle--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle
+blocages/editeur-regle-verrouillee--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle ; vrai niveau d’arrêt affiché
+blocages/editeur-seance--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle ; phrase de séance sans nom de moteur
+blocages/editeur-toujours--   # Blocages lot A (T-050) : une seule fenêtre « Quand / Quoi / Arrêt » pour toute règle ; nouvel écran « Toujours », « Verrouillé » barré
+blocages/modules-coupes--   # page Blocages : textes de règle et de protection nettoyés
+blocages/mot-de-passe--   # page Blocages : textes de règle et de protection nettoyés
+blocages/regles--   # page Blocages : liste des règles, ligne Jev et texte de liste vide changés
+blocages/seance-en-cours--   # page Blocages : textes de règle et de protection nettoyés
+blocages/vide--   # page Blocages : texte de liste vide « Aucune autre règle… » et ligne Jev changés
+concentration-maintenant/plan-du-jour--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/pomodoro-en-cours--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/reglages--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/reglages-jour-choisi--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/seance-libre--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/verrouille--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration-maintenant/vide--   # Blocages lot A : la section « Protection » de la page voisine et ses textes changent (0,07 %, une ligne)
+concentration/page--   # Blocages lot A : textes de la ligne Jev et de la protection (0,7 %)
+menubar/ecran-rouge-allume--   # Blocages lot A : le menu de la barre ajoute la luminosité du filtre à côté de l’intensité
+menubar/ecran-rouge-eteint--   # Blocages lot A : le menu de la barre ajoute la luminosité du filtre à côté de l’intensité
+menubar-menu/ecran-rouge--   # Blocages lot A : menu « Règles de l’écran rouge… », sans « Suivre mes horaires »
+braise/page--   # Blocages lot A : la section de réglage manuel quitte la page Braise
+braise/page-fenetre--   # Blocages lot A : textes de la ligne Jev et de la protection (0,7 %)
+braise/verrou-luminosite--   # Blocages lot A : la section de réglage manuel quitte la page, le verrou de luminosité devient une règle « Toujours »
+distractions/page--   # Blocages lot A : textes de la ligne Jev et de la protection (0,7 %)
+programme/page--   # Blocages lot A : textes de la ligne Jev et de la protection (0,7 %)
+ambiance/barre-telechargement--   # Blocages lot A : textes de la ligne Jev et de la protection (0,6 %)
