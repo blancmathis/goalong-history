@@ -23,8 +23,10 @@ final class ConcentrationControllerTests: XCTestCase {
         for command in ["focus status", "session current", "sessions", "plan show", "review show", "limits"] {
             XCTAssertThrowsError(try runtime.handle(.init(command: command))) { XCTAssertEqual($0 as? GoalongFocusError, .moduleDisabled) }
         }
-        // The entry stays: its tab says the module is off and offers to turn it on.
-        XCTAssertTrue(DashboardSection.sidebarSections(modules: modules.enabled).contains(.concentration))
+        // No entry of its own: the page « Blocages » stays, and its part « Séances » offers to turn the module on.
+        let sidebar = DashboardSection.sidebarSections(modules: modules.enabled)
+        XCTAssertTrue(sidebar.contains(.blocking)); XCTAssertFalse(sidebar.contains(.concentration))
+        XCTAssertEqual(DashboardSection.concentration.sidebarParent, .blocking)
     }
     /// R2-019: plan, review and session files saved under a pre-Gregorian key move to the Gregorian name, once.
     @MainActor func testLegacyCalendarDayFilesAreRenamedOnLoad() throws {

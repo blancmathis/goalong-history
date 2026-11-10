@@ -40,10 +40,10 @@ final class BraiseModuleTests: XCTestCase {
     func testNavigationAndDefaultOff() throws {
         XCTAssertFalse(try modules().isEnabled(.braise))
         XCTAssertFalse(DashboardSection.sidebarSections(modules: []).contains(.braise))
-        // T-048 B2: the red screen lives in Garde-fous (the .blocking entry), not in Modules nor as its own entry.
+        // The red screen lives in the page « Blocages » (the .blocking entry), not in Modules nor as its own entry.
         XCTAssertFalse(DashboardSection.sidebarSections(modules: [.braise]).contains(.braise))
         XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.blocking, .settings])
-        XCTAssertEqual(DashboardSection.blocking.title, "Garde-fous")
+        XCTAssertEqual(DashboardSection.blocking.title, "Blocages")
         XCTAssertFalse(GoalongModule.listed.contains(.braise))
         XCTAssertEqual(GoalongModule.braise.title, "Écran rouge")
     }

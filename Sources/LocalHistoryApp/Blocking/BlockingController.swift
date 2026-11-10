@@ -12,6 +12,11 @@ import LocalHistoryQueryCLI
 @MainActor final class BlockingController: ObservableObject {
     @Published private(set) var lists: [BlockList]
     @Published private(set) var activeBlocks: [BlockingActiveBlock] = []
+    /// Program ranges stopped by the member until their end (read by the page « Blocages »; no write).
+    var stoppedProgramRanges: Set<UUID> {
+        let now = clock()
+        return Set((document.programSkips ?? [:]).filter { $0.value > now }.keys)
+    }
     @Published private(set) var scheduledBlocks: [BlockSession] = []
     @Published private(set) var hasPassword = false
     @Published private(set) var quitRequiresPassword = false
@@ -617,8 +622,10 @@ import LocalHistoryQueryCLI
 
     // MARK: Sessions
 
-    func start(listIDs: [UUID], until end: Date, lock: BlockLock) {
-        _ = createSession(listIDs: listIDs, start: nil, end: end, lock: lock)
+    /// True when the block started; a refusal is in `error`.
+    @discardableResult
+    func start(listIDs: [UUID], until end: Date, lock: BlockLock) -> Bool {
+        createSession(listIDs: listIDs, start: nil, end: end, lock: lock) != nil
     }
 
     @discardableResult

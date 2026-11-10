@@ -1,4 +1,5 @@
 #if os(macOS)
+    import Combine
     import Foundation
     import LocalHistoryCore
 
@@ -62,6 +63,9 @@
     /// Where the dashboard is: page, Settings pane, day, welcome and sheets. Changes on a click.
     final class DashboardNavigation: ObservableObject {
         @Published private var storedSelectedSection: DashboardSection = .overview
+        /// Every request to open a section, also the one already shown. It publishes no change of the object: a page
+        /// that leads to one of its parts (« Blocages ») listens to it, and nothing else draws again.
+        let sectionRequests = PassthroughSubject<DashboardSection, Never>()
         /// R14b: writing the shown value again publishes nothing.
         var selectedSection: DashboardSection {
             get { storedSelectedSection }

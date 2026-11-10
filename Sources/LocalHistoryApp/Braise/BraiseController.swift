@@ -227,6 +227,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         switch action {
         case .intensity(let value): relevant = relevant.filter { $0.intensity > value + 0.0001 }
         case .pause: relevant = relevant.filter(\.isProtected)
+        case .unfollow:
+            // A one-time window does not depend on « Suivre mes horaires »: it is neither asked for nor stopped.
+            let known = Set(ranges.program.ranges.map(\.id))
+            relevant = relevant.filter { known.contains($0.rangeID) }
         default: break
         }
         if let strong = RedScreenRules.strongest(relevant) {
@@ -324,7 +328,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
                     throw RedScreenRefusal(message: "24 h de protection au maximum.", isLock: false)
                 }
                 if value.effectiveLock == .password, !passwordAvailable(), ranges.brightnessLock?.effectiveLock != .password {
-                    throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Blocages).", isLock: false)
+                    throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
                 }
             }
             next = value
@@ -403,32 +407,127 @@ struct RedScreenRefusal: LocalizedError, Equatable {
 
     /// Adds or replaces a range. While a protected range runs, only stricter changes pass (docs/BLOCKING.md).
     func saveRange(_ range: BlockProgramRange, intensity: Double, enabled: Bool = true, brightness: Double?? = .none) throws {
-        guard RedScreenProgram.isUsable(range) else { throw RedScreenRefusal(message: "Choisissez au moins un jour et deux heures différentes.", isLock: false) }
-        if range.effectiveLock == .password, !passwordAvailable(), ranges.program.ranges.first(where: { $0.id == range.id })?.effectiveLock != .password {
-            throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Blocages).", isLock: false)
-        }
-        var next = ranges
-        if let i = next.program.ranges.firstIndex(where: { $0.id == range.id }) { next.program.ranges[i] = range }
-        else {
-            guard next.program.ranges.count < RedScreenProgram.maximumRanges else {
-                throw RedScreenRefusal(message: "32 plages au maximum.", isLock: false)
-            }
-            next.program.ranges.append(range)
-        }
-        next.intensities[range.id] = min(1, max(0, intensity.isFinite ? intensity : 1))
-        if case .some(let level) = brightness {
-            if level != nil, next.brightness(of: range.id) == nil, !canControlBrightness {
-                throw RedScreenRefusal(message: "Goalong ne peut régler la luminosité d’aucun écran de ce Mac.", isLock: false)
-            }
-            var levels = next.brightness ?? [:]; levels[range.id] = level.map(BrightnessLockRules.clamp)
-            next.brightness = levels.isEmpty ? nil : levels
-        }
-        if enabled { next.disabled.remove(range.id) } else { next.disabled.insert(range.id) }
-        try commitRanges(next)
+        try saveRanges([RangeWrite(range: range, intensity: intensity, enabled: enabled, brightness: brightness)])
     }
+
+    /// One range to add or replace. `brightness`: `.none` keeps the range's level, `.some(nil)` removes it.
+    struct RangeWrite {
+        var range: BlockProgramRange
+        var intensity: Double
+        var enabled = true
+        var brightness: Double?? = .none
+    }
+
+    /// Several ranges at once (a rule of the page « Blocages »): every range is checked, then the whole change
+    /// against the protected range in progress, then one write. All pass or nothing is written.
+    func saveRanges(_ writes: [RangeWrite], deleting removed: Set<UUID> = []) throws {
+        try commitRanges(try staged(writes, deleting: removed))
+    }
+
+    /// The refusal `saveRanges` would give, without writing (the page checks every engine before the first write).
+    func checkRanges(_ writes: [RangeWrite], deleting removed: Set<UUID> = []) throws {
+        guard running else { throw Self.stopped }
+        let next = try staged(writes, deleting: removed)
+        if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
+    }
+
+    private static let stopped = RedScreenRefusal(message: "L’écran rouge est arrêté. Relancez Goalong pour modifier ses plages.", isLock: false)
+
+    /// The ranges after `writes` and `removed`, from the live state: holds, skips and the other ranges stay as they are.
+    private func staged(_ writes: [RangeWrite], deleting removed: Set<UUID>) throws -> RedScreenProgram {
+        var next = ranges
+        for id in removed {
+            next.program.ranges.removeAll { $0.id == id }; next.intensities[id] = nil; next.disabled.remove(id); next.brightness?[id] = nil
+            // A hold of no range is a one-time window: a deleted range never leaves one behind.
+            next.holds[id] = nil; next.skips[id] = nil
+        }
+        for write in writes {
+            let range = write.range
+            guard RedScreenProgram.isUsable(range) else { throw RedScreenRefusal(message: "Choisissez au moins un jour et deux heures différentes.", isLock: false) }
+            if range.effectiveLock == .password, !passwordAvailable(), ranges.program.ranges.first(where: { $0.id == range.id })?.effectiveLock != .password {
+                throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
+            }
+            if let i = next.program.ranges.firstIndex(where: { $0.id == range.id }) { next.program.ranges[i] = range }
+            else {
+                guard next.program.ranges.count < RedScreenProgram.maximumRanges else {
+                    throw RedScreenRefusal(message: "32 plages au maximum.", isLock: false)
+                }
+                next.program.ranges.append(range)
+            }
+            next.intensities[range.id] = min(1, max(0, write.intensity.isFinite ? write.intensity : 1))
+            if case .some(let level) = write.brightness {
+                if level != nil, next.brightness(of: range.id) == nil, !canControlBrightness {
+                    throw RedScreenRefusal(message: "Goalong ne peut régler la luminosité d’aucun écran de ce Mac.", isLock: false)
+                }
+                var levels = next.brightness ?? [:]; levels[range.id] = level.map(BrightnessLockRules.clamp)
+                next.brightness = levels.isEmpty ? nil : levels
+            }
+            if write.enabled { next.disabled.remove(range.id) } else { next.disabled.insert(range.id) }
+        }
+        return next
+    }
+
+    // MARK: One-time window (page « Blocages », « Maintenant »)
+
+    /// The longest one-time window: « Jusqu’à… » means the next occurrence of a time of day.
+    static let maximumHoldSeconds: TimeInterval = 24 * 3_600
+
+    /// Red (and a brightness ceiling) from now to `end`, with a block's stop rule. It is a hold of no range: the
+    /// file format stays, « Suivre mes horaires » is not touched, and the guard, « Quitter », the slider, the pause,
+    /// ⌃⌥⌘R, the stop and a technical fault all follow the ranges' path. Its end is on the continuous clock at once.
+    @discardableResult
+    func holdNow(intensity: Double, brightness: Double? = nil, until end: Date, lock: BlockLock) throws -> UUID {
+        if let refusal = holdRefusal(intensity: intensity, brightness: brightness, until: end, lock: lock) { throw refusal }
+        let now = clock()
+        let length = end.timeIntervalSince(now)
+        refreshWindows(now)
+        let id = UUID()
+        ranges.holds[id] = RedScreenProgram.Hold(end: end, lock: lock, intensity: min(1, max(0, intensity.isFinite ? intensity : 1)),
+                                                 deadline: continuous() + length, boot: bootID(),
+                                                 brightness: brightness.map(BrightnessLockRules.clamp))
+        errorMessage = nil; saveRangesNow(); evaluate()
+        return id
+    }
+
+    /// The weakest red a one-time window may hold when it locks no brightness: below it the window changes nothing.
+    static let minimumHoldIntensity = 0.05
+
+    /// Why `holdNow` would refuse, read without writing: « Maintenant » checks its red part before it starts the lists.
+    /// It covers every refusal of `holdNow`: a plan of two engines never writes one half.
+    func holdRefusal(intensity: Double = 1, brightness: Double? = nil, until end: Date, lock: BlockLock) -> RedScreenRefusal? {
+        guard running else { return Self.stopped }
+        let now = clock()
+        let length = end.timeIntervalSince(now)
+        guard brightness != nil || (intensity.isFinite && intensity >= Self.minimumHoldIntensity) else {
+            return RedScreenRefusal(message: "Choisissez un rouge ou une luminosité.", isLock: false)
+        }
+        guard length >= 60 else { return RedScreenRefusal(message: "Choisissez une fin dans au moins une minute.", isLock: false) }
+        guard length <= Self.maximumHoldSeconds else { return RedScreenRefusal(message: "Une fenêtre ponctuelle dure 24 h au plus.", isLock: false) }
+        if lock == .password, !passwordAvailable() {
+            return RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
+        }
+        if brightness != nil, !canControlBrightness {
+            return RedScreenRefusal(message: "Goalong ne peut régler la luminosité d’aucun écran de ce Mac.", isLock: false)
+        }
+        // Counted on the state brought to now, without a write: a window that has just ended frees its place.
+        let known = Set(ranges.program.ranges.map(\.id))
+        guard brought(now).value.holds.keys.filter({ !known.contains($0) }).count < Self.maximumOneTimeWindows else {
+            return RedScreenRefusal(message: "\(Self.maximumOneTimeWindows) fenêtres ponctuelles au plus en même temps.", isLock: false)
+        }
+        return nil
+    }
+
+    /// The one-time windows in progress: holds that belong to no range.
+    var oneTimeWindows: [RedScreenWindow] {
+        let known = Set(ranges.program.ranges.map(\.id))
+        return windows.filter { !known.contains($0.rangeID) }
+    }
+    static let maximumOneTimeWindows = 8
+
     func deleteRange(_ id: UUID) throws {
         var next = ranges
         next.program.ranges.removeAll { $0.id == id }; next.intensities[id] = nil; next.disabled.remove(id); next.brightness?[id] = nil
+        next.holds[id] = nil; next.skips[id] = nil
         try commitRanges(next)
     }
     func setRangeEnabled(_ id: UUID, _ enabled: Bool) throws {
@@ -448,7 +547,8 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         return "Plage protégée en cours (\(strong.lock.title.lowercased())) : \(reason) \(Self.lockedText(until: strong.end, now: now))"
     }
     private func commitRanges(_ next: RedScreenProgram) throws {
-        guard running else { return }
+        // A stopped engine says so: a silent no-op would let the page show a rule that was never written.
+        guard running else { throw Self.stopped }
         if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
         var value = next; value.sanitize()
         ranges = value; errorMessage = nil; saveRangesNow(); evaluate()

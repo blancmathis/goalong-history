@@ -62,8 +62,15 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
 /// Garde-fous › Écran rouge: the manual red, « Suivre mes horaires » and the ranges.
 /// A range has the blocking model and safeties (docs/BLOCKING.md), plus an intensity.
 @MainActor struct BraisePageContent: View {
+    /// The whole page, or one part of it set in the page « Blocages »: `live` (what is on now, with its stops),
+    /// `manual` (manual red, « Suivre mes horaires », brightness lock), `safety` (shortcut, login, privacy).
+    /// `listener` shows nothing: it opens the stop sheet a command asks for (menu, shortcut, a switch of `manual`).
+    /// One listener per window: two would open two sheets for one stop.
+    enum Part { case page, live, manual, safety, listener }
+
     @ObservedObject var controller: BraiseController
     var showsTitle = true
+    var part: Part = .page
     @State private var editing: RedScreenRangeDraft?
     @State private var challenge: String?
     @State private var askingPassword = false
@@ -73,7 +80,33 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
     @State private var protectLock: BlockLock = .typing
     @State private var protectUntil = 7 * 60
     @State private var brightnessError: String?
+
+    /// Whether `live` has something to show (the page « Blocages » says « Rien n’est bloqué » otherwise).
+    static func hasLive(_ controller: BraiseController) -> Bool {
+        controller.active || controller.isPaused || controller.protectedWindow != nil || controller.pendingStop != nil
+            || controller.recoveryNotice != nil || controller.errorMessage != nil || controller.brightnessLock != nil
+    }
+
     var body: some View {
+        switch part {
+        case .page:
+            stopSheets(page, listens: true)
+                .sheet(item: $editing) { RedScreenRangeEditor(controller: controller, initial: $0).goalongControls() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in controller.refreshLoginStatus() }
+        case .live:
+            stopSheets(live, listens: false)
+        case .manual:
+            stopSheets(VStack(alignment: .leading, spacing: 24) { controlsCard; brightnessSection }.font(.system(size: 13)),
+                       listens: false)
+        case .safety:
+            safetyDetails.font(.system(size: 13))
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in controller.refreshLoginStatus() }
+        case .listener:
+            stopSheets(Color.clear.frame(width: 0, height: 0).accessibilityHidden(true), listens: true)
+        }
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
                 if showsTitle {
@@ -96,7 +129,37 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
         }
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .accessibilityIdentifier("braise-page")
-        .sheet(item: $editing) { RedScreenRangeEditor(controller: controller, initial: $0).goalongControls() }
+    }
+
+    /// « En cours » of the page « Blocages »: the red on now and a held brightness, each with its stop.
+    private var live: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if controller.active || controller.isPaused || controller.protectedWindow != nil || controller.pendingStop != nil {
+                statusBlock
+            }
+            if let notice = controller.recoveryNotice { GoalongNote(notice, tone: .warning).accessibilityIdentifier("braise-recovery") }
+            if let error = controller.errorMessage { GoalongNote(error, tone: .warning).accessibilityIdentifier("braise-error") }
+            if let lock = controller.brightnessLock {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Luminosité bloquée à \(GoalongUIFormat.percent(lock.level * 100))").font(.system(size: 14, weight: .semibold))
+                    if let held = controller.brightnessProtection {
+                        brightnessProtectedNote(held)
+                    } else {
+                        Button("Débloquer la luminosité") { setBrightnessLock(false) }.buttonStyle(LHSecondaryButtonStyle())
+                            .accessibilityIdentifier("braise-live-brightness-off")
+                    }
+                    if let brightnessError { GoalongNote(brightnessError, tone: .warning) }
+                }
+            }
+        }
+        .font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("braise-live")
+    }
+
+    /// The four stop sheets of a protected range or brightness lock. `listens` also opens them when a command
+    /// elsewhere waits for the stop (`pendingStop`, `pendingBrightness`).
+    private func stopSheets<Body: View>(_ view: Body, listens: Bool) -> some View {
+        view
         .sheet(item: Binding(get: { challenge.map(RedScreenChallenge.init) }, set: { challenge = $0?.text })) { item in
             BlockingTypingChallengeSheet(text: item.text, onSubmit: { typed in
                 if controller.stopActiveRanges(typed: typed, challenge: item.text) == .stopped { challenge = nil }
@@ -115,26 +178,34 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                                    stop: { controller.stopBrightnessLock(password: $0) },
                                    cancel: { controller.cancelBrightnessStop() }) { askingBrightnessPassword = false }.goalongControls()
         }
-        .onChange(of: controller.pendingStop) { if $0 != nil { beginStop() } }
-        .onChange(of: controller.pendingBrightness) { if $0 != nil { beginBrightnessStop() } }
+        .onChange(of: controller.pendingStop) { if listens, $0 != nil { beginStop() } }
+        .onChange(of: controller.pendingBrightness) { if listens, $0 != nil { beginBrightnessStop() } }
         .onAppearWhenShown {
+            guard listens else { return }
             if controller.pendingStop != nil { beginStop() }
             if controller.pendingBrightness != nil { beginBrightnessStop() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in controller.refreshLoginStatus() }
+    }
+
+    /// On the page « Blocages » the block stands alone, so its title names the red screen.
+    private var statusTitle: String {
+        guard part != .page else { return controller.stateLabel }
+        return controller.isPaused ? "Écran rouge en pause" : controller.active ? "Écran rouge actif" : controller.stateLabel
     }
 
     private var statusBlock: some View {
         Group {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(controller.stateLabel).font(LHTheme.sectionTitleFont)
+                    Text(statusTitle).font(part == .page ? LHTheme.sectionTitleFont : .system(size: 14, weight: .semibold))
                     Text(controller.nextEvent).foregroundStyle(LHTheme.secondaryText)
                     // One main action per state: « Reprendre » while paused, « Pause 15 min » while the filter is on.
                     HStack(spacing: 8) {
                         if controller.isPaused {
-                            Button("Reprendre") { controller.resume() }.buttonStyle(LHPrimaryButtonStyle())
+                            if part == .page { Button("Reprendre") { controller.resume() }.buttonStyle(LHPrimaryButtonStyle()) }
+                            else { Button("Reprendre") { controller.resume() }.buttonStyle(LHSecondaryButtonStyle()) }
                         } else if controller.active {
-                            Button("Pause 15 min") { controller.pause() }.buttonStyle(LHPrimaryButtonStyle())
+                            if part == .page { Button("Pause 15 min") { controller.pause() }.buttonStyle(LHPrimaryButtonStyle()) }
+                            else { Button("Pause 15 min") { controller.pause() }.buttonStyle(LHSecondaryButtonStyle()) }
                         }
                         Button("Rétablir les couleurs") { controller.emergencyOff() }.buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("braise-emergency-off")
@@ -193,26 +264,25 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
         }
     }
     private var safetyGroup: some View {
-        Group {
-                GoalongDisclosureGroup("Réglages et sécurité") {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Retour aux couleurs naturelles : ⌃ ⌥ ⌘ R")
-                        Text(controller.shortcutAvailable ? "Raccourci de secours global. Pendant une plage protégée, il passe par l’arrêt de la plage, comme un blocage." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ici ou dans le menu Goalong.")
-                            .foregroundStyle(LHTheme.secondaryText)
-                        Toggle("Lancer Goalong à l’ouverture de session", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
-                            .toggleStyle(.goalongSwitchInline)
-                        Text("Ce réglage concerne toute l’app Goalong. L’écran rouge suit ses plages tant que Goalong est ouverte.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        if controller.loginApprovalRequired {
-                            Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
-                        }
-                        Text("\(FrenchCount.count(controller.displayCount, "écran", "écrans")). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
-                        Text("Aucun réseau ni nouvel accès. Une panne technique rend toujours les couleurs tout de suite, même pendant une plage protégée. Les couleurs sont restaurées à l’arrêt du rouge, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    }.fixedSize(horizontal: false, vertical: true).padding(.top, 12)
-                }
-                .collapsedSummary("Secours : ⌃ ⌥ ⌘ R")
-        }
+        GoalongDisclosureGroup("Réglages et sécurité") { safetyDetails.padding(.top, 12) }
+            .collapsedSummary("Secours : ⌃ ⌥ ⌘ R")
+    }
+    private var safetyDetails: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Retour aux couleurs naturelles : ⌃ ⌥ ⌘ R")
+            Text(controller.shortcutAvailable ? "Raccourci de secours global. Pendant une plage protégée, il passe par l’arrêt de la plage, comme un blocage." : "Raccourci indisponible ou déjà utilisé. Utilisez Rétablir les couleurs, ici ou dans le menu Goalong.")
+                .foregroundStyle(LHTheme.secondaryText)
+            Toggle("Lancer Goalong à l’ouverture de session", isOn: Binding(get: { controller.loginEnabled || controller.loginApprovalRequired }, set: { try? controller.setLogin($0) }))
+                .toggleStyle(.goalongSwitchInline)
+            Text("Ce réglage concerne toute l’app Goalong. L’écran rouge suit ses plages tant que Goalong est ouverte.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            if controller.loginApprovalRequired {
+                Button("Ouvrir Réglages Système…") { SMAppService.openSystemSettingsLoginItems() }.buttonStyle(LHQuietButtonStyle())
+            }
+            Text("\(FrenchCount.count(controller.displayCount, "écran", "écrans")). Le filtre est recalculé au réveil. Il ne réveille pas le Mac.").foregroundStyle(LHTheme.secondaryText)
+            Text("Aucun réseau ni nouvel accès. Une panne technique rend toujours les couleurs tout de suite, même pendant une plage protégée. Les couleurs sont restaurées à l’arrêt du rouge, à la fermeture de Goalong ou par un gardien après un crash. Le HDR et les autres filtres peuvent modifier le résultat ; zéro lumière bleue physiquement émise n’est pas garanti.")
+                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+        }.fixedSize(horizontal: false, vertical: true)
     }
 
     /// « Verrou de luminosité » (T-048 D2): the hardware brightness held at one level; the same stop rules as a range.

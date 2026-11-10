@@ -41,24 +41,41 @@
         var subtitle: String?
         @ViewBuilder var trailing: () -> Trailing
         @ViewBuilder var content: () -> Content
+        @Environment(\.goalongSectionTitleHidden) private var titleHidden
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
-                            .accessibilityAddTraits(.isHeader)
-                        if let subtitle {
-                            Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
+                if !titleHidden || subtitle != nil || Trailing.self != EmptyView.self {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            if !titleHidden {
+                                Text(title).font(LHTheme.sectionTitleFont).tracking(-0.2)
+                                    .accessibilityAddTraits(.isHeader)
+                            }
+                            if let subtitle {
+                                Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                        Spacer(minLength: 8)
+                        trailing()
                     }
-                    Spacer(minLength: 8)
-                    trailing()
                 }
-                content()
+                // Only the section a dépliant wraps loses its title: the sections inside keep theirs.
+                content().environment(\.goalongSectionTitleHidden, false)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private struct GoalongSectionTitleHiddenKey: EnvironmentKey { static let defaultValue = false }
+
+    extension EnvironmentValues {
+        /// True inside a dépliant whose row already says the section's title (page « Blocages »): the section keeps
+        /// its subtitle, its action and its content.
+        var goalongSectionTitleHidden: Bool {
+            get { self[GoalongSectionTitleHiddenKey.self] }
+            set { self[GoalongSectionTitleHiddenKey.self] = newValue }
         }
     }
 

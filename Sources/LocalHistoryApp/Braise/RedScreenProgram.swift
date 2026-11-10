@@ -122,11 +122,13 @@ enum RedScreenRules {
     /// `stillHeld` lets the controller keep a hold whose wall-clock end a forward clock jump passed.
     static func activeWindows(_ value: RedScreenProgram, at now: Date, calendar: Calendar, hasPassword: Bool,
                               stillHeld: (UUID, RedScreenProgram.Hold) -> Bool = { _, _ in false }) -> [RedScreenWindow] {
-        guard value.follows else { return [] }
         var result: [UUID: RedScreenWindow] = [:]
         let ranges = Dictionary(value.program.ranges.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for window in BlockingSchedule.windows(of: value.enabledProgram, at: now, calendar: calendar, endPolicy: .last)
-        where window.start <= now && now < window.end {
+        // « Suivre mes horaires » rules the ranges and their holds. A one-time window (`BraiseController.holdNow`:
+        // a hold of no range) runs without it, and never turns the ranges on.
+        let scheduled = value.follows
+            ? BlockingSchedule.windows(of: value.enabledProgram, at: now, calendar: calendar, endPolicy: .last) : []
+        for window in scheduled where window.start <= now && now < window.end {
             if let skip = value.skips[window.rangeID], skip > now { continue }
             let lock = effectiveLock(ranges[window.rangeID]?.effectiveLock ?? .free, hasPassword: hasPassword)
             let candidate = RedScreenWindow(rangeID: window.rangeID, start: window.start, end: window.end, lock: lock,
@@ -135,6 +137,7 @@ enum RedScreenRules {
             result[window.rangeID] = candidate
         }
         for (id, hold) in value.holds where hold.end > now || stillHeld(id, hold) {
+            guard value.follows || ranges[id] == nil else { continue }
             if let skip = value.skips[id], skip > now { continue }
             if let existing = result[id], existing.end >= hold.end, existing.lock.strength >= hold.lock.strength { continue }
             let lock = effectiveLock(hold.lock, hasPassword: hasPassword)
@@ -147,10 +150,14 @@ enum RedScreenRules {
 
     /// The next instant where the ranges may change what is on screen.
     static func nextBoundary(_ value: RedScreenProgram, after now: Date, calendar: Calendar) -> Date? {
-        guard value.follows else { return nil }
-        var dates = BlockingSchedule.windows(of: value.enabledProgram, at: now, calendar: calendar, endPolicy: .last)
-            .flatMap { [$0.start, $0.end] }
-        dates += value.skips.values; dates += value.holds.values.map(\.end)
+        // A one-time window ends at its hold's end, with or without « Suivre mes horaires ».
+        let known = Set(value.program.ranges.map(\.id))
+        var dates = value.holds.filter { !known.contains($0.key) }.map(\.value.end)
+        if value.follows {
+            dates += BlockingSchedule.windows(of: value.enabledProgram, at: now, calendar: calendar, endPolicy: .last)
+                .flatMap { [$0.start, $0.end] }
+            dates += value.skips.values; dates += value.holds.values.map(\.end)
+        }
         return dates.filter { $0 > now }.min()
     }
 
