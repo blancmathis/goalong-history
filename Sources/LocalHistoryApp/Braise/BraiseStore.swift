@@ -64,6 +64,25 @@ struct BraiseStore {
         return (value, notice)
     }
 
+    /// The screens' hardware levels before a brightness preview (T-050 A2), removed when it ends. Left behind by a crash,
+    /// the next start puts them back.
+    var previewBrightnessURL: URL { directory.appendingPathComponent("preview-brightness.json") }
+
+    func loadPreviewBrightness() -> [UInt32: Double] {
+        guard Self.exists(previewBrightnessURL), let data = try? Self.read(previewBrightnessURL, maximumBytes: 16 * 1024),
+              let decoded = try? JSONDecoder().decode([String: Double].self, from: data) else { return [:] }
+        return Dictionary(decoded.compactMap { key, value in
+            UInt32(key).flatMap { id in value.isFinite ? (id, BrightnessLockRules.clamp(value)) : nil }
+        }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Nil removes the file.
+    func savePreviewBrightness(_ levels: [UInt32: Double]?) {
+        guard let levels, !levels.isEmpty else { try? FileManager.default.removeItem(at: previewBrightnessURL); return }
+        let value = Dictionary(levels.map { (String($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        if let data = try? JSONEncoder().encode(value) { try? Self.write(data, to: previewBrightnessURL) }
+    }
+
     func saveRanges(_ value: RedScreenProgram) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try Self.write(encoder.encode(value), to: rangesURL)

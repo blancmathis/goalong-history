@@ -81,7 +81,7 @@ import XCTest
         braise.start()
         XCTAssertEqual(files.readMarker(now: clocks.now), .absent, "nothing protected yet")
         try red.saveRange(evening(.locked), intensity: 0.8)
-        braise.setRedScreenFollowsSchedule(true)
+        braise.ensureController()
 
         let end = wednesday22h.addingTimeInterval(3_600)
         XCTAssertNil(blocks.severeUntil, "no block at all")
@@ -108,7 +108,7 @@ import XCTest
         let runtime = BlockingRuntime(controller: blocks, redScreenKeeper: { nil })
         let red = try redScreen(clocks, root: root)
         red.stateChanged = { runtime.setRedScreenGuard(until: red.guardUntil) }
-        try red.saveRange(evening(nil), intensity: 1); red.setFollows(true); red.setManual(true)
+        try red.saveRange(evening(nil), intensity: 1); red.setManual(true)
         XCTAssertTrue(red.active); XCTAssertNil(red.guardUntil)
         XCTAssertEqual(files.readMarker(now: clocks.now), .absent)
         XCTAssertTrue(client.updates.allSatisfy { $0 == nil })

@@ -85,7 +85,6 @@ import XCTest
         let end = wednesday22h.addingTimeInterval(3_600)
         let id = try c.holdNow(intensity: 0.7, until: end, lock: .locked)
         XCTAssertTrue(c.active); XCTAssertEqual(c.appliedIntensity, 0.7, accuracy: 0.0001)
-        XCTAssertFalse(c.ranges.follows, "a one-time window never turns the ranges on")
         XCTAssertEqual(c.oneTimeWindows.map(\.rangeID), [id])
         // The guard and « Quitter » read these two: armed as for a severe block.
         XCTAssertEqual(c.guardUntil, end); XCTAssertEqual(c.guardLock, .locked)
@@ -104,11 +103,11 @@ import XCTest
 
     func testOneTimeWindowLeavesTheRangesAndTheManualRedAlone() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(evening(nil), intensity: 0.9)
-        XCTAssertFalse(c.active, "ranges are not followed")
+        try c.saveRange(evening(nil), intensity: 0.9, enabled: false)
+        XCTAssertFalse(c.active, "a paused range stays off")
         try c.holdNow(intensity: 0.5, until: wednesday22h.addingTimeInterval(1_800), lock: .free)
         XCTAssertTrue(c.active); XCTAssertEqual(c.appliedIntensity, 0.5, accuracy: 0.0001, "the range at 90 % stays off")
-        XCTAssertFalse(c.ranges.follows); XCTAssertEqual(c.preferences.mode, .off)
+        XCTAssertEqual(c.preferences.mode, .off)
         XCTAssertNil(c.guardUntil, "« Libre » arms nothing")
         clocks.pass(1_801); c.evaluate()
         XCTAssertFalse(c.active, "a free window still ends on time")
@@ -149,18 +148,6 @@ import XCTest
         guard case .password = c.stopActiveRanges(password: "faux") else { return XCTFail("a wrong password stops nothing") }
         XCTAssertTrue(c.active)
         XCTAssertEqual(c.stopActiveRanges(password: "secret"), .stopped); XCTAssertFalse(c.active)
-    }
-
-    /// A one-time window does not depend on « Suivre mes horaires »: unchecking it asks nothing and stops nothing.
-    func testUncheckingFollowLeavesAOneTimeWindowAlone() throws {
-        for lock in [BlockLock.typing, .locked] {
-            let clocks = Clocks(wednesday22h), c = try controller(clocks)
-            let end = wednesday22h.addingTimeInterval(3_600)
-            try c.holdNow(intensity: 0.7, until: end, lock: lock)
-            XCTAssertEqual(c.setFollows(false), .applied, "\(lock)")
-            XCTAssertFalse(c.ranges.follows); XCTAssertTrue(c.active); XCTAssertEqual(c.ranges.holds.count, 1)
-            XCTAssertEqual(c.guardUntil, end); XCTAssertEqual(c.guardLock, lock)
-        }
     }
 
     func testOneTimeWindowRefusesABadEndAndWritesNothing() throws {
@@ -220,7 +207,7 @@ import XCTest
         clocks.now = wednesday22h.addingTimeInterval(2 * 3_600); clocks.up += 30
         let second = try controller(clocks, store: store(root), keepsRanges: true)
         XCTAssertTrue(second.active, "+2 h on the clock, 30 s lived: the window still holds")
-        XCTAssertFalse(second.ranges.follows); XCTAssertEqual(second.oneTimeWindows.map(\.rangeID), [id])
+        XCTAssertEqual(second.oneTimeWindows.map(\.rangeID), [id])
         let end = try XCTUnwrap(second.protectedWindow?.end)
         XCTAssertEqual(end.timeIntervalSince(clocks.now), 3_570, accuracy: 2)
         XCTAssertEqual(second.setManual(false), .locked(until: end)); XCTAssertEqual(second.guardLock, .locked)
@@ -273,7 +260,7 @@ import XCTest
     func testSaveRangesRefusesTheWholeChangeDuringAProtectedRange() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
         let range = evening(.locked)
-        try c.saveRange(range, intensity: 0.7); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(range, intensity: 0.7); XCTAssertTrue(c.active)
         let extra = BlockProgramRange(weekdays: [4], startMinute: 60, endMinute: 120, lock: nil)
         var shorter = range; shorter.endMinute = 22 * 60 + 30
         XCTAssertThrowsError(try c.saveRanges([.init(range: extra, intensity: 1), .init(range: shorter, intensity: 0.7)])) {

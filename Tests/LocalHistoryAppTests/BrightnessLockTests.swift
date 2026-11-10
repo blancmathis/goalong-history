@@ -167,7 +167,7 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
     func testRangeBrightnessIsHeldAndCanOnlyGoDown() throws {
         let clocks = Clocks(wednesday22h), screens = FakeBrightness(), c = try controller(clocks, screens: screens)
         let range = BlockProgramRange(weekdays: [3], startMinute: 21 * 60, endMinute: 23 * 60, lock: .locked)
-        try c.saveRange(range, intensity: 0.5, brightness: .some(0.25)); c.setFollows(true)
+        try c.saveRange(range, intensity: 0.5, brightness: .some(0.25))
         XCTAssertEqual(try XCTUnwrap(c.brightnessTarget), 0.25, accuracy: 0.0001)
         c.enforceBrightnessNow(); XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.25, accuracy: 0.0001)
         try c.setBrightnessLock(BrightnessLockState(level: 0.6))

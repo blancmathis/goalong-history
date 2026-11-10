@@ -47,8 +47,6 @@ enum BlockRulePlan {
         var lists: [BlockList] = []
         var red: [BraiseController.RangeWrite] = []
         var deleting: Set<UUID> = []
-        /// The first red range of the Mac turns « Suivre mes horaires » on: without it the rule would never start.
-        var follows = false
 
         var touchesRed: Bool { !red.isEmpty || !deleting.isEmpty }
         var isEmpty: Bool { lists.isEmpty && !touchesRed }
@@ -89,7 +87,6 @@ enum BlockRulePlan {
             if !same {
                 result.red = [BraiseController.RangeWrite(range: range, intensity: intensity, enabled: enabled,
                                                           brightness: .some(draft.brightness))]
-                result.follows = program.program.ranges.isEmpty && !program.follows
             }
         } else if let existing {
             result.deleting = [existing.id]
@@ -123,7 +120,6 @@ enum BlockRulePlan {
             do { try braise.saveRanges(writes.red, deleting: writes.deleting) } catch {
                 return writes.lists.isEmpty ? words(error) : "Les listes sont enregistrées, pas l’écran rouge. \(words(error))"
             }
-            if writes.follows { braise.setFollows(true) }
         }
         return nil
     }

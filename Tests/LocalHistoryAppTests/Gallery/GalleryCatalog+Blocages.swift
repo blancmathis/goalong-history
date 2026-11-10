@@ -56,7 +56,7 @@ extension GalleryCatalog {
                 let planned = try fixtures.planned()
                 return BlocagesPageContent(blocking: fixtures.blocking, braise: try braise(ctx), focus: planned.controller,
                                            now: GalleryConcentrationFixtures.now, measures: planned.measures,
-                                           sessionDraft: FocusComposerDraft(), open: [.plan, .protection, .redManual, .redSafety])
+                                           sessionDraft: FocusComposerDraft(), open: [.plan, .protection, .redSafety])
             },
             sheet("blocages/editeur-maintenant") { ctx in
                 BlockRuleEditor(subject: .new, blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,

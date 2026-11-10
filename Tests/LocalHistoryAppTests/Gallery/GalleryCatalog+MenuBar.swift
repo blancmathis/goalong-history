@@ -56,7 +56,7 @@ extension GalleryCatalog {
                                             isActive: true, isLocked: true)
             },
             state("ecran-rouge-eteint", themes: GalleryTheme.withContrast, redScreen: RedScreenState()),
-            state("ecran-rouge-allume", redScreen: RedScreenState(on: true, intensity: 0.7, followsSchedule: true)),
+            state("ecran-rouge-allume", redScreen: RedScreenState(on: true, intensity: 0.7)),
             GalleryEntry("menubar-menu/ecran-rouge", sizes: [.fixed(300, 220)], clock: .none,
                          note: "Lignes du menu clic droit ; le vrai menu ajoute son fond système.") { ctx in
                 let control = GalleryRedScreen(RedScreenState(on: true, intensity: 0.7))
@@ -181,7 +181,7 @@ struct GalleryStatusButton: NSViewRepresentable {
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { subject.eraseToAnyPublisher() }
     func setRedScreen(_ on: Bool) { subject.value.on = on }
     func setRedScreenIntensity(_ value: Double) { subject.value.intensity = value }
-    func setRedScreenFollowsSchedule(_ on: Bool) { subject.value.followsSchedule = on }
+    func setRedScreenFilterBrightness(_ level: Double) { subject.value.filterBrightness = level }
     func restoreColors() { subject.value.on = false }
 }
 

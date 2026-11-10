@@ -13,11 +13,14 @@ struct RedScreenState: Equatable {
     /// Red is on the screens now.
     var on = false
     var intensity = 1.0
-    var followsSchedule = false
+    /// « Luminosité du filtre » (comfort, 20…100 %): the filter's own dimming, never a block.
+    var filterBrightness = 1.0
     /// A protected range runs: commands that take red away ask for the page.
     var isProtected = false
     /// A protected range stopped the slider at its intensity: the short text shown next to it.
     var notice: String?
+
+    static let filterBrightnessRange = 0.2...1.0
 }
 
 /// The « Écran rouge » line of Goalong's menu (left-click panel and right-click menu).
@@ -26,7 +29,7 @@ struct RedScreenState: Equatable {
     var redScreenChanges: AnyPublisher<RedScreenState, Never> { get }
     func setRedScreen(_ on: Bool)
     func setRedScreenIntensity(_ value: Double)
-    func setRedScreenFollowsSchedule(_ on: Bool)
+    func setRedScreenFilterBrightness(_ value: Double)
     func restoreColors()
 }
 
@@ -109,11 +112,11 @@ struct RedScreenState: Equatable {
         guard let controller else { return }
         let p = controller.preferences
         let next = RedScreenState(on: controller.active, intensity: controller.active ? controller.appliedIntensity : p.intensity,
-                                  followsSchedule: controller.ranges.follows, isProtected: controller.protectedWindow != nil,
+                                  filterBrightness: p.brightness, isProtected: controller.protectedWindow != nil,
                                   notice: controller.sliderNotice)
         if redScreen != next { redScreen = next }
-        // Ranges followed or held, and a brightness lock, keep the controller across launches, like a manual red.
-        let armed = p.mode == .on || controller.ranges.follows || !controller.ranges.holds.isEmpty || controller.ranges.brightnessLock != nil
+        // Ranges switched on or held, and a brightness lock, keep the controller across launches, like a manual red.
+        let armed = p.mode == .on || !controller.ranges.enabledProgram.ranges.isEmpty || !controller.ranges.holds.isEmpty || controller.ranges.brightnessLock != nil
         if defaults.object(forKey: Self.armedKey) as? Bool != armed { defaults.set(armed, forKey: Self.armedKey) }
         if defaults.object(forKey: Self.intensityKey) as? Double != p.intensity { defaults.set(p.intensity, forKey: Self.intensityKey) }
         reportGuard()
@@ -129,8 +132,9 @@ struct RedScreenState: Equatable {
         guard value.isFinite, let controller = ensureController() else { return }
         controller.slideIntensity(value)
     }
-    func setRedScreenFollowsSchedule(_ on: Bool) {
-        if on { ensureController()?.setFollows(true) } else { controller?.setFollows(false) }
+    func setRedScreenFilterBrightness(_ value: Double) {
+        guard value.isFinite, let controller = ensureController() else { return }
+        controller.update { $0.brightness = min(1, max(RedScreenState.filterBrightnessRange.lowerBound, value)) }
     }
     /// Same as ⌃⌥⌘R. Without a controller nothing was ever changed: no call at all.
     func restoreColors() { controller?.emergencyOff() }
@@ -142,7 +146,6 @@ struct RedScreenState: Equatable {
         case "braise disable", "braise quit":
             if let controller {
                 try Self.require(controller.emergencyOff())
-                if controller.ranges.follows { try Self.require(controller.setFollows(false)) }
             }
             stop(keepsSetting: false); return off
         case "braise status":
@@ -162,7 +165,8 @@ struct RedScreenState: Equatable {
         case "braise enable": break
         case "braise on": controller.setManual(true)
         case "braise off": try Self.require(controller.emergencyOff())
-        case "braise auto": controller.setFollows(true)
+        // T-050: the ranges are always followed; « auto » stays accepted and only reads them again.
+        case "braise auto": controller.evaluate()
         case "braise pause": try Self.require(controller.pause())
         case "braise resume": controller.resume()
         case "braise intensity": try Self.require(controller.setIntensity(Double(o["value"]!)! / 100))

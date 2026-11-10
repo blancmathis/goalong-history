@@ -233,7 +233,6 @@ final class RedScreenGuaranteeTests: XCTestCase {
         XCTAssertEqual(runtime.redScreen.intensity, 0.5, accuracy: 0.0001); XCTAssertEqual(menu.slider.value, 0.5, accuracy: 0.0001)
         click(menu.restoreItem)
         XCTAssertTrue(screens.isNormal(1)); XCTAssertTrue(screens.isNormal(2)); XCTAssertEqual(menu.toggleItem.state, .off)
-        click(menu.scheduleItem); XCTAssertEqual(menu.scheduleItem.state, .on); XCTAssertEqual(runtime.controller?.ranges.follows, true)
         click(menu.settingsItem); XCTAssertEqual(opened, 1)
     }
 

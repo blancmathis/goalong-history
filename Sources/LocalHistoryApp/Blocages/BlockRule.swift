@@ -22,6 +22,9 @@ struct BlockRule: Identifiable, Equatable {
         /// The same days and hours as a range, for the formatters.
         var range: BlockProgramRange { BlockProgramRange(weekdays: weekdays, startMinute: start, endMinute: end) }
         var text: String { "\(weekdays.sorted().map(String.init).joined()).\(start)-\(end).\(lock.strength)" }
+        /// Every day, 00:00 → 24:00: the editor's « Toujours » (T-050). Read from the ranges, never stored apart.
+        var isAlways: Bool { weekdays == Set(1...7) && start == 0 && end == 1_440 }
+        static func always(lock: BlockLock) -> Key { Key(weekdays: Set(1...7), start: 0, end: 1_440, lock: lock) }
     }
 
     enum State: Equatable {
@@ -31,8 +34,6 @@ struct BlockRule: Identifiable, Equatable {
         case next(Date)
         /// The red range is switched off (a rule with the red screen only).
         case paused
-        /// « Suivre mes horaires » is off: the red ranges do not start.
-        case unfollowed
         case idle
     }
 
@@ -168,14 +169,13 @@ enum BlockRules {
             case .running(let end): running.append(end)
             case .stopped(let end): stopped.append(end)
             case .next(let start): next.append(start)
-            case .paused, .unfollowed, .idle: break
+            case .paused, .idle: break
             }
         }
         if let end = running.max() { return .running(until: end) }
         if let end = stopped.min() { return .stopped(until: end) }
         if let start = next.min() { return .next(start) }
         if states.contains(.paused) { return .paused }
-        if states.contains(.unfollowed) { return .unfollowed }
         return .idle
     }
 
@@ -199,9 +199,7 @@ enum BlockRules {
     private static func redState(_ range: BlockProgramRange, program: RedScreenProgram, windows: [UUID: Date],
                                  now: Date, calendar: Calendar) -> BlockRule.State {
         if program.disabled.contains(range.id) || !RedScreenProgram.isUsable(range) { return .paused }
-        // A range held to its end keeps running even once « Suivre mes horaires » is off.
         if let end = windows[range.id], end > now { return .running(until: end) }
-        if !program.follows { return .unfollowed }
         if let skip = program.skips[range.id], skip > now { return .stopped(until: skip) }
         let next = BlockingSchedule.windows(of: BlockProgram(ranges: [range]), at: now, calendar: calendar, endPolicy: .last)
             .first { $0.start > now }
@@ -214,7 +212,8 @@ enum BlockRules {
 extension BlockRule {
     /// « Lun–ven, 09:00 → 12:00 ».
     var title: String {
-        key.weekdays.isEmpty ? "Aucun jour, \(BlockingFormat.range(key.range))"
+        if key.isAlways { return "Toujours" }
+        return key.weekdays.isEmpty ? "Aucun jour, \(BlockingFormat.range(key.range))"
                              : "\(BlockingFormat.weekdays(key.weekdays)), \(BlockingFormat.range(key.range))"
     }
 
@@ -245,7 +244,6 @@ extension BlockRule {
         case .stopped(let end): return "Arrêtée jusqu’à \(BlockingFormat.endTime(end))"
         case .next(let start): return "Commence \(BlockingFormat.moment(start, now: now))"
         case .paused: return "En pause"
-        case .unfollowed: return "Horaires de l’écran rouge non suivis"
         case .idle: return "Inactive"
         }
     }

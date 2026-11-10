@@ -116,7 +116,7 @@ import XCTest
 
     func testManualAndRangesAddUpTheStrongestWins() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(evening(nil), intensity: 0.8); c.setFollows(true)
+        try c.saveRange(evening(nil), intensity: 0.8)
         XCTAssertTrue(c.active); XCTAssertEqual(c.appliedIntensity, 0.8, accuracy: 0.0001)
         c.update { $0.intensity = 0.4 }; c.setManual(true)
         XCTAssertEqual(c.appliedIntensity, 0.8, accuracy: 0.0001, "manual 40 % under a range at 80 %: 80 %")
@@ -127,7 +127,7 @@ import XCTest
     func testFreeRangeCommandsActAtOnce() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
         let range = evening(nil)
-        try c.saveRange(range, intensity: 1); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(range, intensity: 1); XCTAssertTrue(c.active)
         XCTAssertEqual(c.emergencyOff(), .applied); XCTAssertFalse(c.active)
         XCTAssertEqual(c.ranges.skips[range.id], ISO8601DateFormatter().date(from: "2026-11-04T22:00:00Z"), "stopped until the range's end")
         XCTAssertTrue(c.ranges.follows, "« Rétablir » never drops the ranges")
@@ -137,7 +137,7 @@ import XCTest
 
     func testManualSwitchOffNeverDropsTheRanges() throws {
         let clocks = Clocks(wednesday22h.addingTimeInterval(-3 * 3600)), c = try controller(clocks)
-        try c.saveRange(evening(nil), intensity: 1); c.setFollows(true)
+        try c.saveRange(evening(nil), intensity: 1)
         c.setManual(true); XCTAssertTrue(c.active)
         c.setManual(false); XCTAssertFalse(c.active); XCTAssertTrue(c.ranges.follows)
         clocks.now = wednesday22h; c.evaluate(); XCTAssertTrue(c.active, "the range still turns red on")
@@ -148,9 +148,9 @@ import XCTest
     func testLockedRangeRefusesEveryWeakeningAndAllowsStricter() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
         let range = evening(.locked)
-        try c.saveRange(range, intensity: 0.7); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(range, intensity: 0.7); XCTAssertTrue(c.active)
         let end = ISO8601DateFormatter().date(from: "2026-11-04T22:00:00Z")!
-        for result in [c.setManual(false), c.emergencyOff(), c.pause(), c.setFollows(false), c.setIntensity(0.2)] {
+        for result in [c.setManual(false), c.emergencyOff(), c.pause(), c.setIntensity(0.2)] {
             XCTAssertEqual(result, .locked(until: end))
         }
         XCTAssertTrue(c.active); XCTAssertEqual(c.appliedIntensity, 0.7, accuracy: 0.0001); XCTAssertTrue(c.ranges.follows)
@@ -175,7 +175,7 @@ import XCTest
     func testRefusalAskedFromTheEditorBodyPublishesNothing() throws {
         let clocks = Clocks(wednesday22h), rangesStore = try store(root()), c = try controller(clocks, store: rangesStore)
         let range = evening(.locked)
-        try c.saveRange(range, intensity: 0.7); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(range, intensity: 0.7); XCTAssertTrue(c.active)
         var published = 0
         let watch = c.objectWillChange.sink { published += 1 }
         defer { watch.cancel() }
@@ -193,7 +193,7 @@ import XCTest
     func testTypingRangeNeedsTheTextThenRunsTheWaitingCommand() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
         var opened = 0; c.onStopRequired = { opened += 1 }
-        try c.saveRange(evening(.typing), intensity: 1); c.setFollows(true)
+        try c.saveRange(evening(.typing), intensity: 1)
         let end = ISO8601DateFormatter().date(from: "2026-11-04T22:00:00Z")!
         XCTAssertEqual(c.emergencyOff(), .needsStop(lock: .typing, end: end))
         XCTAssertEqual(opened, 1); XCTAssertEqual(c.pendingStop, .emergency); XCTAssertTrue(c.active)
@@ -204,7 +204,7 @@ import XCTest
 
     func testPasswordRangeAndNoPasswordCountsAsLocked() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks, password: "secret")
-        try c.saveRange(evening(.password), intensity: 1); c.setFollows(true)
+        try c.saveRange(evening(.password), intensity: 1)
         XCTAssertEqual(c.pause(), .needsStop(lock: .password, end: ISO8601DateFormatter().date(from: "2026-11-04T22:00:00Z")!))
         XCTAssertEqual(c.stopActiveRanges(password: "non"), .password(.wrong(remaining: 3))); XCTAssertTrue(c.active)
         XCTAssertEqual(c.stopActiveRanges(password: "secret"), .stopped)
@@ -218,7 +218,7 @@ import XCTest
     /// A protected window is held until its end even if the wall clock jumps forward; the continuous clock decides.
     func testProtectedRangeSurvivesAClockJump() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(evening(.locked), intensity: 1); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(evening(.locked), intensity: 1); XCTAssertTrue(c.active)
         clocks.now = wednesday22h.addingTimeInterval(5 * 3600); clocks.up += 60; c.evaluate()
         XCTAssertTrue(c.active, "the wall clock moved 5 h, the Mac lived 1 min: still red")
         XCTAssertEqual(c.setManual(false), .locked(until: try XCTUnwrap(c.protectedWindow?.end)))
@@ -231,20 +231,20 @@ import XCTest
     /// at wake the range is over and every command acts at once (B2 held it until 16:00).
     func testSleepCountsTowardsTheEndOfAProtectedRange() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(night(.locked), intensity: 0.8); c.setFollows(true)
+        try c.saveRange(night(.locked), intensity: 0.8)
         clocks.pass(3_600); c.evaluate()
         XCTAssertTrue(c.active); XCTAssertNotNil(c.ranges.holds.values.first?.deadline)
         clocks.pass(9 * 3_600); c.evaluate() // asleep 23:00 → 08:00: wall and continuous clocks both moved 9 h
         XCTAssertFalse(c.active, "the range ended at 07:00"); XCTAssertNil(c.protectedWindow); XCTAssertTrue(c.ranges.holds.isEmpty)
         XCTAssertEqual(c.setManual(true), .applied); XCTAssertTrue(c.active)
         XCTAssertEqual(c.setManual(false), .applied); XCTAssertFalse(c.active)
-        XCTAssertEqual(c.emergencyOff(), .applied); XCTAssertEqual(c.setFollows(false), .applied)
+        XCTAssertEqual(c.emergencyOff(), .applied)
     }
 
     /// Review B2 point 7: a clock set back a day keeps the time left, it does not add a day.
     func testClockSetBackDoesNotStretchAProtectedRange() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(evening(.locked), intensity: 1); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(evening(.locked), intensity: 1); XCTAssertTrue(c.active)
         clocks.now = wednesday22h.addingTimeInterval(-86_400); clocks.up += 60; c.evaluate()
         let end = try XCTUnwrap(c.protectedWindow?.end)
         XCTAssertEqual(end.timeIntervalSince(clocks.now), 59 * 60, accuracy: 2, "59 min left, as before the change")
@@ -257,7 +257,7 @@ import XCTest
     func testHoldSurvivesAKillAndAClockSetForward() throws {
         let root = try root(), clocks = Clocks(wednesday22h)
         let first = try controller(clocks, store: store(root))
-        try first.saveRange(evening(.locked), intensity: 1); first.setFollows(true); XCTAssertTrue(first.active)
+        try first.saveRange(evening(.locked), intensity: 1); XCTAssertTrue(first.active)
         // Killed: no shutdown, nothing more saved. The next run reads what the hold wrote.
         clocks.now = ISO8601DateFormatter().date(from: "2026-11-04T22:30:00Z")!; clocks.up += 30
         let second = try controller(clocks, store: store(root), keepsRanges: true)
@@ -276,7 +276,7 @@ import XCTest
     /// A technical fault gives the colors back at once, even during a locked range.
     func testTechnicalFaultGivesTheColorsBackDuringALockedRange() throws {
         let clocks = Clocks(wednesday22h), gamma = BraiseTestGamma(), c = try controller(clocks, gamma: gamma)
-        try c.saveRange(evening(.locked), intensity: 1); c.setFollows(true); XCTAssertTrue(c.active)
+        try c.saveRange(evening(.locked), intensity: 1); XCTAssertTrue(c.active)
         gamma.onError?("macOS n’a pas conservé le filtre.")
         XCTAssertFalse(c.active); XCTAssertNotNil(c.errorMessage); XCTAssertTrue(c.ranges.holds.isEmpty)
     }
@@ -288,7 +288,7 @@ import XCTest
         let store = store(root)
         let runtime = BraiseRuntime(registersShortcut: false, defaults: defaults, factory: { try self.controller(clocks, store: store) })
         defer { runtime.shutdown() }
-        runtime.setRedScreenFollowsSchedule(true)
+        runtime.ensureController()
         let c = try XCTUnwrap(runtime.controller)
         try c.saveRange(evening(.locked), intensity: 1)
         XCTAssertTrue(runtime.redScreen.on); XCTAssertTrue(runtime.redScreen.isProtected)
@@ -309,7 +309,7 @@ import XCTest
         let runtime = BraiseRuntime(registersShortcut: false, defaults: defaults, factory: { try self.controller(clocks, store: store) })
         defer { runtime.shutdown() }
         var opened = 0; runtime.onOpen = { opened += 1 }
-        runtime.setRedScreenFollowsSchedule(true)
+        runtime.ensureController()
         let c = try XCTUnwrap(runtime.controller)
         try c.saveRange(night(.typing), intensity: 0.8)
         let menu = RedScreenMenu(control: runtime, onOpenSettings: {})
@@ -334,7 +334,7 @@ import XCTest
         XCTAssertEqual(c.appliedIntensity, 0.9, accuracy: 0.0001)
         // « Verrouillé »: same stop, no refusal text.
         let other = try controller(Clocks(wednesday22h))
-        try other.saveRange(night(.locked), intensity: 0.7); other.setFollows(true)
+        try other.saveRange(night(.locked), intensity: 0.7)
         XCTAssertEqual(other.slideIntensity(0.1), .applied); XCTAssertNil(other.errorMessage)
         XCTAssertEqual(other.appliedIntensity, 0.7, accuracy: 0.0001); XCTAssertNotNil(other.sliderNotice)
         // The CLI keeps the rule of a weakening.
@@ -356,7 +356,7 @@ import XCTest
     /// Raising the slider during a range strengthens that range until its end only: the manual red never turns on.
     func testSliderRaiseEndsWithTheRange() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks)
-        try c.saveRange(night(nil), intensity: 0.8); c.setFollows(true)
+        try c.saveRange(night(nil), intensity: 0.8)
         clocks.pass(3_600); c.evaluate()
         XCTAssertEqual(c.slideIntensity(0.9), .applied)
         XCTAssertEqual(c.appliedIntensity, 0.9, accuracy: 0.0001); XCTAssertNotEqual(c.preferences.mode, .on)
@@ -365,7 +365,7 @@ import XCTest
         XCTAssertFalse(c.nextEvent.contains("manuellement"))
         // Same after a stop that carried the intensity: the range stops, the manual red stays off.
         let other = try controller(Clocks(wednesday22h))
-        try other.saveRange(evening(.typing), intensity: 0.8); other.setFollows(true)
+        try other.saveRange(evening(.typing), intensity: 0.8)
         guard case .needsStop = other.setIntensity(0.3) else { return XCTFail("below a « Difficile » range: the page's stop") }
         XCTAssertEqual(other.stopActiveRanges(typed: "a", challenge: "a"), .stopped)
         XCTAssertFalse(other.active); XCTAssertNotEqual(other.preferences.mode, .on)
@@ -375,7 +375,7 @@ import XCTest
     // MARK: Menu (review B1 points 4 and 5)
 
     func testRestoreItemIsGreyedWhileRedIsOffAndSliderAnnouncesItsValue() throws {
-        let control = GalleryRedScreen(RedScreenState(on: false, intensity: 0.7, followsSchedule: false))
+        let control = GalleryRedScreen(RedScreenState(on: false, intensity: 0.7))
         let menu = RedScreenMenu(control: control, onOpenSettings: {})
         let real = NSMenu(); real.autoenablesItems = true; menu.items.forEach(real.addItem)
         real.update()

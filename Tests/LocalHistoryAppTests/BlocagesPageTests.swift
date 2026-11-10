@@ -218,7 +218,7 @@ import XCTest
         let old = try braise(root)
         for range in old.ranges.program.ranges { try old.deleteRange(range.id) }
         let night = evening(.locked)
-        try old.saveRange(night, intensity: 0.8); old.setFollows(true)
+        try old.saveRange(night, intensity: 0.8)
 
         // Restart: new controllers on the same files.
         let lists = blocking(store: store), screen = try braise(root)

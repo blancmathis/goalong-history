@@ -32,7 +32,8 @@ struct RedScreenProgram: Codable, Equatable {
     var intensities: [UUID: Double] = [:]
     /// Ranges kept but switched off (an old Braise rule that was off stays off).
     var disabled: Set<UUID> = []
-    /// « Suivre mes horaires ».
+    /// « Suivre mes horaires », gone since T-050: always true after `BraiseController`'s one-time migration. Kept so an
+    /// older Goalong reads the file the same way.
     var follows = false
     /// Window stopped for today (« Arrêter »): range → end of that window.
     var skips: [UUID: Date] = [:]
@@ -91,10 +92,10 @@ struct RedScreenProgram: Codable, Equatable {
         return day == 1 ? 7 : day - 1
     }
 
-    /// A range that can be switched on: a day, and a start different from its end.
+    /// A range that can be switched on: a day, and a start different from its end (00:00–24:00 is a whole day, « Toujours »).
     static func isUsable(_ range: BlockProgramRange) -> Bool {
         !range.weekdays.isEmpty && range.weekdays.isSubset(of: Set(1...7)) && (0..<1_440).contains(range.startMinute)
-            && (1...1_440).contains(range.endMinute) && range.startMinute != range.endMinute % 1_440
+            && (1...1_440).contains(range.endMinute) && range.startMinute != range.endMinute
     }
 }
 

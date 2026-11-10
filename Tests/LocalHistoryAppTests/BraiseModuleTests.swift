@@ -148,7 +148,6 @@ final class BraiseModuleTests: XCTestCase {
         let controller = try BraiseController(store: store, gamma: gamma, runsTimers: false, clock: { now })
         defer { controller.shutdown() }
         try controller.saveRange(BlockProgramRange(weekdays: Set(1...7), startMinute: 21 * 60, endMinute: 7 * 60, lock: nil), intensity: 1)
-        controller.setFollows(true)
         XCTAssertTrue(controller.active)
         NSTimeZone.default = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
         controller.evaluate()

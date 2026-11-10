@@ -107,9 +107,6 @@ import XCTest
 
         let screen = red([range])
         XCTAssertEqual(rules([], screen, windows: [range.id: noon])[0].state, .running(until: noon))
-        var unfollowed = screen; unfollowed.follows = false
-        XCTAssertEqual(rules([], unfollowed)[0].state, .unfollowed)
-        XCTAssertEqual(rules([], unfollowed, windows: [range.id: noon])[0].state, .running(until: noon), "a held range runs to its end")
         var skipped = screen; skipped.skips[range.id] = noon
         XCTAssertEqual(rules([], skipped)[0].state, .stopped(until: noon))
         // The row shows what runs first, then what is stopped today, then the next start.
@@ -117,7 +114,7 @@ import XCTest
         XCTAssertEqual(BlockRules.combined([.next(later), .stopped(until: noon), .running(until: noon)]), .running(until: noon))
         XCTAssertEqual(BlockRules.combined([.next(later), .stopped(until: noon)]), .stopped(until: noon))
         XCTAssertEqual(BlockRules.combined([.paused, .next(later)]), .next(later))
-        XCTAssertEqual(BlockRules.combined([.idle, .unfollowed]), .unfollowed); XCTAssertEqual(BlockRules.combined([]), .idle)
+        XCTAssertEqual(BlockRules.combined([]), .idle)
     }
 
     func testTheRowSaysWhenWhatSafetyAndState() {
@@ -150,7 +147,7 @@ import XCTest
         XCTAssertEqual(writes.lists[0].program.ranges[1], a.program.ranges[1], "the other ranges of the list do not move")
         XCTAssertNil(writes.lists[0].program.ranges[0].lock, "a lock that does not change is not rewritten")
         XCTAssertEqual(writes.red.map(\.range.id), [screen.program.ranges[0].id]); XCTAssertEqual(writes.red[0].range.startMinute, 480)
-        XCTAssertTrue(writes.deleting.isEmpty); XCTAssertFalse(writes.follows)
+        XCTAssertTrue(writes.deleting.isEmpty)
         // A harder lock is written on every range of the rule.
         draft.lock = .locked
         let harder = BlockRulePlan.writes(draft, replacing: rule, lists: [a, b], red: screen)
@@ -193,23 +190,20 @@ import XCTest
     func testANewRuleIsSavedInBothEnginesAndTheFirstRedRangeFollowsTheHours() throws {
         var now = wednesday10h
         let lists = blocking([list("Jeux", []), list("Vidéo", [])], { now }), screen = try braise({ now })
-        XCTAssertFalse(screen.ranges.follows)
+        XCTAssertTrue(screen.ranges.follows, "T-050 A3-11: the ranges always follow their hours")
         var draft = BlockRuleDraft(); draft.weekdays = [6]; draft.listIDs = Set(lists.lists.map(\.id)); draft.red = true; draft.lock = .typing
         var writes = BlockRulePlan.writes(draft, replacing: nil, lists: lists.lists, red: screen.ranges)
-        XCTAssertTrue(writes.follows)
         XCTAssertNil(BlockRulePlan.apply(writes, blocking: lists, braise: screen))
         XCTAssertTrue(screen.ranges.follows)
         let saved = BlockRules.current(blocking: lists, braise: screen, now: now, calendar: paris)
         XCTAssertEqual(saved.count, 1); XCTAssertEqual(saved[0].lists.count, 2); XCTAssertNotNil(saved[0].red); XCTAssertEqual(saved[0].lock, .typing)
         guard case .next = saved[0].state else { return XCTFail("the rule waits for Saturday: \(saved[0].state)") }
-        // A second red rule does not touch « Suivre mes horaires » once the owner turned it off.
-        screen.setFollows(false)
+        // A second red rule waits for its own day: no « non suivis » state any more.
         draft = BlockRuleDraft(); draft.weekdays = [7]; draft.red = true
         writes = BlockRulePlan.writes(draft, replacing: nil, lists: lists.lists, red: screen.ranges)
-        XCTAssertFalse(writes.follows); XCTAssertNil(BlockRulePlan.apply(writes, blocking: lists, braise: screen))
-        XCTAssertFalse(screen.ranges.follows)
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: lists, braise: screen))
         let all = BlockRules.current(blocking: lists, braise: screen, now: now, calendar: paris)
-        XCTAssertEqual(all.count, 2); XCTAssertEqual(all.first { $0.isRedOnly }?.state, .unfollowed)
+        guard case .next = all.first(where: { $0.isRedOnly })?.state else { return XCTFail("the red rule waits for Sunday") }
         now = now.addingTimeInterval(1)
     }
 
@@ -217,7 +211,7 @@ import XCTest
         // Wednesday 10:00: the red range 09:00–12:00 is « Verrouillé » and in progress. The lists' range is free.
         let now = wednesday10h
         let lists = blocking([list("Jeux", [morning()])], { now }), screen = try braise({ now })
-        try screen.saveRange(morning(), intensity: 0.7); screen.setFollows(true)
+        try screen.saveRange(morning(), intensity: 0.7)
         var locked = screen.ranges.program.ranges[0]; locked.lock = .locked
         try screen.saveRange(locked, intensity: 0.7); XCTAssertTrue(screen.active)
         // Two rules (different locks): edit the red one and add the list to it, with shorter hours.
@@ -258,7 +252,7 @@ import XCTest
         let first = BlockingController(clock: { now }, store: store, calendar: paris, continuous: { now.timeIntervalSince1970 })
         XCTAssertNil(first.save(list("Jeux", [morning(.typing)]))); first.shutdown()
         let screen = try braise({ now }, root: root)
-        try screen.saveRange(morning(.typing), intensity: 0.6); screen.setFollows(true)
+        try screen.saveRange(morning(.typing), intensity: 0.6)
         let files = [root.appendingPathComponent("Blocking/blocking.json"), root.appendingPathComponent("Braise/ranges.json")]
         let lists = BlockingController(clock: { now }, store: store, calendar: paris, continuous: { now.timeIntervalSince1970 })
         addTeardownBlock { @MainActor in lists.shutdown() }

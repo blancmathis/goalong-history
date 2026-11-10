@@ -182,7 +182,7 @@ import XCTest
             braise.start()
             XCTAssertEqual(runtime.quitRule(now: clocks.now), .allowed, "\(lock)")
             try red.saveRange(evening(lock), intensity: 0.8)
-            braise.setRedScreenFollowsSchedule(true)
+            braise.ensureController()
             XCTAssertEqual(runtime.redScreen, .until(rangeEnd, lock: lock))
             XCTAssertEqual(runtime.quitRule(now: clocks.now), expected, "\(lock)")
             XCTAssertTrue(blocks.quitIsLocked, "\(lock)")

@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 /// Where a link lands in the page « Blocages ». The old pages (Concentration, Distractions, Garde-fous,
-/// Écran rouge) are aliases of this one page.
+/// Écran rouge) are aliases of this one page. `redScreen` lands on the rules: the red ranges are rules (T-050 point 13).
 enum BlocagesTarget: Hashable {
     case top, lists, sessions, redScreen, jev
 
@@ -25,7 +25,7 @@ struct BlocagesRequest: Equatable {
 }
 
 /// The dépliants of the page. A dépliant builds its content only while it is open.
-enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, protection, redManual, redSafety }
+enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, protection, redSafety }
 
 /// The one page of what Goalong blocks (docs/spec-blocages-20261110.md): what runs now, the rules, the lists,
 /// the work sessions, then the protection. The engines stay the ones of Blocage, Concentration and Écran rouge.
@@ -111,7 +111,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                         rules(now: now).id(BlocagesTarget.top)
                         lists(now: now).id(BlocagesTarget.lists)
                         sessions(now: now, proxy: proxy).id(BlocagesTarget.sessions)
-                        protection.id(BlocagesTarget.redScreen)
+                        protection
                     }
                     .font(.system(size: 13))
                     .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
@@ -148,8 +148,13 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         guard target != .top else { return }
         // Jev is a rule: its link (menu bar, notification, Réglages) opens the rule, where its settings are.
         if target == .jev { editing = .jev; return }
-        if target == .redScreen { open.insert(.redManual) }
-        DispatchQueue.main.async { proxy.scrollTo(target, anchor: .top) }
+        let anchor = Self.anchor(target)
+        DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) }
+    }
+
+    /// The part a target scrolls to. The red screen's ranges are rules: its links land on the list of rules.
+    static func anchor(_ target: BlocagesTarget) -> BlocagesTarget {
+        target == .redScreen ? .top : target
     }
 
     private var header: some View {
@@ -233,8 +238,13 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
 
     // MARK: Protection
 
+    static let protectionSubtitle = "Ce qui empêche de contourner un blocage."
+    static let redSafetyTitle = "Secours de l’écran rouge"
+    /// The empty list of rules: the rule of Jev stays under it, so it says « autre » (T-050 point 15).
+    static let noRuleText = "Aucune autre règle. « Nouvelle règle » bloque toujours, à des horaires, ou le temps d’une séance."
+
     private var protection: some View {
-        GoalongSection(title: "Protection", subtitle: "Ce qui empêche de contourner un blocage, et l’écran rouge à la main.", trailing: {
+        GoalongSection(title: "Protection", subtitle: Self.protectionSubtitle, trailing: {
             if let blocking { BlockingProtectionPill(controller: blocking) }
         }, content: {
             VStack(alignment: .leading, spacing: 4) {
@@ -243,12 +253,9 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                         BlockingProtectionDetails(controller: blocking).environment(\.goalongSectionTitleHidden, true)
                     }
                 }
+                // T-050 point 10: the manual red and its brightness live in the menu bar; a held brightness is a rule.
                 if let braise {
-                    BlocagesFoldView(open: $open, fold: .redManual, title: "Écran rouge : réglage manuel, verrou de luminosité") {
-                        BraisePageContent(controller: braise, showsTitle: false, part: .manual)
-                    }
-                    BlocagesFoldView(open: $open, fold: .redSafety, title: "Écran rouge : secours et ouverture de session",
-                                     summary: "Secours : ⌃ ⌥ ⌘ R") {
+                    BlocagesFoldView(open: $open, fold: .redSafety, title: Self.redSafetyTitle, summary: "⌃ ⌥ ⌘ R") {
                         BraisePageContent(controller: braise, showsTitle: false, part: .safety)
                     }
                 } else {
@@ -392,7 +399,7 @@ struct BlocagesFoldView<Content: View>: View {
         LHCard(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 if rules.isEmpty {
-                    Text("Aucune règle à heures fixes. « Nouvelle règle » bloque maintenant ou programme une plage.")
+                    Text(BlocagesPageContent.noRuleText)
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 14)
@@ -423,21 +430,22 @@ private extension BlockRule {
     }
 }
 
-/// The rule of Jev. It warns, it does not block: its stop rule is always « Libre ».
-@MainActor private struct BlocagesJevRow: View {
+/// The rule of Jev. It warns, it does not block: the row says so instead of a stop rule (T-050 point 15).
+@MainActor struct BlocagesJevRow: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     let action: () -> Void
+    static let summary = "Vous rappelle votre projet quand il repère une distraction"
+    static let kind = "Rappel, ne bloque rien"
 
     var body: some View {
         let on = consents.isEnabled(.jevMonitoring)
-        let summary = "Vous rappelle votre projet quand il repère une distraction"
         let state = on ? "Activée" : "Désactivée"
         Button(action: action) {
-            BlocagesRuleRow(title: BlockRuleEditor.jevTitle, summary: summary, lock: BlockLock.free.title,
+            BlocagesRuleRow(title: BlockRuleEditor.jevTitle, summary: Self.summary, lock: Self.kind,
                             state: state, running: on)
         }
         .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
-        .accessibilityLabel("\(BlockRuleEditor.jevTitle). \(summary). Sécurité : \(BlockLock.free.title). \(state).")
+        .accessibilityLabel("\(BlockRuleEditor.jevTitle). \(Self.summary). \(Self.kind). \(state).")
         .accessibilityHint("Ouvre la règle")
         .accessibilityIdentifier("blocages-rule-jev")
     }
@@ -619,8 +627,10 @@ private struct BlocagesRuleRow: View {
 // MARK: - Protection
 
 /// The red screen was never used on this Mac: nothing runs for it until it is turned on or put in a rule.
-@MainActor private struct BlocagesRedOff: View {
+@MainActor struct BlocagesRedOff: View {
     @ObservedObject private var runtime = BraiseRuntime.shared
+    /// T-050 point 13: the manual red is in the menu Goalong, the ranges are rules; nothing turns it on « ici ».
+    static let text = "Écran rouge éteint. Il s’allume dans une règle (« Nouvelle règle », bloc « Écran rouge ») ou depuis le menu Goalong."
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -629,7 +639,7 @@ private struct BlocagesRuleRow: View {
                     .accessibilityIdentifier("blocages-red-failed")
                 Button("Réessayer") { runtime.retry() }.buttonStyle(LHSecondaryButtonStyle())
             } else {
-                Text("Écran rouge éteint. Le filtre rouge du soir s’allume ici, dans une règle, ou depuis le menu Goalong.")
+                Text(Self.text)
                     .foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Allumer l’écran rouge") { runtime.setRedScreen(true) }
