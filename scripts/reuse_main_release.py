@@ -127,7 +127,8 @@ def gates(sha, tree):
                 and pr['head']['repo'] and pr['head']['repo']['full_name'] == REPO):
             merged_at = pr['merged_at']
             candidates.append(pr['head']['sha'])
-    return local_deploy_policy.gates_for(candidates, tree, sha, merged_at)
+    # The reused bytes were built by SHA's own workflows: their gate recipe must be SHA's.
+    return local_deploy_policy.gates_for(candidates, tree, sha, merged_at, recipe=sha)
 
 
 def cdhash(app):

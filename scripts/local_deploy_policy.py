@@ -38,7 +38,7 @@ def tree_for(revision):
                        stdout=sys.stderr, stderr=sys.stderr)
     return git('rev-parse', f'{revision}^{{tree}}')
 
-def validate_receipt(receipt, run, name, tree):
+def validate_receipt(receipt, run, name, tree, recipe='HEAD'):
     path = GATES[name]
     expected = {'schemaVersion': 1, 'repository': REPO, 'runId': run['id'],
                 'runAttempt': run['run_attempt'], 'job': name, 'event': run['event'],
@@ -50,10 +50,12 @@ def validate_receipt(receipt, run, name, tree):
     commit = receipt.get('checkoutCommit', '')
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or tree_for(commit) != tree:
         raise ValueError('Gate checkout is not the admitted source tree')
-    if git('show', f'{commit}:{path}') != git('show', f'HEAD:{path}'):
+    if git('show', f'{commit}:{path}') != git('show', f'{recipe}:{path}'):
         raise ValueError('Gate workflow recipe differs from the publication checkout')
 
-def gates_for(candidates, tree, revision, merged_at=None):
+def gates_for(candidates, tree, revision, merged_at=None, recipe='HEAD'):
+    # recipe: the checkout whose gate workflows must match. HEAD when this checkout builds;
+    # the source commit when its already-published bytes are reused (a dry run checks out a branch).
     for tested in candidates:
         checks = pages(f'commits/{tested}/check-runs', 'check_runs')
         evidence = {}
@@ -85,7 +87,7 @@ def gates_for(candidates, tree, revision, merged_at=None):
                 subprocess.run(['gh', 'run', 'download', str(run['id']), '--repo', REPO,
                                 '--name', artifact_name, '--dir', directory], check=True, stdout=sys.stderr)
                 receipt = json.loads((Path(directory) / 'gate-receipt.json').read_text())
-            validate_receipt(receipt, run, name, tree)
+            validate_receipt(receipt, run, name, tree, recipe)
             evidence[name] = {**receipt, 'checkId': check['id'], 'jobId': job['id'],
                               'artifactId': rows[0]['id'], 'artifactDigest': rows[0].get('digest')}
         if set(evidence) == set(GATES):
