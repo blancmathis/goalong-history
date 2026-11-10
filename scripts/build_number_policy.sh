@@ -36,6 +36,25 @@ localhistory_local_try_build_number() {
   printf '%s.%s.%s\n' "$LOCALHISTORY_RELEASE_BUILD_EPOCH" "$high" "$((slot * 100 + LOCALHISTORY_LOCAL_TRY_ATTEMPT))"
 }
 
+# make local trusts the public manifest only as a base: a forged far-future build would otherwise
+# pin the try above every real release. Its run slot (high part) must stay near the installed build
+# and below a generous ceiling from a known point (high 4266167 on 2026-11-10, +5000 per day).
+LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH=4266167
+LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH=1794268800
+localhistory_manifest_base_plausible() { # BUILD [INSTALLED_BUILD] [NOW_EPOCH]
+  local build="$1" installed="${2:-}" now="${3:-$(date +%s)}"
+  local re="^${LOCALHISTORY_RELEASE_BUILD_EPOCH}\\.([1-9][0-9]*)\\.[1-9][0-9]*$"
+  [[ "$build" =~ $re ]] || return 1
+  local high="${BASH_REMATCH[1]}" days=$(( (now - LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH) / 86400 ))
+  (( days < 0 )) && days=0
+  local ceiling=$(( LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH + days * 5000 + 1000 ))
+  if [[ "$installed" =~ $re ]]; then
+    local near=$(( BASH_REMATCH[1] + 3000 ))
+    (( near < ceiling )) && ceiling=$near
+  fi
+  (( 10#$high <= ceiling ))
+}
+
 localhistory_validate_build_number() {
   local build="$1"
   local development="${2:-0}"
@@ -60,6 +79,7 @@ localhistory_validate_build_number() {
   local run_id="${GITHUB_RUN_ID:-}"
   local attempt="${GITHUB_RUN_ATTEMPT:-1}"
   if [[ "${GITHUB_ACTIONS:-}" == "true" && "$run_id" =~ ^[1-9][0-9]*$ && "$attempt" =~ ^[1-9][0-9]?$ ]] \
+     && (( 10#$attempt < LOCALHISTORY_LOCAL_TRY_ATTEMPT )) \
      && [[ "$build" == "$(localhistory_release_build_number "$run_id" "$attempt")" ]]; then
     return 0
   fi

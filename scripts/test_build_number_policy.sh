@@ -61,6 +61,19 @@ reject localhistory_local_try_build_number 30000000.4266167
   reject localhistory_validate_build_number 30000000.99999999.99
   GITHUB_ACTIONS=true reject localhistory_validate_build_number 30000000.4266167.303799
 )
+# CI attempt 99 is reserved for the local try: the validator refuses it even for the exact run number.
+(
+  export GITHUB_ACTIONS=true GITHUB_RUN_ID=42661670000
+  GITHUB_RUN_ATTEMPT=98 accept localhistory_validate_build_number "$(localhistory_release_build_number 42661670000 98)"
+  GITHUB_RUN_ATTEMPT=99 reject localhistory_validate_build_number "$(localhistory_release_build_number 42661670000 99)"
+)
+# Manifest base cap: near the installed build and under the time ceiling (now = 2026-11-11).
+now=1794355200
+accept localhistory_manifest_base_plausible 30000000.4266170.101 30000000.4266167.303702 "$now"
+reject localhistory_manifest_base_plausible 30000000.4290000.101 30000000.4266167.303702 "$now"
+accept localhistory_manifest_base_plausible 30000000.4268000.101 "" "$now"
+reject localhistory_manifest_base_plausible 30000000.9999999.101 "" "$now"
+reject localhistory_manifest_base_plausible 20260929.123456 "" "$now"
 # Sparkle (numeric per component) orders: release < its try < the next run's release.
 sorted="$(printf '%s\n' 30000000.4266168.1 30000000.4266167.303799 30000000.4266167.303702 \
   | sort -t. -k1,1n -k2,2n -k3,3n | tr '\n' ' ')"

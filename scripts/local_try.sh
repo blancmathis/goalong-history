@@ -15,6 +15,12 @@ WORK="$ROOT/.build/goalong-local"
 OUT="${GOALONG_LOCAL_OUT:-$WORK/out}"
 NO_INSTALL="${GOALONG_LOCAL_NO_INSTALL:-0}"
 MANIFEST_URL="https://github.com/blancmathis/goalong-history/releases/download/latest-main/release-manifest.json"
+# Test hooks, honored only with NO_INSTALL=1: a fixture manifest (file path) and app folders.
+TEST_MANIFEST="${GOALONG_LOCAL_TEST_MANIFEST:-}"
+APP_DIRS=("/Applications" "$HOME/Applications")
+if [[ "$NO_INSTALL" == 1 && -n "${GOALONG_LOCAL_TEST_APP_DIRS:-}" ]]; then
+  IFS=: read -r -a APP_DIRS <<<"$GOALONG_LOCAL_TEST_APP_DIRS"
+fi
 # shellcheck source=build_number_policy.sh
 source "$ROOT/scripts/build_number_policy.sh"
 
@@ -37,7 +43,7 @@ trap 'rmdir "$WORK/lock" 2>/dev/null || true' EXIT
 # plain HTTPS). Offline, only the installed app counts; a newer public release then replaces the try.
 release_builds=()
 installed_build="" installed_version=""
-for candidate in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
+for candidate in "${APP_DIRS[@]/%//$APP_NAME.app}"; do
   if [[ -d "$candidate" && ! -L "$candidate" ]]; then
     installed_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
     installed_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
@@ -45,9 +51,15 @@ for candidate in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app
   fi
 done
 [[ -z "$installed_build" ]] || release_builds+=("$installed_build|$installed_version")
-if public="$(/usr/bin/curl --fail --location --silent --max-time 20 --proto '=https' "$MANIFEST_URL" 2>/dev/null \
+manifest_proto='=https'
+if [[ "$NO_INSTALL" == 1 && -n "$TEST_MANIFEST" ]]; then MANIFEST_URL="file://$TEST_MANIFEST"; manifest_proto='=https,file'; fi
+if public="$(/usr/bin/curl --fail --location --silent --max-time 20 --proto "$manifest_proto" "$MANIFEST_URL" 2>/dev/null \
     | /usr/bin/python3 -c 'import json,sys; p=json.load(sys.stdin)["product"]; print(p["build"]+"|"+p["version"])' 2>/dev/null)"; then
-  release_builds+=("$public")
+  if localhistory_manifest_base_plausible "${public%%|*}" "$installed_build"; then
+    release_builds+=("$public")
+  else
+    echo "Warning: public manifest build ${public%%|*} is implausibly far ahead; ignored. Base is the installed app only." >&2
+  fi
 else
   echo "Warning: public release manifest unreachable; base is the installed app only." >&2
 fi
@@ -56,6 +68,10 @@ for line in "${release_builds[@]+"${release_builds[@]}"}"; do
   localhistory_local_try_build_number "${line%%|*}" >/dev/null 2>&1 || continue
   base_line="$(printf '%s\n%s\n' "$base_line" "$line" | sed '/^$/d' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
 done
+if [[ -z "$base_line" && "$installed_build" =~ ^${LOCALHISTORY_RELEASE_BUILD_EPOCH}\.[0-9]+\.[0-9]*99$ ]]; then
+  echo "Installed build $installed_build is already a local try and the public release is unreachable (offline?). Reconnect, then run make local again." >&2
+  exit 1
+fi
 [[ -n "$base_line" ]] || { echo "No published Goalong release found (installed or public); make local needs one as its base." >&2; exit 1; }
 BASE_BUILD="${base_line%%|*}"
 VERSION="${base_line#*|}"
@@ -93,13 +109,10 @@ if [[ "$NO_INSTALL" == 1 ]]; then
   exit 0
 fi
 
-# The installer re-verifies the bundle, refuses a different signing identity or a severe block,
-# quits Goalong cleanly and replaces it with rollback. It must never downgrade what Sparkle installed.
-if [[ -n "$installed_build" ]]; then
-  newest="$(printf '%s\n%s\n' "$installed_build" "$TRY_BUILD" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
-  [[ "$newest" == "$TRY_BUILD" ]] \
-    || { echo "Installed build $installed_build is newer than $TRY_BUILD; run make local again." >&2; exit 1; }
-fi
+# The installer re-verifies the bundle, refuses a different signing identity, a newer installed build
+# (read from the folder it will really replace), any active or scheduled block, quits Goalong cleanly
+# (never SIGKILL) and replaces it with rollback. The lock override is never passed through.
+unset GOALONG_INSTALL_DURING_LOCK
 started="$(date +%s)"
 GOALONG_LOCAL_TRY=1 LOCALHISTORY_PREBUILT_APP="$APP" "$ROOT/scripts/install_from_source.sh"
 step "Install" "$started"

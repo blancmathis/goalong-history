@@ -190,6 +190,41 @@ if [[ "$prebuilt_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'only accepted from ma
   exit 1
 fi
 
+# make local: refuse when the installed build in the real target folder is newer than the try.
+write_build() { # APP BUILD
+  /bin/mkdir -p "$1/Contents"
+  /usr/bin/printf '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleVersion</key><string>%s</string></dict></plist>' "$2" >"$1/Contents/Info.plist"
+}
+write_build "$TEST_ROOT/downgrade-src.app" 30000000.4266167.303799
+TARGET_DIR="$TEST_ROOT/downgrade-target"
+write_build "$TARGET_DIR/$APP_NAME.app" 30000000.4266168.1
+if GOALONG_LOCAL_TRY=1 refuse_local_try_downgrade "$TEST_ROOT/downgrade-src.app" 2>/dev/null; then
+  echo "make local accepted a downgrade over a newer installed build." >&2
+  exit 1
+fi
+write_build "$TARGET_DIR/$APP_NAME.app" 30000000.4266167.303702
+GOALONG_LOCAL_TRY=1 refuse_local_try_downgrade "$TEST_ROOT/downgrade-src.app"
+# make local never force-quits and never installs over a scheduled lock.
+set +e
+sigkill_output="$(GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 /bin/bash -c '
+  source "$1"; /usr/bin/pgrep() { return 0; }; /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
+  quit_running_goalong goalong-test-never' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+sigkill_status=$?
+HOME_LOCK="$TEST_ROOT/home-lock"
+/bin/mkdir -p "$HOME_LOCK/Library/Application Support/LocalHistory/Blocking"
+/bin/date -v+1H +%s >"$HOME_LOCK/Library/Application Support/LocalHistory/Blocking/locked-until"
+lock_output="$(HOME="$HOME_LOCK" GOALONG_LOCAL_TRY=1 /bin/bash -c 'source "$1"; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+lock_status=$?
+set -e
+if [[ "$sigkill_status" -ne 1 ]] || [[ "$sigkill_output" == *KILLED* ]] || ! grep -Fq 'never force-quits' <<<"$sigkill_output"; then
+  echo "make local quit path force-killed or did not stop: $sigkill_output" >&2
+  exit 1
+fi
+if [[ "$lock_status" -ne 3 ]] || ! grep -Fq 'scheduled' <<<"$lock_output"; then
+  echo "make local did not refuse a locked-until block: $lock_output" >&2
+  exit 1
+fi
+
 MARKER_FILE="$TEST_ROOT/legacy-marker"
 /usr/bin/printf '%s\n' 'captureFullContents' >"$MARKER_FILE"
 set +e

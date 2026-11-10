@@ -522,6 +522,14 @@ release_blocking_guard() { # APP_PATH...
 # arms nothing, and only gets the note it always had.
 refuse_install_during_severe_block() {
   local until blocking="$HOME/Library/Application Support/LocalHistory/Blocking"
+  if [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]]; then
+    # make local never installs over a block, running (guard-until) or scheduled (locked-until).
+    until="$(goalong_severe_block_until "$blocking")"
+    if (( until > 0 )); then
+      echo "A locked block is active or scheduled until $(/bin/date -r "$until" '+%Y-%m-%d %H:%M'). make local did not replace Goalong History; run it again after that time." >&2
+      exit 3
+    fi
+  fi
   until="$(goalong_marker_until "$blocking/guard-until")"
   if (( until == 0 )); then
     if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
@@ -555,8 +563,30 @@ quit_running_goalong() {
     /bin/sleep 0.1
     waited=$((waited + 1))
   done
+  if [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]]; then
+    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Quit Goalong in the app, then run make local again. Nothing was replaced." >&2
+    exit 1
+  fi
   for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
   /bin/sleep 0.4
+}
+
+# make local only: the installed build in the folder the installer will really replace (any known
+# app name there) must not be newer than the bundle about to be installed. Returns 1 to refuse.
+refuse_local_try_downgrade() { # SOURCE_APP (after select_install_target)
+  [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]] || return 0
+  local source_build installed_build name newest
+  source_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$1/Contents/Info.plist" 2>/dev/null || true)"
+  for name in "$APP_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME"; do
+    [[ -d "$TARGET_DIR/$name.app" && ! -L "$TARGET_DIR/$name.app" ]] || continue
+    installed_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TARGET_DIR/$name.app/Contents/Info.plist" 2>/dev/null || true)"
+    [[ -n "$installed_build" && -n "$source_build" ]] || continue
+    newest="$(printf '%s\n%s\n' "$installed_build" "$source_build" | /usr/bin/sort -t. -k1,1n -k2,2n -k3,3n | /usr/bin/tail -1)"
+    if [[ "$newest" != "$source_build" ]]; then
+      echo "Installed build $installed_build in $TARGET_DIR is newer than $source_build; run make local again." >&2
+      return 1
+    fi
+  done
 }
 
 replace_staged_bundle() {
@@ -669,6 +699,7 @@ main() {
   run_step "Verifying the source bundle" validate_app_bundle "$source_app"
 
   select_install_target
+  refuse_local_try_downgrade "$source_app" || exit 1
   selected_target_directory="$TARGET_DIR"
   recover_interrupted_replacement
   preflight_existing_target
@@ -685,6 +716,7 @@ main() {
     echo "The selected application location changed during installation; refusing replacement." >&2
     exit 1
   fi
+  refuse_local_try_downgrade "$source_app" || exit 1
   recover_interrupted_replacement
   preflight_existing_target
   run_step "Rechecking macOS privacy identity" \
