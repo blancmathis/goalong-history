@@ -12,6 +12,7 @@ import XCTest
         var removed = 0
         var activations = 0
         var closes = 0
+        var insidePanel = false
     }
 
     private func make() -> (MenuBarPanelDismissal, Fake) {
@@ -20,6 +21,7 @@ import XCTest
             addGlobalMonitor: { fake.global.append(($0, $1)); return fake.global.count },
             addLocalMonitor: { fake.local.append(($0, $1)); return -fake.local.count },
             removeMonitor: { _ in fake.removed += 1 },
+            isInsidePanel: { _ in fake.insidePanel },
             activate: { fake.activations += 1 },
             frontmostOther: { nil })
         return (MenuBarPanelDismissal(hooks: hooks) { fake.closes += 1 }, fake)
@@ -56,6 +58,32 @@ import XCTest
         XCTAssertNotNil(fake.local[0].handler(key(0)), "ordinary keys go to the panel")
         XCTAssertEqual(fake.closes, 0)
         XCTAssertNil(fake.local[0].handler(key(53)), "Esc is used up")
+        XCTAssertEqual(fake.closes, 1)
+    }
+
+    /// T-051: AppKit must not close the panel by itself; a pointer leaving the icon or the panel keeps it open.
+    func testAppKitNeverClosesThePanelAndPointerMovesKeepItOpen() {
+        XCTAssertEqual(MenuBarController.panelBehavior, .applicationDefined,
+                       "a .transient popover is closed by AppKit on focus or activation changes")
+        let (dismissal, fake) = make()
+        dismissal.begin()
+        XCTAssertFalse(fake.global[0].mask.contains(.mouseMoved), "no pointer-move watch")
+        XCTAssertFalse(fake.global[0].mask.contains(.mouseExited))
+        XCTAssertFalse(fake.local[0].mask.contains(.mouseMoved))
+        XCTAssertFalse(fake.local[0].mask.contains(.mouseExited))
+        XCTAssertEqual(fake.closes, 0)
+    }
+
+    /// With the panel no longer transient, a click in another Goalong window (or on our own icon) must still close it.
+    func testClickInAnotherGoalongWindowClosesAndClickInThePanelKeepsItOpen() {
+        let (dismissal, fake) = make()
+        dismissal.begin()
+        XCTAssertTrue(fake.local[0].mask.contains(.leftMouseDown))
+        fake.insidePanel = true
+        XCTAssertNotNil(fake.local[0].handler(click()))
+        XCTAssertEqual(fake.closes, 0, "a click on the panel keeps it open")
+        fake.insidePanel = false
+        XCTAssertNotNil(fake.local[0].handler(click()), "the click goes on to its target")
         XCTAssertEqual(fake.closes, 1)
     }
 

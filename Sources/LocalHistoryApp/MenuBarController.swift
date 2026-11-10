@@ -19,7 +19,16 @@
         private var panelClosedAt: TimeInterval?
         static let reopenGuard: TimeInterval = 0.3
         /// T-048 D1: outside click and Esc close the panel even though Goalong was not active.
-        @MainActor private lazy var panelDismissal = MenuBarPanelDismissal { [weak self] in self?.closePanel() }
+        @MainActor private lazy var panelDismissal: MenuBarPanelDismissal = {
+            var hooks = MenuBarPanelDismissal.Hooks.live
+            hooks.isInsidePanel = { [weak self] event in
+                guard let window = self?.popover.contentViewController?.view.window else { return false }
+                return event.window === window
+            }
+            return MenuBarPanelDismissal(hooks: hooks) { [weak self] in self?.closePanel() }
+        }()
+        /// T-051: AppKit must not close the panel on its own; `MenuBarPanelDismissal` does it.
+        static let panelBehavior: NSPopover.Behavior = .applicationDefined
         private let privacyItem = NSMenuItem(title: "Confidentialité", action: nil, keyEquivalent: "")
 
         private let state: CaptureState
@@ -123,7 +132,7 @@
         @MainActor func configurePanel(model: MenuBarPanelModel) {
             closePanel()
             panelModel = model
-            popover.behavior = .transient
+            popover.behavior = Self.panelBehavior
             popover.delegate = self
             popover.animates = true
             let host = NSHostingController(rootView: MenuBarPanelView(model: model) { [weak self] height in
