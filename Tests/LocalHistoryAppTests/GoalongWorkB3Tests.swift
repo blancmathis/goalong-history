@@ -37,9 +37,7 @@
             XCTAssertEqual(today.weeklyPercentBefore, 11); XCTAssertEqual(today.weeklyPercentAfter, 12)
             XCTAssertEqual(GoalongWorkSchedule.decide(now: date(19), pendingGroups: 50, usage: today, manual: false, calendar: calendar),
                            .skip(.dailyCapReached), "Two calls sent, one failed: no third background call")
-            let agent = try source("GoalongWorkAgent.swift")
-            let recorded = try XCTUnwrap(agent.range(of: "store.recordUsage(")), sent = try XCTUnwrap(agent.range(of: "session.generateWorkClassification("))
-            XCTAssertLessThan(recorded.lowerBound, sent.lowerBound, "Counted before the call is sent")
+            // The order « counted, then sent » is proved by testFailedManualCallsKeepTheDailyCapAcrossARestart.
         }
 
         func testANewCallDropsTheStaleAfterShare() {
