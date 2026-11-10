@@ -16,6 +16,20 @@ import LocalHistoryCore
     @State private var editing = false
     @State private var error: String?
     @State private var changeWarning: String?
+    /// A definition typed but not saved when its view went away (Activité's sheet closes on Escape). Kept in memory
+    /// only and given back at the next opening, as the page keeps it while it stays alive.
+    private static var unsaved: (fields: [String], prefilled: Bool)?
+    /// The untouched starting point this view filled in, read once (a file and the installed apps' names).
+    @State private var legacyStart: [String]?
+    private var fields: [String] { [draft, applications, content, procrastination] }
+    private var savedFields: [String] {
+        [store.context.summary, store.context.applications, store.context.content, store.context.procrastination]
+    }
+    /// The starting point made from the former per-app choices, in the order of `fields`.
+    private static func legacyFields() -> [String]? {
+        guard let legacy = GoalongWorkStore.legacyDraft() else { return nil }
+        return ["", legacy.work.isEmpty ? "" : "Travail : " + legacy.work + ".", "", legacy.other]
+    }
     private var draftBytes: Int { draft.utf8.count + applications.utf8.count + content.utf8.count + procrastination.utf8.count }
 
     init(store: JevWorkContextStore? = nil, purpose: Purpose = .monitoring) {
@@ -44,14 +58,31 @@ import LocalHistoryCore
             Button("Enregistrer") { changeWarning = nil; saveDraft() }
         } message: { Text(changeWarning ?? "") }
         .onAppearWhenShown {
-            if !editing { loadDraft() }
+            if !editing {
+                if purpose == .workDefinition, let left = Self.unsaved, left.fields.count == 4 {
+                    draft = left.fields[0]; applications = left.fields[1]
+                    content = left.fields[2]; procrastination = left.fields[3]
+                    prefilledFromLegacy = left.prefilled
+                    editing = !store.context.isEmpty
+                } else {
+                    loadDraft()
+                }
+            }
             // Former per-app choices become a starting point, never a silent rule.
             if purpose == .workDefinition, store.context.isEmpty, draft.isEmpty, applications.isEmpty,
-               let legacy = GoalongWorkStore.legacyDraft() {
-                if !legacy.work.isEmpty { applications = "Travail : " + legacy.work + "." }
-                if !legacy.other.isEmpty { procrastination = legacy.other }
+               let legacy = Self.legacyFields() {
+                if !legacy[1].isEmpty { applications = legacy[1] }
+                if !legacy[3].isEmpty { procrastination = legacy[3] }
                 prefilledFromLegacy = true
+                legacyStart = legacy
             }
+        }
+        .onChange(of: fields) { now in
+            // Only what the user typed: neither the saved definition nor the untouched starting point.
+            guard purpose == .workDefinition else { return }
+            let typed = (editing || store.context.isEmpty) && now != savedFields
+                && now != legacyStart
+            Self.unsaved = typed ? (now, prefilledFromLegacy) : nil
         }
     }
 
@@ -99,7 +130,7 @@ import LocalHistoryCore
                 if draftBytes > 0 { budget }
                 Spacer(minLength: 12)
                 if editing {
-                    Button("Annuler") { loadDraft(); editing = false; error = nil }
+                    Button("Annuler") { loadDraft(); editing = false; error = nil; Self.unsaved = nil }
                         .accessibilityIdentifier("monitoring-cancel-goals")
                 }
                 Button(purpose == .workDefinition ? "Enregistrer ma définition" : "Enregistrer les critères") {
@@ -174,7 +205,7 @@ import LocalHistoryCore
     private func saveDraft() {
         do {
             try store.save(draft, applications: applications, content: content, procrastination: procrastination)
-            loadDraft(); editing = false; error = nil; prefilledFromLegacy = false
+            loadDraft(); editing = false; error = nil; prefilledFromLegacy = false; Self.unsaved = nil
             GoalongToastCenter.shared.show(purpose == .workDefinition ? "Définition enregistrée" : "Critères enregistrés")
         } catch { self.error = GoalongUserFacingError.message(error) }
     }

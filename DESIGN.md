@@ -211,7 +211,8 @@ Grille de 4 points : 4, 8, 12, 16, 24, 32, 40.
 - Marge de page 32. Largeur de lecture 760 pour les pages de réglages et de texte, pleine largeur (jusqu'à
   1 080) pour Activité.
 - Activité : le chiffre héros, puis ses trois chiffres secondaires, puis le fil, toujours dans cet ordre et
-  empilés, pour que la page ne change pas de forme entre Jour, 7 jours et 28 jours.
+  empilés, pour que la page ne change pas de forme entre Jour, 7 jours et 28 jours. Le héros et ses chiffres
+  portent la marque de leur série : ils sont la légende du fil, qui ne la répète pas sur cette page.
 - 40 entre deux sections posées sur la page, 16 entre un titre de section et son contenu, 12 entre deux
   éléments d'un même ensemble, 8 à l'intérieur d'un élément.
 - Lignes de liste : 44 de haut minimum, filet de séparation en retrait, aligné sur le texte.

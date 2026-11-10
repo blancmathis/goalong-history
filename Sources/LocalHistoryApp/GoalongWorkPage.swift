@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
@@ -8,14 +9,23 @@ import SwiftUI
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
     /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
-    var bodyProbe = DashboardBodyProbe("travail")
+    /// The copy in Activité's sheet counts under its own name: it is not the page.
+    var bodyProbe: DashboardBodyProbe
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
+    static let subtitle = "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition, et vous corrigez chaque verdict."
+    /// The sheet of Activité that shows this page now, if any. Weak: a sheet that goes away without
+    /// `onDisappear` still frees it.
+    static weak var openSheet: GoalongWorkSheetToken?
     let model: DashboardViewModel
+    /// True inside `GoalongWorkSheet`: the sheet draws the title, so the page header and the page insets go.
+    private let inSheet: Bool
     @ObservedObject var snapshotStore: DashboardSnapshotStore
 
-    init(model: DashboardViewModel) {
+    init(model: DashboardViewModel, inSheet: Bool = false) {
         self.model = model
+        self.inSheet = inSheet
+        bodyProbe = DashboardBodyProbe(inSheet ? "travail-feuille" : "travail")
         _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
     }
     @ObservedObject private var work = GoalongWorkStore.shared
@@ -38,8 +48,7 @@ import SwiftUI
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PageHeader(title: "Mon travail",
-                           subtitle: "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition, et vous corrigez chaque verdict.")
+                if !inSheet { PageHeader(title: "Mon travail", subtitle: Self.subtitle) }
                 JevWorkContextControls(purpose: .workDefinition)
                 if !work.definition.isEmpty {
                     agentCard
@@ -52,15 +61,18 @@ import SwiftUI
             }
             .font(.system(size: 13))
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
+            .padding(.horizontal, inSheet ? 24 : LHTheme.pageInset).padding(.top, inSheet ? 24 : 28)
+            .padding(.bottom, inSheet ? 24 : LHTheme.pageBottomInset)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LHTheme.pageBackground)
-        .accessibilityIdentifier("work-page")
+        .accessibilityIdentifier(inSheet ? "work-sheet-content" : "work-page")
         .onAppearWhenShown { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
-            // A new definition re-classifies today straight away when the user allowed it.
-            if work.automatic { agent.classify(day: GoalongToday.now, userInitiated: false) }
+            // A new definition re-classifies today straight away when the user allowed it. The kept page and
+            // Activité's sheet both hear the change: while the sheet is open only the sheet answers, so the
+            // agent runs once, not twice.
+            if work.automatic, inSheet || Self.openSheet == nil { agent.classify(day: GoalongToday.now, userInitiated: false) }
         }
         .onChange(of: runtime.connectionState) { state in
             guard classifyWhenConnected, case .connected = state else { return }
@@ -497,6 +509,78 @@ struct GoalongWorkReviewRequest: Identifiable {
     let id = UUID()
     let day: Date
     let task: String?
+}
+
+/// Marks the open `GoalongWorkSheet` for `GoalongWorkPage.openSheet`, and knows its window.
+final class GoalongWorkSheetToken {
+    weak var window: NSWindow?
+    /// Ends the sheet from AppKit, with no update of the page that presents it.
+    @MainActor func end() {
+        if let window, let parent = window.sheetParent { parent.endSheet(window) }
+    }
+}
+
+/// Tells the token which window the sheet is.
+private struct GoalongWorkSheetWindow: NSViewRepresentable {
+    let token: GoalongWorkSheetToken
+
+    final class Probe: NSView {
+        weak var token: GoalongWorkSheetToken?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            token?.window = window
+        }
+    }
+
+    func makeNSView(context: Context) -> Probe {
+        let view = Probe()
+        view.token = token
+        return view
+    }
+    func updateNSView(_ view: Probe, context: Context) { view.token = token }
+}
+
+/// Activité's « Mon travail… »: the whole page in a sheet (definition, agent, review, how it works), so the
+/// definition changes where its effect shows, and closing returns to the same day, period and scroll position.
+@MainActor struct GoalongWorkSheet: View {
+    let model: DashboardViewModel
+    @ObservedObject private var navigation: DashboardNavigation
+    @Environment(\.dismiss) private var dismiss
+    @State private var token = GoalongWorkSheetToken()
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigation = ObservedObject(wrappedValue: model.navigationStore)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Mon travail").font(LHTheme.sheetTitleFont).accessibilityAddTraits(.isHeader)
+                    Text(GoalongWorkPage.subtitle).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                // Escape closes, as in every sheet. Return stays with the text fields of the definition.
+                Button("Terminé") { dismiss() }.keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("work-sheet-done")
+            }.padding(24)
+            Divider()
+            GoalongWorkPage(model: model, inSheet: true)
+        }
+        .frame(width: 720, height: 640).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+        .background(GoalongWorkSheetWindow(token: token).frame(width: 0, height: 0).accessibilityHidden(true))
+        .onAppearWhenShown { GoalongWorkPage.openSheet = token }
+        .onChange(of: navigation.selectedSection) { _ in
+            // Any other section leaves the page under this sheet (menu, link). Activité is a kept page: once left
+            // it is out of the window and frozen, and the change of state of its `onDisappear` is applied only at
+            // its return. So the sheet ends itself, in AppKit too: « Mon travail » never stays over another page.
+            dismiss(); token.end()
+        }
+        .onDisappear { if GoalongWorkPage.openSheet === token { GoalongWorkPage.openSheet = nil } }
+        .accessibilityIdentifier("work-sheet")
+    }
 }
 
 /// Activité's « Corriger »: the review in a sheet, so closing it returns to the same day,
