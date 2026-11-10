@@ -113,6 +113,14 @@ enum GoalongWorkPassLine {
     static var galleryOverride: Snapshot?
     #endif
     private var operation = UUID()
+    /// A newer load stops the reads of the older one.
+    private var current: LoadToken?
+    private static let readQueue = DispatchQueue(label: "goalong.work-states.read", qos: .utility)
+    private final class LoadToken: @unchecked Sendable {
+        private let lock = NSLock(); private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
     private var request: (day: Date, period: Int)?
     /// Loads not finished yet (the test gallery waits for zero before a capture).
     private(set) static var loadsInFlight = 0
@@ -136,16 +144,21 @@ enum GoalongWorkPassLine {
         #endif
         let id = UUID(); operation = id
         let days = Self.days(ending: day, period: period)
+        current?.cancel()
+        let token = LoadToken(); current = token
         Self.loadsInFlight += 1
         Task {
             defer { Self.loadsInFlight -= 1 }
-            // Disk reads (observations, privacy policy, selection) stay off the main thread.
-            let (observations, filter) = await Task.detached(priority: .utility) {
-                let observed = days.compactMap { GoalongWorkClassification.observe(root: root, day: $0, shouldContinue: { !Task.isCancelled }) }
-                let filter = GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: root),
-                                                      selection: GoalongAnalysisSelection.load(root: root))
-                return (observed, filter)
-            }.value
+            // Disk reads (observations, privacy policy, selection) stay off the main thread, on their own serial
+            // queue: up to 7 days of reads never hold the shared task threads that a period click needs (T-049).
+            let (observations, filter) = await withCheckedContinuation { continuation in
+                Self.readQueue.async {
+                    let observed = days.compactMap { GoalongWorkClassification.observe(root: root, day: $0, shouldContinue: { !token.isCancelled }) }
+                    let filter = GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: root),
+                                                          selection: GoalongAnalysisSelection.load(root: root))
+                    continuation.resume(returning: (observed, filter))
+                }
+            }
             guard operation == id else { return }
             apply(Self.snapshot(observations: observations, verdicts: store.verdicts, groups: store.groupVerdicts,
                                 permits: { filter.label($0) != nil }, blocker: agent.waitingReason(background: true, sharingBlocked: filter.policy.blocked),
