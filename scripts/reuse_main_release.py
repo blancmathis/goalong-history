@@ -141,12 +141,17 @@ def verify(sha, version, tag):
             and product.get('edition') == 'unified', 'manifest product differs')
     require(publisher_tag(manifest) == tag, 'manifest publisher differs from the immutable tag')
     listed = {a['path']: a for a in manifest.get('artifacts', [])}
-    for name in [*PUBLISHED, FEED]:
-        if name == 'release-manifest.json':
-            continue
-        require(name in listed, f'{name} is not bound by the manifest')
-        require(digest(DIST / name) == listed[name]['sha256']
-                and (DIST / name).stat().st_size == listed[name]['sizeBytes'], f'{name} differs from the manifest')
+    # continuous-release binds these in the manifest; the DMG and the .sha256 files are bound
+    # by their own attestations (step 3), the digest files below and the DMG = ZIP check (step 6).
+    bound = [(DIST / n) for n in (ARCHIVE, 'security-capabilities.json', 'sbom.spdx.json', FEED)]
+    deltas = sorted(immutable.glob('Goalong-History-macOS-universal-from-*.delta'))
+    require({p.name for p in deltas} == {n for n in listed if n.endswith('.delta')},
+            'immutable deltas differ from the manifest')
+    for path in [*bound, *deltas]:
+        entry = listed.get(path.name)
+        require(entry, f'{path.name} is not bound by the manifest')
+        require(digest(path) == entry['sha256'] and path.stat().st_size == entry['sizeBytes'],
+                f'{path.name} differs from the manifest')
     for name in (DMG, ARCHIVE):
         recorded = (DIST / f'{name}.sha256').read_text().split()
         require(recorded == [digest(DIST / name), name], f'{name}.sha256 does not match {name}')
@@ -163,7 +168,7 @@ def verify(sha, version, tag):
             'immutable and rolling archive digests differ')
 
     # 3. Sigstore: every byte was attested by continuous-release.yml running at this exact main commit.
-    for path in [*(DIST / n for n in [*PUBLISHED, FEED]), immutable / 'public-verification.json']:
+    for path in [*(DIST / n for n in [*PUBLISHED, FEED]), immutable / 'public-verification.json', *deltas]:
         attest_verify(path, sha, WORKFLOW)
     print('Attestations verified for continuous-release.yml at', sha, flush=True)
 
