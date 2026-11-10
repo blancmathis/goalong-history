@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Combine
 import Foundation
 import LocalHistoryCore
@@ -8,7 +9,8 @@ import SwiftUI
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
 @MainActor struct GoalongWorkPage: View {
     /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
-    var bodyProbe = DashboardBodyProbe("travail")
+    /// The copy in Activité's sheet counts under its own name: it is not the page.
+    var bodyProbe: DashboardBodyProbe
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
     static let subtitle = "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition, et vous corrigez chaque verdict."
@@ -23,6 +25,7 @@ import SwiftUI
     init(model: DashboardViewModel, inSheet: Bool = false) {
         self.model = model
         self.inSheet = inSheet
+        bodyProbe = DashboardBodyProbe(inSheet ? "travail-feuille" : "travail")
         _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
     }
     @ObservedObject private var work = GoalongWorkStore.shared
@@ -508,15 +511,47 @@ struct GoalongWorkReviewRequest: Identifiable {
     let task: String?
 }
 
-/// Marks the open `GoalongWorkSheet` for `GoalongWorkPage.openSheet`.
-final class GoalongWorkSheetToken {}
+/// Marks the open `GoalongWorkSheet` for `GoalongWorkPage.openSheet`, and knows its window.
+final class GoalongWorkSheetToken {
+    weak var window: NSWindow?
+    /// Ends the sheet from AppKit, with no update of the page that presents it.
+    @MainActor func end() {
+        if let window, let parent = window.sheetParent { parent.endSheet(window) }
+    }
+}
+
+/// Tells the token which window the sheet is.
+private struct GoalongWorkSheetWindow: NSViewRepresentable {
+    let token: GoalongWorkSheetToken
+
+    final class Probe: NSView {
+        weak var token: GoalongWorkSheetToken?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            token?.window = window
+        }
+    }
+
+    func makeNSView(context: Context) -> Probe {
+        let view = Probe()
+        view.token = token
+        return view
+    }
+    func updateNSView(_ view: Probe, context: Context) { view.token = token }
+}
 
 /// Activité's « Mon travail… »: the whole page in a sheet (definition, agent, review, how it works), so the
 /// definition changes where its effect shows, and closing returns to the same day, period and scroll position.
 @MainActor struct GoalongWorkSheet: View {
     let model: DashboardViewModel
+    @ObservedObject private var navigation: DashboardNavigation
     @Environment(\.dismiss) private var dismiss
     @State private var token = GoalongWorkSheetToken()
+
+    init(model: DashboardViewModel) {
+        self.model = model
+        _navigation = ObservedObject(wrappedValue: model.navigationStore)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -535,7 +570,14 @@ final class GoalongWorkSheetToken {}
             GoalongWorkPage(model: model, inSheet: true)
         }
         .frame(width: 720, height: 640).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+        .background(GoalongWorkSheetWindow(token: token).frame(width: 0, height: 0).accessibilityHidden(true))
         .onAppearWhenShown { GoalongWorkPage.openSheet = token }
+        .onChange(of: navigation.selectedSection) { _ in
+            // Any other section leaves the page under this sheet (menu, link). Activité is a kept page: once left
+            // it is out of the window and frozen, and the change of state of its `onDisappear` is applied only at
+            // its return. So the sheet ends itself, in AppKit too: « Mon travail » never stays over another page.
+            dismiss(); token.end()
+        }
         .onDisappear { if GoalongWorkPage.openSheet === token { GoalongWorkPage.openSheet = nil } }
         .accessibilityIdentifier("work-sheet")
     }

@@ -210,9 +210,9 @@ struct GoalongAnalyticsContent: View {
                     .padding(.top, 8)
             } else {
                 GoalongThreadWeave(period: current, onDay: onDay, showsLegend: false)
-                    .padding(.top, 28)
+                    .padding(.top, 24)
             }
-            coverage.padding(.top, 20)
+            coverage.padding(.top, 16)
         }
     }
 
@@ -236,8 +236,10 @@ struct GoalongAnalyticsContent: View {
         let value = figure ?? GoalongActivityHeadline.unknownWork
         // VoiceOver still hears the whole statement in this one element; the figures below repeat it part by part.
         let split = headlineSplit(summary, showsPending: figures.pending == nil)
-        let details = headlineDetails(summary)
-        return VStack(alignment: .leading, spacing: 6) {
+        // Read once: in Day view the line measures the gaps of the day.
+        let context = headlineContext(summary)
+        let details = headlineDetails(summary, context: context)
+        return VStack(alignment: .leading, spacing: 8) {
             if let figure {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(figure).font(LHTheme.heroFont).tracking(LHTheme.heroTracking)
@@ -253,7 +255,7 @@ struct GoalongAnalyticsContent: View {
                 Text(value).font(.system(size: 34, weight: .bold)).tracking(-0.6)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(headlineContext(summary)).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+            Text(context).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
@@ -282,9 +284,12 @@ struct GoalongAnalyticsContent: View {
         // « Temps actif » comes last and takes the rest: its comparison stays on one line when the window allows.
         // While the hero holds « à classer », that column is not repeated here.
         let column: CGFloat = 232
+        // Before any verdict nothing is known to be outside work: a dash, never a zero that reads as a measure.
+        let otherKnown = summary.workIsMeasurable || summary.workSeconds > 0 || other >= 60
         return HStack(alignment: .top, spacing: 24) {
-            figure(GoalongActivityClassStyle.label(.other), value: duration(other), unit: unit,
-                   mark: GoalongActivityClassStyle.color(.other), detail: share(other),
+            figure(GoalongActivityClassStyle.label(.other), value: otherKnown ? duration(other) : "—",
+                   unit: otherKnown ? unit : nil, mark: GoalongActivityClassStyle.color(.other),
+                   detail: otherKnown ? share(other) : "Pas encore classé",
                    help: "Temps actif que votre définition ne compte pas comme travail.", maxWidth: column)
             if figures.pending == nil {
                 figure(GoalongActivityClassStyle.label(.unclassified), value: duration(unclassified), unit: unit,
@@ -299,9 +304,11 @@ struct GoalongAnalyticsContent: View {
         .accessibilityIdentifier("activity-secondary-metrics")
     }
 
-    /// Under « Temps actif »: how it compares, or why nothing compares yet; else what it adds up.
+    /// Under « Temps actif »: how it compares, or why nothing compares yet; else what it adds up. While the
+    /// comparison is read the line stays empty (its height kept): no sentence shows for an instant, then changes.
     private func activeDetail(_ summary: GoalongActivitySummary) -> String {
         if let comparison = summary.comparison { return comparison.figureLine }
+        if payload.comparisonPending { return "\u{00A0}" }
         return GoalongActivityHeadline.noComparisonReason(isDay: isDay, hasComparison: false,
                                                           pending: payload.comparisonPending, days: current.days.count)
             ?? "Travail, hors travail et à classer"
@@ -322,23 +329,23 @@ struct GoalongAnalyticsContent: View {
 
     /// The one line under the figure: where the day sits (or what the period adds up to), and whether it still runs.
     private func headlineContext(_ summary: GoalongActivitySummary) -> String {
+        let running = isDay && !payload.isPreview && current.days.contains { GoalongToday.isToday($0.date) }
         if let bounds = summary.dayBounds {
             // Gaps inside the day change how its figures read; the night around it does not.
             let missing = current.days.first.map { GoalongActivityGaps(day: $0, from: bounds.start, to: bounds.end).unobservedSeconds } ?? 0
-            let running = isDay && !payload.isPreview && current.days.contains { GoalongToday.isToday($0.date) }
             return "De \(GoalongActivitySummary.time(bounds.start)) à \(GoalongActivitySummary.time(bounds.end))"
                 + (missing >= 600 ? ", dont \(duration(missing)) non observées" : "")
                 + (running ? ", journée en cours" : "")
         }
-        if isDay { return "Activité observée au premier plan" }
+        if isDay { return "Activité observée au premier plan" + (running ? ", journée en cours" : "") }
         let days = current.daysWithObservations
         return "\(duration(current.activeSeconds)) de temps actif sur \(days) jour\(days > 1 ? "s" : "") observé\(days > 1 ? "s" : "")"
             + (summary.averageExcludesToday ? ", moyenne sans aujourd’hui" : "")
     }
 
     /// VoiceOver's sentence: the context line, then the comparison the « Temps actif » figure shows.
-    private func headlineDetails(_ summary: GoalongActivitySummary) -> [String] {
-        var lines = [headlineContext(summary)]
+    private func headlineDetails(_ summary: GoalongActivitySummary, context: String) -> [String] {
+        var lines = [context]
         if let line = summary.comparison?.headlineLine(isDay: isDay) { lines.append(line) }
         else if let reason = GoalongActivityHeadline.noComparisonReason(isDay: isDay, hasComparison: summary.comparison != nil,
                                                                         pending: payload.comparisonPending, days: current.days.count) {
