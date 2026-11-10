@@ -120,7 +120,7 @@ final class ConcentrationHubRenderingTests: XCTestCase {
                            VStack(alignment: .leading, spacing: 6) {
                                Text("Jev").goalongPageTitle()
                            }
-                           JevMonitoringPage(onOpenRecording: {}, embedded: true)
+                           JevMonitoringPage(onOpenRecording: {}, part: .when)
                        }
                        .padding(.horizontal, LHTheme.pageInset).padding(.top, 28)
                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

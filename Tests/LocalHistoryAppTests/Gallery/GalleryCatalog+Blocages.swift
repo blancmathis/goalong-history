@@ -58,9 +58,15 @@ extension GalleryCatalog {
                                            now: GalleryConcentrationFixtures.now, measures: planned.measures,
                                            sessionDraft: FocusComposerDraft(), open: [.plan, .protection, .redSafety])
             },
+            // « Séance » in Continu, without an intention: a block that starts now, with the red screen and the brightness.
             sheet("blocages/editeur-maintenant") { ctx in
                 BlockRuleEditor(subject: .new, blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,
-                                now: F.sunday, maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
+                                now: F.sunday, trigger: .session, maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
+            },
+            // « Toujours »: every day, 24 hours a day; « Verrouillé » greyed with its reason.
+            sheet("blocages/editeur-toujours") { ctx in
+                BlockRuleEditor(subject: .new, blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,
+                                now: F.sunday, trigger: .always, maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
             },
             sheet("blocages/editeur-seance") { _ in
                 let fixtures = GalleryConcentrationFixtures()

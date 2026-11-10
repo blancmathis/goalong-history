@@ -600,14 +600,18 @@
         /// False only where the value drives a whole page read (Activité's period): the content changes without
         /// animation and only the pill slides. Elsewhere the content keeps its animated change (R13c).
         var animatesContent = true
+        /// Why an option cannot be chosen here: it stays shown, greyed, with its reason as help (T-050 A1-4).
+        var unavailable: (Value) -> String? = { _ in nil }
 
         init(_ label: String, selection: Binding<Value>, options: [Value], fills: Bool = false,
-             animatesContent: Bool = true, title: @escaping (Value) -> String) {
+             animatesContent: Bool = true, unavailable: @escaping (Value) -> String? = { _ in nil },
+             title: @escaping (Value) -> String) {
             self.label = label
             _selection = selection
             self.options = options
             self.fills = fills
             self.animatesContent = animatesContent
+            self.unavailable = unavailable
             self.title = title
         }
 
@@ -627,6 +631,9 @@
                             .frame(maxWidth: fills ? .infinity : nil)
                     }
                     .buttonStyle(GoalongSegmentStyle(selected: selected))
+                    .disabled(unavailable(option) != nil && !selected)
+                    .help(unavailable(option) ?? "")
+                    .accessibilityHint(unavailable(option) ?? "")
                     // The raised pill slides between segments instead of jumping.
                     .background {
                         if (pillHold ?? selection) == option {
