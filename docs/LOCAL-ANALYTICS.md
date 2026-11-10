@@ -83,7 +83,8 @@ constitue un choix explicite d’effacement : le rattrapage ne recrée pas les r
 La suppression ciblée invalide les résumés concernés ; vider l’historique enlève le dossier.
 Les écritures de l’app passent par la même barrière que les autres données dérivées.
 
-Ouvrir Activité peut déclencher le classement automatique des contextes si l’utilisateur
-l’a autorisé et qu’un compte est connecté. La lecture des mesures elle-même ne lance
-aucun agent ni envoi au site et n’ajoute aucun consentement. Les rapports déjà conservés
+Ouvrir Activité ne déclenche plus de classement. Le classement des contextes passe en
+arrière-plan (2 appels par jour au plus, 24 000 jetons par jour) seulement avec son propre
+consentement, ou à la main depuis Réglages (voir `WORK_DEFINITION.md`). La lecture des
+mesures ne lance aucun agent ni envoi au site et n’ajoute aucun consentement. Les rapports déjà conservés
 restent des interprétations ; ils ne changent pas les intervalles observés.

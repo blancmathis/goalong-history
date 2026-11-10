@@ -45,39 +45,61 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
 
 ## Agent
 
-- Déclenchement : à l’ouverture d’Activité pour les jours affichés (aujourd’hui au plus
-  toutes les 15 min, un autre jour une fois par lancement, 30 min après un échec), après
-  l’enregistrement d’une nouvelle définition, ou par « Classer aujourd’hui ». Aucune
-  minuterie, rien pendant un bilan quotidien.
+- États (`GoalongWorkClassification.states`, un seul endroit) : chaque contexte du jour est
+  **classé** (travail / hors travail, par une règle de l’utilisateur ou par l’agent),
+  **en attente** (avec une raison lisible : pas encore passé, pause, limite du jour, limite
+  du compte proche, Codex occupé, consentement manquant…), **à préciser** (l’agent n’a pas su,
+  ou le contexte est exclu de l’envoi) ou **trop court** (groupe de moins de 15 s sans règle).
+- Règles de l’utilisateur : portée **contexte**, **app** ou **site**, appliquées sur le Mac
+  avant tout envoi. Ordre : réponse sur le contexte > règle de site > règle d’app > agent.
+  Les anciennes réponses (`byOwner`) restent des règles de contexte. Goalong ne crée jamais
+  seul une règle d’app.
+- Groupes : les titres sont normalisés (casse, suffixe « — App », nombres → #). Un seul
+  contexte par groupe est envoyé ; sa réponse vaut pour tout le groupe et pour les membres
+  vus plus tard (sans nouvel appel).
+- Passage en arrière-plan : vérifié toutes les 15 min, seulement avec le consentement
+  « Classer en arrière-plan » (décoché par défaut ; l’ancien réglage « automatique » ne
+  compte pas). Au plus **2 appels par jour** : dès 40 groupes en attente, ou aux créneaux
+  12 h 30 et 18 h 30 s’il reste quelque chose. Plafond **24 000 jetons par jour**, passage
+  manuel compris. Rien en pause, pendant un bilan, quand Codex est occupé, ni quand le
+  compte approche de sa limite (≥ 90 % d’une fenêtre, lue par `account/rateLimits/read`,
+  sans inférence). Le passage manuel « Classer aujourd’hui » vit dans Réglages → Définition
+  du travail ; Activité n’envoie plus rien à l’ouverture.
 - Conditions : définition non vide, historique activé, consentement « Analyse ChatGPT »,
   compte ChatGPT connecté, pas de pause globale.
-- Envoi : les contextes **sans verdict**, ou les contextes indéterminés admissibles à une nouvelle tentative, pour la définition actuelle, de 15 s ou
-  plus, les plus longs d’abord, par lots de 250 (3 lots au plus par passage). Chaque
-  contexte : nom de l’app, site, titre (secrets masqués), minutes ; plus la définition,
-  les tâches déjà nommées, les corrections de l’utilisateur (40 au plus) et la chronologie
-  du jour (contextes à classer par id, les autres par leur tâche connue).
+- Envoi : **un appel par passage**, 60 groupes au plus, les plus longs d’abord, réduit
+  jusqu’à tenir dans les jetons restants du jour. Clés JSON courtes. Chaque contexte :
+  app, site, titre (secrets masqués), minutes du groupe, 2 voisins (précédent, suivant) ;
+  plus la définition, 20 tâches connues au plus et les **10 réponses de l’utilisateur les
+  plus proches** (même site, puis même app).
 - Filtre de confidentialité (`GoalongWorkSharingFilter`) : exclusions globales, puis
   sélection « Données pour ChatGPT » si elle est confirmée (apps autorisées, sites exclus,
   titres et sites autorisés, remplacements de noms). Un contexte filtré reste à classer.
   Les corrections envoyées comme exemples passent par le même filtre au moment de
   l’envoi : une correction sur un contexte exclu depuis n’est plus envoyée. Les
   remplacements de noms s’appliquent aussi à la définition, à la note du jour, aux tâches
-  connues et aux tâches de la chronologie ; s’ils ne peuvent pas être appliqués, rien
+  connues et aux tâches des voisins ; s’ils ne peuvent pas être appliqués, rien
   n’est envoyé. Les tâches renvoyées par l’agent peuvent donc porter le nom remplacé.
 - Exécution : compte ChatGPT de Goalong (`codex app-server`, `CODEX_HOME` isolé), profil
   `goalong-site-analysis` (aucun outil, aucun réseau, aucun fichier), thread éphémère,
-  `gpt-5.6-luna` / `high`, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
+  `gpt-5.6-luna` / `low` (contrat de classement propre, vérifié par `model/list` ; le
+  bilan quotidien garde `high`), instructions de base courtes, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
   ChatGPT » sont revérifiées avant chaque lot et juste avant l’envoi ; si l’une a changé,
   le classement s’arrête sans rien envoyer.
-- Validation : même `request_id`, exactement un élément par contexte envoyé, aucun id
-  inconnu ou dupliqué ; sinon rien n’est enregistré. « unknown » devient *indéterminé* et
+- Validation : même identifiant de requête (`r`), exactement un élément par contexte envoyé,
+  aucun id inconnu ou dupliqué, verdict `w` / `o` / `u` ; sinon rien n’est enregistré.
+  `u` devient *indéterminé* et
   peut être reposé sur un autre jour observé, avec au moins 5 minutes et moins de 3 tentatives automatiques. Un verdict de l’utilisateur n’est jamais reposé.
 
 ## Stockage
 
 `~/Library/Application Support/LocalHistory/work-classification.json` (0600) :
 révision de la définition, verdicts par empreinte de contexte (sans titre), `attempts` et `lastAskedDay` pour les tentatives automatiques, corrections
-de l’utilisateur (avec leur libellé, pour servir d’exemples), réglage « automatique ».
+de l’utilisateur (avec leur libellé, pour servir d’exemples), règles d’app et de site,
+verdicts par groupe, consentement d’arrière-plan (version), ancien réglage « automatique »
+(gardé, sans effet). `work-classification-usage.json` (0600) : par jour (14 jours), appels,
+appels d’arrière-plan, jetons (réels si Codex les publie par `thread/tokenUsage/updated`,
+sinon estimés et marqués comme tels), part hebdomadaire du compte avant et après.
 20 000 verdicts au plus (les plus anciens verdicts de l’agent sont retirés d’abord).
 
 - Changer la définition efface les verdicts de l’agent ; les corrections restent.
