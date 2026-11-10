@@ -84,6 +84,11 @@ extension GalleryCatalog {
             panel("settings-sheets/comprendre-mon-travail", width: 760, scrolling: true, clock: .injected) { _ in
                 AnyView(GoalongProfileStudio(onSend: { _ in }, localOnly: true))
             },
+            // T-049 B2: « À préciser » opens this sheet: the sentence, one question, its scope, progress (light and dark).
+            panel("activite/a-preciser-feuille", width: 600, height: 560, clock: .injected) { _ in
+                try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.", applications: "", content: "", procrastination: "")
+                return AnyView(GoalongWorkClarifySheet(states: GoalongWorkStateModel(snapshot: GalleryCatalog.galleryClarifyStates)))
+            },
             panel("settings-sheets/analyse-demande-site", width: 700, clock: .injected) { _ in AnyView(GoalongSiteAnalysisSheet()) },
             // UI-12B (29): the main state, connected, a request chosen and reviewed, « Analyser » active (inert model, no Codex).
             panel("settings-sheets/analyse-demande-site-pret", width: 700, clock: .injected) { _ in

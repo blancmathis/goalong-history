@@ -131,19 +131,23 @@ final class GoalongWorkAgentTests: XCTestCase {
         XCTAssertLessThan(counter.n, 1_000)
     }
 
-    func testAgentNeverRunsOnATimerAndOnlyWithConsent() throws {
+    func testAgentRunsOnATimerOnlyWithTheBackgroundConsent() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/LocalHistoryApp/GoalongWorkAgent.swift"), encoding: .utf8)
-        XCTAssertFalse(source.contains("Timer."), "Classification is triggered by Activité or the user, never by a timer")
+        XCTAssertEqual(source.components(separatedBy: "Timer(").count, 2, "One timer: the background schedule")
+        XCTAssertTrue(source.contains("guard store.backgroundConsent, !isRunning"), "The timer calls the agent only with the background consent")
+        XCTAssertTrue(source.contains("if !userInitiated, !store.backgroundConsent { return }"))
+        XCTAssertTrue(source.contains("GoalongWorkSchedule.decide("), "Every pass goes through the schedule and its daily cap")
+        XCTAssertTrue(source.contains("session.readAccountLimits()"), "The account limits are read before a call")
         XCTAssertTrue(source.contains("consents.isEnabled(.chatGPTAnalysis)"))
         XCTAssertTrue(source.contains("siteAnalysisOnly: true"), "The strict tool-less, network-less profile")
         XCTAssertTrue(source.contains("filter.label(label)"), "Every label goes through the privacy filter")
-        XCTAssertTrue(source.contains("filter.examples(store.corrections)"), "Examples go through the privacy filter")
+        XCTAssertTrue(source.contains("filter.candidates(store.corrections)"), "Examples go through the privacy filter")
         XCTAssertTrue(source.contains("GoalongAnalysisSelection.load(root: root).revision == selectionRevision"),
                       "A changed « Données pour ChatGPT » choice stops the run before the next batch")
         XCTAssertTrue(source.contains("selectionRevision: selectionRevision"), "The client rechecks the choice before sending")
         XCTAssertTrue(source.contains("if !userInitiated { rerunRequested = true }"), "A new definition during a run is classified afterwards")
-        XCTAssertTrue(source.contains("classified += applied.count"), "Only stored verdicts are reported as classified")
+        XCTAssertTrue(source.contains("let classified = applied.count + resolvedLocally"), "Only stored verdicts are reported as classified")
         XCTAssertTrue(source.contains("prompt(request, definition: sharedDefinition)"), "The prompt reads the masked definition")
     }
 

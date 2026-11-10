@@ -606,6 +606,13 @@
         }
     }
 
+    /// The work classification: the daily recap's model with a low effort, so a call stays
+    /// short. The recap contract above does not change.
+    enum CodexWorkClassificationContract {
+        static let model = CodexDailyAssessmentContract.model
+        static let reasoningEffort = "low"
+    }
+
     enum CodexDailyAssessmentContract {
         static let definitionID = GoalongDailyAnalysisDefinition.identifier
         static let definitionRevision = GoalongDailyAnalysisDefinition.revision
@@ -977,17 +984,48 @@
         /// contexts already filtered by the current exclusions, whose revision must not change
         /// before sending.
         func generateWorkClassification(prompt: String, privacyRevision: String, selectionRevision: String? = nil,
-                                        workingDirectory: URL) throws -> GoalongWorkClassification.Response {
-            try GoalongWorkClassification.parse(generateSelectedAnalysisJSON(prompt: prompt,
+                                        workingDirectory: URL) throws -> (response: GoalongWorkClassification.Response, tokens: Int?) {
+            let (data, tokens) = try generateSelectedAnalysis(prompt: prompt,
                 schema: GoalongWorkClassification.outputSchema, workingDirectory: workingDirectory,
                 maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision,
-                filteredForSelectionRevision: selectionRevision))
+                filteredForSelectionRevision: selectionRevision,
+                model: CodexWorkClassificationContract.model, reasoningEffort: CodexWorkClassificationContract.reasoningEffort,
+                baseInstructions: GoalongWorkClassification.baseInstructions)
+            return (try GoalongWorkClassification.parse(data), tokens)
+        }
+
+        /// The account's usage windows, read without inference (`account/rateLimits/read`).
+        /// nil when Codex does not answer: the caller then relies on its own daily cap.
+        func readAccountLimits() -> GoalongAccountLimits? {
+            guard let result = try? request(method: "account/rateLimits/read", params: [:], timeout: 20,
+                                            operation: "lecture des limites du compte ChatGPT"),
+                  let limits = result["rateLimits"] as? [String: Any] else { return nil }
+            func percent(_ window: String) -> Int? {
+                ((limits[window] as? [String: Any])?["usedPercent"] as? NSNumber).map { Int($0.doubleValue.rounded()) }
+            }
+            let reached = limits["rateLimitReachedType"].map { !($0 is NSNull) } ?? false
+            return GoalongAccountLimits(primaryPercent: percent("primary"), weeklyPercent: percent("secondary"), reached: reached)
         }
 
         private func generateSelectedAnalysisJSON(prompt: String, schema: [String: Any], workingDirectory: URL,
                                                   maximumResponseBytes: Int = 32 * 1024,
                                                   filteredForPrivacyRevision: String? = nil,
                                                   filteredForSelectionRevision: String? = nil) throws -> Data {
+            try generateSelectedAnalysis(prompt: prompt, schema: schema, workingDirectory: workingDirectory,
+                                         maximumResponseBytes: maximumResponseBytes,
+                                         filteredForPrivacyRevision: filteredForPrivacyRevision,
+                                         filteredForSelectionRevision: filteredForSelectionRevision).data
+        }
+
+        /// One tool-less turn on an ephemeral thread. Returns the answer and the thread's total
+        /// tokens when Codex reports them (`thread/tokenUsage/updated`), else nil.
+        private func generateSelectedAnalysis(prompt: String, schema: [String: Any], workingDirectory: URL,
+                                              maximumResponseBytes: Int = 32 * 1024,
+                                              filteredForPrivacyRevision: String? = nil,
+                                              filteredForSelectionRevision: String? = nil,
+                                              model: String = CodexDailyAssessmentContract.model,
+                                              reasoningEffort: String = CodexDailyAssessmentContract.reasoningEffort,
+                                              baseInstructions: String? = nil) throws -> (data: Data, tokens: Int?) {
             let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             if let filteredForPrivacyRevision, filteredForPrivacyRevision != privacyRevision {
@@ -1014,10 +1052,8 @@
             guard account.isManagedChatGPT else {
                 throw CodexAppServerError.accountNotChatGPT(account.type)
             }
-            try requireDailyAssessmentModel()
-            let started = try request(
-                method: "thread/start",
-                params: [
+            try requireModel(model, reasoningEffort: reasoningEffort)
+            var threadParams: [String: Any] = [
                     "cwd": workingDirectory.path,
                     "runtimeWorkspaceRoots": [workingDirectory.path],
                     "approvalPolicy": "never",
@@ -1027,9 +1063,13 @@
                     "dynamicTools": [] as [Any],
                     "personality": "pragmatic",
                     "serviceName": "goalong_history",
-                    "model": CodexDailyAssessmentContract.model,
-                    "config": ["model_reasoning_effort": CodexDailyAssessmentContract.reasoningEffort],
-                ],
+                    "model": model,
+                    "config": ["model_reasoning_effort": reasoningEffort],
+                ]
+            if let baseInstructions { threadParams["baseInstructions"] = baseInstructions }
+            let started = try request(
+                method: "thread/start",
+                params: threadParams,
                 timeout: CodexDailyAssessmentContract.threadStartTimeout,
                 operation: "démarrage de l’analyse des données choisies"
             )
@@ -1043,8 +1083,8 @@
                                  timeout: 15, operation: "suppression de l’analyse persistante inattendue")
                 throw CodexAppServerError.generationFailed("Codex n’a pas créé de fil d’analyse temporaire.")
             }
-            guard started["model"] as? String == CodexDailyAssessmentContract.model,
-                started["reasoningEffort"] as? String == CodexDailyAssessmentContract.reasoningEffort,
+            guard started["model"] as? String == model,
+                started["reasoningEffort"] as? String == reasoningEffort,
                 (started["activePermissionProfile"] as? [String: Any])?["id"] as? String
                     == Self.siteAnalysisPermissionProfile,
                 let cwd = started["cwd"] as? String,
@@ -1083,6 +1123,7 @@
             let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
             var finalText: String?
             var streamedBytes = 0
+            var totalTokens: Int?
             while Date() < deadline {
                 let message = try nextDeferredOrMessage(deadline: deadline, operation: "analyse de la sélection vérifiée")
                 let method = try CodexAppServerMessageRouter.notificationMethod(in: message)
@@ -1130,7 +1171,10 @@
                         throw CodexAppServerError.generationFailed("L’analyse n’a pas produit de brouillon complet.")
                     }
                     try Self.validateSiteAnalysisItems(in: turn)
-                    return Data(finalText.utf8)
+                    return (Data(finalText.utf8), totalTokens)
+                case "thread/tokenUsage/updated":
+                    let usage = (params["tokenUsage"] as? [String: Any])?["total"] as? [String: Any]
+                    if let total = (usage?["totalTokens"] as? NSNumber)?.intValue, total >= 0 { totalTokens = total }
                 default:
                     if method.hasPrefix("item/") && !method.hasPrefix("item/reasoning/") {
                         throw CodexAppServerError.generationFailed("Une capacité d’analyse inattendue a été utilisée. L’analyse a été arrêtée.")
@@ -1358,6 +1402,11 @@
         }
 
         private func requireDailyAssessmentModel() throws {
+            try requireModel(CodexDailyAssessmentContract.model, reasoningEffort: CodexDailyAssessmentContract.reasoningEffort)
+        }
+
+        /// Checks through `model/list` that the account offers this model with this effort.
+        private func requireModel(_ wanted: String, reasoningEffort: String) throws {
             var cursor: String?
             var pageCount = 0
             repeat {
@@ -1376,14 +1425,15 @@
                     throw CodexAppServerError.malformedResponse("la liste des modèles est absente.")
                 }
                 if let model = models.first(where: {
-                    ($0["model"] as? String) == CodexDailyAssessmentContract.model
+                    ($0["model"] as? String) == wanted
                 }) {
                     let efforts = (model["supportedReasoningEfforts"] as? [[String: Any]]) ?? []
                     guard efforts.contains(where: {
-                        ($0["reasoningEffort"] as? String) == CodexDailyAssessmentContract.reasoningEffort
+                        ($0["reasoningEffort"] as? String) == reasoningEffort
                     }) else {
-                        throw CodexAppServerError.generationFailed(
-                            "GPT-5.6 Luna est disponible, mais le raisonnement élevé n’est pas activé pour ce compte."
+                        throw CodexAppServerError.generationFailed(reasoningEffort == "high"
+                            ? "GPT-5.6 Luna est disponible, mais le raisonnement élevé n’est pas activé pour ce compte."
+                            : "GPT-5.6 Luna est disponible, mais le raisonnement « \(reasoningEffort) » n’est pas activé pour ce compte."
                         )
                     }
                     return

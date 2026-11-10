@@ -190,6 +190,7 @@ enum SupportSourceAllowlist {
         "GoalongWebsiteSharingModel.swift",
         "GoalongWebsiteSharingSheet.swift",
         "GoalongWorkAgent.swift",
+        "GoalongWorkClarify.swift",
         "GoalongWorkPage.swift",
         "GoalongWorkStore.swift",
         "HistoryRetentionSettings.swift",

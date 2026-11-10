@@ -124,7 +124,7 @@ import LocalHistoryCore
                   detail: "Des exemples clairs, pas une liste complète.", help: procrastinationText,
                   hint: "Ex. Faire défiler le fil « Pour vous » de X, regarder des vidéos de divertissement, comparer des achats sans lien avec mes projets.",
                   text: $procrastination, identifier: "monitoring-procrastination")
-            GoalongNote("Ces critères restent sur ce Mac. Si le classement est activé, Enregistrer autorise leur envoi à l’agent (ChatGPT). Si Jev est activé, Enregistrer envoie aussi vos critères et exemples hors travail à TypeSafe, son fournisseur. N’y mettez aucune information sensible.",
+            GoalongNote("Ces critères restent sur ce Mac. Si le classement est activé, Enregistrer autorise leur envoi au classement automatique (ChatGPT). Si Jev est activé, Enregistrer envoie aussi vos critères et exemples hors travail à TypeSafe, son fournisseur. N’y mettez aucune information sensible.",
                         tone: .privacy)
             HStack(spacing: 10) {
                 if draftBytes > 0 { budget }
@@ -175,7 +175,7 @@ import LocalHistoryCore
                 summaryRow("Hors travail") {
                     if store.context.procrastination.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Aucun exemple ajouté. Sans exemple, l’agent s’appuie sur votre définition du travail ; Jev repère toujours les autres distractions.")
+                            Text("Aucun exemple ajouté. Sans exemple, le classement automatique s’appuie sur votre définition du travail ; Jev repère toujours les autres distractions.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                             Button("Ajouter mes exemples") { loadDraft(); editing = true }
                                 .controlSize(.small).accessibilityIdentifier("monitoring-add-procrastination")

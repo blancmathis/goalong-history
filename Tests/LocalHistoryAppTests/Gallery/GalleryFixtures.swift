@@ -118,7 +118,8 @@ import SwiftUI
             let data = model.snapshotStore
             guard data.snapshotGeneration > 0, !data.isRefreshing,
                   ComputerHistoryPageModel.refreshesInFlight == 0,
-                  GoalongAnalyticsModel.loadsInFlight == 0, GoalongWorkReviewModel.loadsInFlight == 0 else { return false }
+                  GoalongAnalyticsModel.loadsInFlight == 0, GoalongWorkReviewModel.loadsInFlight == 0,
+                  GoalongWorkStateModel.loadsInFlight == 0 else { return false }
             model.waitForPendingWorkForTesting()
             return data.snapshotGeneration > 0 && !data.isRefreshing
         }
