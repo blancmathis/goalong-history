@@ -621,7 +621,14 @@ main() {
   local selected_target_directory
   local staged_app
 
-  if [[ -n "${LOCALHISTORY_RUN_TESTS+x}" && "${LOCALHISTORY_RUN_TESTS}" != "1" ]]; then
+  # make local (scripts/local_try.sh) hands over a bundle it built, signed and verified; the
+  # replacement below still re-verifies it and keeps every identity and block check.
+  local prebuilt_app="${LOCALHISTORY_PREBUILT_APP:-}"
+  if [[ -n "$prebuilt_app" && "${GOALONG_LOCAL_TRY:-}" != 1 ]]; then
+    echo "LOCALHISTORY_PREBUILT_APP is only accepted from make local." >&2
+    exit 64
+  fi
+  if [[ -z "$prebuilt_app" && -n "${LOCALHISTORY_RUN_TESTS+x}" && "${LOCALHISTORY_RUN_TESTS}" != "1" ]]; then
     echo "Source installation requires the full test suite; LOCALHISTORY_RUN_TESTS must be 1." >&2
     exit 64
   fi
@@ -641,17 +648,20 @@ main() {
   run_step "Checking code-signing network policy" /bin/bash "$ROOT_DIR/scripts/test_codesign_policy.sh"
   run_step "Checking privacy boundaries" "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 
-  BUILD_OUTPUT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/localhistory-source-install.XXXXXX")"
-  source_build_number="${LOCALHISTORY_BUILD_NUMBER:-$(/bin/date -u +%Y%m%d.%H%M%S)}"
-  run_step "Testing and building the native app" env \
-    LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.6.0}" \
-    LOCALHISTORY_BUILD_NUMBER="$source_build_number" \
-    LOCALHISTORY_ARCHS="$(/usr/bin/uname -m)" \
-    LOCALHISTORY_OUTPUT_DIR="$BUILD_OUTPUT" \
-    LOCALHISTORY_RUN_TESTS=1 \
-    "$ROOT_DIR/scripts/build_app.sh"
-
-  source_app="$BUILD_OUTPUT/$APP_NAME.app"
+  if [[ -n "$prebuilt_app" ]]; then
+    source_app="$prebuilt_app"
+  else
+    BUILD_OUTPUT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/localhistory-source-install.XXXXXX")"
+    source_build_number="${LOCALHISTORY_BUILD_NUMBER:-$(/bin/date -u +%Y%m%d.%H%M%S)}"
+    run_step "Testing and building the native app" env \
+      LOCALHISTORY_VERSION="${LOCALHISTORY_VERSION:-0.6.0}" \
+      LOCALHISTORY_BUILD_NUMBER="$source_build_number" \
+      LOCALHISTORY_ARCHS="$(/usr/bin/uname -m)" \
+      LOCALHISTORY_OUTPUT_DIR="$BUILD_OUTPUT" \
+      LOCALHISTORY_RUN_TESTS=1 \
+      "$ROOT_DIR/scripts/build_app.sh"
+    source_app="$BUILD_OUTPUT/$APP_NAME.app"
+  fi
   if [[ ! -d "$source_app" || -L "$source_app" ]]; then
     echo "The source build did not produce a regular app bundle at $source_app" >&2
     exit 1

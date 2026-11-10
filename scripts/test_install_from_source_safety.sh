@@ -181,6 +181,14 @@ if [[ "$test_override_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'Source installat
   echo "Source installation did not reject LOCALHISTORY_RUN_TESTS=0." >&2
   exit 1
 fi
+set +e
+prebuilt_output="$(LOCALHISTORY_PREBUILT_APP=/nonexistent.app "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+prebuilt_status=$?
+set -e
+if [[ "$prebuilt_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'only accepted from make local' <<<"$prebuilt_output"; then
+  echo "Source installation accepted a prebuilt app outside make local." >&2
+  exit 1
+fi
 
 MARKER_FILE="$TEST_ROOT/legacy-marker"
 /usr/bin/printf '%s\n' 'captureFullContents' >"$MARKER_FILE"

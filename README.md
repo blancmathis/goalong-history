@@ -273,6 +273,14 @@ artifact. Local builds automatically use a stable Apple Development identity whe
 The free public Community Build is signed with a pinned Apple Development identity (team 2L5SSLPX46, see
 `Distribution/release-signing.json`) and is not notarized. CI refuses to publish an ad-hoc build.
 
+## Try or publish
+
+| Goal | Command | Effect |
+|---|---|---|
+| Try beside the real app | `make dev` | Separate Goalong Dev, own data copy, no Sparkle, nothing published. |
+| Try as the real app, without GitHub | `make local` | Replaces `/Applications/Goalong History.app`, signed like a release, numbered just above the newest release: Sparkle keeps it until the next real release. `NO_INSTALL=1` only builds and verifies. |
+| Publish | PR → CI → merge to `main` | Public Sparkle update for everyone. |
+
 ## Release pipeline
 
 Every successful merge to `main` builds both architectures, verifies the single-app security
