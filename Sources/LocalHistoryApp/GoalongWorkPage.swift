@@ -16,7 +16,7 @@ import SwiftUI
     var bodyProbe: DashboardBodyProbe
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
-    static let subtitle = "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : un agent applique votre définition, et vous corrigez chaque verdict."
+    static let subtitle = "Vous décidez de ce qui compte comme travail. Goalong ne juge jamais une app ou un site : le classement automatique (ChatGPT) applique votre définition, et vous répondez quand il ne sait pas."
     /// The sheet of Activité that shows this page now, if any. Weak: a sheet that goes away without
     /// `onDisappear` still frees it.
     static weak var openSheet: GoalongWorkSheetToken?
@@ -54,6 +54,8 @@ import SwiftUI
             JevWorkContextControls(purpose: .workDefinition)
             if !work.definition.isEmpty {
                 agentCard
+                GoalongWorkAnswersCard()
+                GoalongWorkUsageCard()
                 GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
                                       loadsOnAppear: Self.reviewFocusTask != nil,
                                       earliestDay: snapshotStore.snapshot.availableDays.min())
@@ -109,14 +111,14 @@ import SwiftUI
         .confirmationDialog("Tout reclasser avec votre définition actuelle ?", isPresented: $confirmingForget) {
             Button("Tout reclasser") { work.forgetAgentVerdicts(); agent.classify(day: GoalongToday.now) }
         } message: {
-            Text(["Les verdicts de l’agent sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours.",
+            Text(["Les verdicts du classement automatique sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours.",
                   FocusCommitmentRules.reclassifyWarning(GoalongWorkStore.openCommitments(controller: ConcentrationRuntime.shared.controller, store: .standard),
                                                          at: GoalongToday.now)].compactMap { $0 }.joined(separator: "\n\n"))
         }
     }
 
     private var agentCard: some View {
-        GoalongSettingsGroup(title: "Classement par l’agent") {
+        GoalongSettingsGroup(title: "Classement automatique") {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: statusSymbol).font(.system(size: 14, weight: .medium)).foregroundStyle(statusTint)
                     .frame(width: 22).accessibilityHidden(true)
@@ -206,7 +208,7 @@ import SwiftUI
         if agent.isRunning { return agent.progress }
         if let error = agent.lastError { return error }
         if agent.readiness != .ready { return agent.readiness.message }
-        return agent.lastOutcome ?? "Les contextes nouveaux sont classés quand vous consultez Activité."
+        return agent.lastOutcome ?? "Les contextes nouveaux sont classés automatiquement, deux fois par jour au plus, si vous l’avez autorisé ci-dessus."
     }
     @ViewBuilder private var statusAction: some View {
         if agent.isRunning {
@@ -244,7 +246,7 @@ import SwiftUI
             case .historyOff:
                 Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())
             case .ready:
-                Button("Classer aujourd’hui") { agent.classify(day: GoalongToday.now) }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Lancer un passage maintenant") { agent.classify(day: GoalongToday.now) }.buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("work-classify-today")
             case .paused, .noDefinition:
                 EmptyView()
@@ -255,8 +257,8 @@ import SwiftUI
     private var explanation: some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("1. Goalong découpe votre journée en contextes : une app, un site et un titre de fenêtre. La même app donne donc plusieurs contextes — un document de travail et une vidéo ne se confondent pas.")
-            Text("2. L’agent (votre compte ChatGPT, sans aucun outil ni accès à vos fichiers) lit votre définition et chaque contexte nouveau, avec l’ordre de la journée pour les cas ambigus. Il répond Travail avec le nom de la tâche, Hors travail, ou Indéterminé s’il ne peut pas trancher.")
-            Text("3. Les verdicts sont gardés sur ce Mac et appliqués à tout l’historique, sans modifier les journaux. Un contexte déjà classé n’est jamais renvoyé ; changer la définition relance le classement. Vos corrections priment toujours et servent d’exemples à l’agent.")
+            Text("2. Le classement automatique (ChatGPT, avec votre compte, sans aucun outil ni accès à vos fichiers) lit votre définition et chaque contexte nouveau, avec l’ordre de la journée pour les cas ambigus. Il répond Travail avec le nom de la tâche, Pas du travail, ou « à préciser » s’il ne peut pas trancher : c’est alors à vous de répondre dans Activité.")
+            Text("3. Les verdicts sont gardés sur ce Mac et appliqués à tout l’historique, sans modifier les journaux. Un contexte déjà classé n’est jamais renvoyé ; changer la définition relance le classement. Vos réponses priment toujours et servent d’exemples au classement automatique ; la plus précise gagne (contexte, puis site, puis app).")
             Text("4. Une tâche reste la même d’une app à l’autre : passer de l’éditeur au navigateur pour le même projet garde votre session de travail. Un détour de moins d’une minute entre deux moments de la même tâche lui est rattaché.")
             Text("Rien n’est envoyé pour les apps et sites exclus, ni pour les apps retirées de « Données pour ChatGPT ». Les contextes très courts (moins de 15 s) ne sont pas envoyés.")
                 .foregroundStyle(LHTheme.secondaryText)
@@ -383,7 +385,7 @@ import SwiftUI
                 if review.loading { ProgressView().controlSize(.small) }
                 Spacer(minLength: 0)
             }
-            Text("Lecture locale : les titres affichés ici ne quittent pas ce Mac. Une correction vaut pour ce contexte (même app, site et titre) dans tout l’historique, pas seulement ce jour-là. Elle sert aussi d’exemple à l’agent.")
+            Text("Lecture locale : les titres affichés ici ne quittent pas ce Mac. Une correction vaut pour ce contexte (même app, site et titre) dans tout l’historique, pas seulement ce jour-là. Elle sert aussi d’exemple au classement automatique.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if let error = review.error {
                 Label(error, systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
@@ -502,7 +504,7 @@ import SwiftUI
                 }
                 if assignment?.byOwner == true {
                     Divider()
-                    Button("Laisser l’agent décider") { correct(row, nil, task: nil) }
+                    Button("Laisser le classement automatique décider") { correct(row, nil, task: nil) }
                 }
             } label: { Text(Self.correctionMenuTitle(byOwner: assignment?.byOwner == true)).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.text) }
                 // DESIGN §9 rank 3: ink text, no chrome, like LHQuietButtonStyle.
@@ -610,7 +612,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Corriger le classement").font(LHTheme.sheetTitleFont)
-                    Text("Chaque contexte de la journée, rangé par tâche. Vos corrections priment sur l’agent.")
+                    Text("Chaque contexte de la journée, rangé par tâche. Vos corrections priment sur le classement automatique.")
                         .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()

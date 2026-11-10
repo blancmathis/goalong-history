@@ -45,6 +45,8 @@ struct GoalongAnalyticsPage: View {
     @State private var reviewRequest: GoalongWorkReviewRequest?
     /// « Définition du travail » over Activité (`GoalongWorkSheet`).
     @State private var showingWork = false
+    @State private var showingClarify = false
+    @StateObject private var workStates = GoalongWorkStateModel()
     /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
     @State private var detail: GoalongActivityDetail? = GoalongAnalyticsPage.initialDetail
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
@@ -162,8 +164,8 @@ struct GoalongAnalyticsPage: View {
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { showingWork = true },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
-                                // The manual pass lives in the work settings now; Activité only opens them.
-                                onClassify: { showingWork = true },
+                                // No button starts the classification here: Activité shows where it stands and asks only what it needs.
+                                onClarify: { showingClarify = true },
                                 onHistory: { openHistory(selection.day) },
                                 onProjects: { if !previewActive { showingAnalysisChoice = true } },
                                 onHistoryDay: openHistory,
@@ -228,6 +230,13 @@ struct GoalongAnalyticsPage: View {
         .background(LHTheme.pageBackground)
         .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
         .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls() }
+        .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls() }
+        .taskWhenShown(id: "\(selectionID)|\(revision)|\(agent.isRunning)|\(work.backgroundConsent)|\(work.revision)|\(work.definition.revision)") {
+            if !previewActive { workStates.load(day: selection.day, period: selection.period) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
+            if !previewActive { workStates.reload() }
+        }
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .sheet(isPresented: $editingNote) {
             GoalongDayNoteSheet(day: selection.day, initial: systemValue?.note ?? "",
@@ -303,6 +312,7 @@ struct GoalongAnalyticsPage: View {
             showingAnalysisChoice = false
             reviewRequest = nil
             showingWork = false
+            showingClarify = false
             previewNavigation = GoalongActivityNavigation()
         }
         .onChange(of: work.verdicts) { _ in
@@ -520,9 +530,20 @@ struct GoalongAnalyticsPage: View {
     }
 
     private var workStatus: GoalongWorkStatus {
-        GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
+        let snapshot = workStates.snapshot
+        let now = Date()
+        let usageToday = work.usage.day(GoalongWorkAgent.dayString(now))
+        let lastPass = work.usage.days.values.compactMap(\.lastCallAt).max()
+        let line = GoalongWorkPassLine.line(isRunning: agent.isRunning, progress: agent.progress,
+                                            waiting: snapshot?.blocker, lastPass: lastPass,
+                                            usageToday: usageToday, pendingGroups: snapshot?.pendingGroups ?? 0, now: now)
+        return GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
             progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)),
-            classifiesOnOpen: work.backgroundConsent && agent.readiness == .ready)
+            classifiesOnOpen: work.backgroundConsent && agent.readiness == .ready,
+            definitionText: GoalongWorkDefinitionText.sentence(JevWorkContextStore.shared.context),
+            counts: snapshot?.counts,
+            seconds: snapshot?.seconds ?? [:], passLine: line,
+            scopeNote: (snapshot?.dayCount ?? 1) > 1 ? "Les \(snapshot?.dayCount ?? 1) derniers jours de la période." : nil)
     }
 
     /// The same reading as the recording banner, so the page body never contradicts it.

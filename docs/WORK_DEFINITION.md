@@ -50,6 +50,21 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   **en attente** (avec une raison lisible : pas encore passé, pause, limite du jour, limite
   du compte proche, Codex occupé, consentement manquant…), **à préciser** (l’agent n’a pas su,
   ou le contexte est exclu de l’envoi) ou **trop court** (groupe de moins de 15 s sans règle).
+- Interface (lot B2) :
+  - **Activité** montre la phrase « Pour vous, le travail c’est : … » (avec « Modifier » ; vide :
+    invite à l’écrire, le classement attend cette phrase) et trois états nommés : **Classé**,
+    **En attente du classement automatique** (n’appelle aucune action), **Le classement n’a pas
+    su trancher** (seul appel à l’action : bouton « À préciser (N) »). Les états sont calculés sur
+    la journée affichée, ou sur les 7 derniers jours d’une période (la note de portée le dit).
+  - Une ligne d’état remplace l’ancien bouton : dernier passage, prochain passage
+    (`GoalongWorkPassLine`), ou la raison de l’attente avec un lien pour la lever.
+  - **À préciser** ouvre une feuille (`GoalongWorkClarifySheet`) : une question à la fois, la plus
+    longue d’abord, « <contexte> (38 min) : est-ce du travail ? » → Travail / Pas du travail /
+    Passer. Portée : ce contexte seul, toute l’app, tout le site (site seulement s’il existe).
+    Compteur d’avancement, « Annuler la dernière réponse » (restaure la règle précédente).
+  - **Réglages › Définition du travail** : « Vos réponses » (modifier le verdict, supprimer),
+    accord « Classer en arrière-plan », « Usage du classement » (jetons du jour et de la semaine,
+    part du quota, plafond). « Lancer un passage maintenant » y reste et compte dans le plafond.
 - Règles de l’utilisateur : portée **contexte**, **app** ou **site**, appliquées sur le Mac
   avant tout envoi. Ordre : réponse sur le contexte > règle de site > règle d’app > agent.
   Les anciennes réponses (`byOwner`) restent des règles de contexte. Goalong ne crée jamais

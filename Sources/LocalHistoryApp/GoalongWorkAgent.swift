@@ -113,7 +113,7 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
             case .ready: return ""
             case .noDefinition: return "Décrivez d’abord ce qui compte comme travail pour vous."
             case .historyOff: return "L’enregistrement est désactivé : il n’y a rien à classer."
-            case .noConsent: return "Autorisez l’agent à classer votre temps."
+            case .noConsent: return "Autorisez le classement automatique de votre temps."
             case .notConnected: return "Connectez votre compte ChatGPT pour lancer le classement."
             case .paused: return "Goalong est en pause : le classement reprendra ensuite."
             }

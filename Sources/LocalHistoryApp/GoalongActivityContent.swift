@@ -12,6 +12,14 @@ struct GoalongWorkStatus: Equatable {
     var problem: String? = nil
     /// Opening Activité sends contexts not yet classified to ChatGPT (automatic, consented, connected).
     var classifiesOnOpen = false
+    /// The sentence the person wrote for what counts as work (nil: not written yet).
+    var definitionText: String? = nil
+    /// The three states of the contexts on screen; nil until they are read.
+    var counts: [GoalongWorkState.Bucket: Int]? = nil
+    var seconds: [GoalongWorkState.Bucket: TimeInterval] = [:]
+    var passLine: GoalongWorkPassLine.Line? = nil
+    /// What the counts cover when it is more than one day (« 7 derniers jours »).
+    var scopeNote: String? = nil
     static let preview = GoalongWorkStatus()
 }
 
@@ -91,7 +99,8 @@ struct GoalongAnalyticsContent: View {
     var onWork: () -> Void = {}
     /// Opens the correction of the day on screen; the task is the one clicked, if any.
     var onReview: (String?) -> Void = { _ in }
-    var onClassify: () -> Void = {}
+    /// « À préciser (N) » opens the sheet of questions.
+    var onClarify: () -> Void = {}
     var onHistory: () -> Void = {}
     var onProjects: () -> Void = {}
     var onHistoryDay: (Date) -> Void = { _ in }
@@ -172,7 +181,7 @@ struct GoalongAnalyticsContent: View {
                     methodology.padding(.horizontal, -6)
                     Text(payload.isPreview ? "Données fictives, non enregistrées."
                          : workStatus.classifiesOnOpen
-                         ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT deux fois par jour au plus. Actualisé à \(time(payload.updatedAt))."
+                         ? "Durées calculées sur ce Mac ; nouveaux contextes classés automatiquement par ChatGPT deux fois par jour au plus. Actualisé à \(time(payload.updatedAt))."
                          : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                         .padding(.top, 12)
@@ -435,7 +444,7 @@ struct GoalongAnalyticsContent: View {
     /// Explains why work is not measured yet and offers the one useful next step.
     private func showsWorkCard(_ summary: GoalongActivitySummary) -> Bool {
         guard !payload.isPreview, summary.activeSeconds > 0 else { return false }
-        return !workStatus.hasDefinition || workStatus.isClassifying || summary.unclassifiedShare >= 0.15
+        return true
     }
 
     /// "À retenir" only adds what the headline figures and the classification card do not already say.
@@ -484,34 +493,57 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
-    private var classifyLabel: String {
-        "Ouvrir le classement"
+    private func stateColumn(_ title: String, bucket: GoalongWorkState.Bucket, id: String) -> some View {
+        let count = workStatus.counts?[bucket] ?? 0
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(workStatus.counts == nil ? "…" : "\(count) contexte\(count > 1 ? "s" : "")")
+                .font(.system(size: 17, weight: .semibold)).monospacedDigit()
+            if workStatus.counts != nil, count > 0 {
+                Text(duration(workStatus.seconds[bucket] ?? 0)).font(.system(size: 12)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine).accessibilityIdentifier(id)
     }
 
+    /// The three states of the classification. « À préciser » is the only one that asks for something.
     private func workCard(_ summary: GoalongActivitySummary) -> some View {
-        LHCard {
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if !workStatus.hasDefinition {
-                        heading("Qu’est-ce qui compte comme travail pour vous ?")
-                        Text("Décrivez votre travail avec vos mots : un agent classe ensuite chaque moment selon ce que vous faisiez. Goalong ne décide jamais qu’une app ou un site est productif.")
-                    } else if workStatus.isClassifying {
-                        heading("Classement en cours")
-                        Text(workStatus.progress ?? "L’agent applique votre définition aux nouveaux contextes de la journée.")
-                    } else {
-                        heading("\(percent(summary.unclassifiedShare)) de votre temps reste à classer")
-                        Text(workStatus.problem ?? "Seuls les contextes nouveaux sont envoyés ; ceux déjà classés ne repartent pas.")
+        let clarify = workStatus.counts?[.toClarify] ?? 0
+        return LHCard {
+            VStack(alignment: .leading, spacing: 14) {
+                GoalongWorkDefinitionText.view(sentence: workStatus.definitionText, onEdit: onWork)
+                Divider()
+                HStack(alignment: .top, spacing: 16) {
+                    stateColumn("Classé", bucket: .classified, id: "activity-state-classified")
+                    stateColumn("En attente du classement automatique", bucket: .waiting, id: "activity-state-waiting")
+                    VStack(alignment: .leading, spacing: 8) {
+                        if clarify > 0 {
+                            Text("Le classement n’a pas su trancher").font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                            Button("À préciser (\(clarify))", action: onClarify).buttonStyle(LHPrimaryButtonStyle())
+                                .accessibilityIdentifier("activity-clarify")
+                            Text(duration(workStatus.seconds[.toClarify] ?? 0)).font(.system(size: 12)).monospacedDigit()
+                                .foregroundStyle(LHTheme.secondaryText)
+                        } else {
+                            stateColumn("À préciser", bucket: .toClarify, id: "activity-state-clarify")
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                if let line = workStatus.passLine {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        if workStatus.isClassifying { ProgressView().controlSize(.small) }
+                        Text(line.text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("activity-pass-line")
+                        if let title = line.linkTitle {
+                            Button(title, action: onWork).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                .accessibilityIdentifier("activity-pass-link")
+                        }
                     }
-                }.font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if workStatus.isClassifying {
-                    ProgressView().controlSize(.small)
-                } else if !workStatus.hasDefinition || workStatus.problem != nil {
-                    Button(workStatus.hasDefinition ? "Ouvrir la définition du travail" : "Définir mon travail", action: onWork)
-                        .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("activity-define-work")
-                } else {
-                    Button(classifyLabel, action: onClassify).buttonStyle(LHSecondaryButtonStyle())
-                        .accessibilityIdentifier("activity-classify-now")
+                }
+                if let note = workStatus.scopeNote {
+                    Text(note).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                 }
             }
         }.accessibilityElement(children: .contain).accessibilityIdentifier("activity-classification")
@@ -1017,7 +1049,7 @@ struct GoalongAnalyticsContent: View {
                     ForEach(GoalongAgendaSection.readingNotes, id: \.self) { Text($0) }
                 }
                 Text("Temps actif = Travail + Hors travail + À classer. Le travail et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
-                Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition du travail à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
+                Text("Goalong ne décide jamais qu’une app ou un site est productif. Le classement automatique (ChatGPT) applique votre définition du travail à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste en attente ou « à préciser », pas à zéro. Hors travail ne signifie pas procrastination.")
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
                 Text("La plus longue séance de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séance dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")

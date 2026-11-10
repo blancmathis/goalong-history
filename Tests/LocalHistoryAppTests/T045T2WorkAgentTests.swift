@@ -33,7 +33,7 @@
             XCTAssertEqual(GoalongWorkAgent.Readiness.ready.message, "")
             XCTAssertEqual(GoalongWorkAgent.Readiness.noDefinition.message, "Décrivez d’abord ce qui compte comme travail pour vous.")
             XCTAssertEqual(GoalongWorkAgent.Readiness.historyOff.message, "L’enregistrement est désactivé : il n’y a rien à classer.")
-            XCTAssertEqual(GoalongWorkAgent.Readiness.noConsent.message, "Autorisez l’agent à classer votre temps.")
+            XCTAssertEqual(GoalongWorkAgent.Readiness.noConsent.message, "Autorisez le classement automatique de votre temps.")
             XCTAssertEqual(GoalongWorkAgent.Readiness.notConnected.message, "Connectez votre compte ChatGPT pour lancer le classement.")
             XCTAssertEqual(GoalongWorkAgent.Readiness.paused.message, "Goalong est en pause : le classement reprendra ensuite.")
         }
