@@ -31,7 +31,10 @@ final class JevMonitoringUXTests: XCTestCase {
         let blocages = try source("Blocages/BlocagesPage.swift")
         XCTAssertTrue(blocages.contains("if target == .jev { editing = .jev; return }"))
         // The closed rule gives the plain page back (the route itself is exercised in `make test-ui`).
-        XCTAssertTrue(blocages.contains(".onChange(of: editing?.id) { id in if id == nil { onRuleClosed() } }"))
+        // Told at the close itself: an `onChange` of a hidden kept page runs late, after the next link (CI, #319).
+        XCTAssertTrue(blocages.contains("onClose: { editing = nil; onRuleClosed() })"))
+        XCTAssertTrue(blocages.contains("set: { editing = $0; if $0 == nil { onRuleClosed() } }"))
+        XCTAssertFalse(blocages.contains(".onChange(of: editing"))
         XCTAssertTrue(blocages.contains("onRuleClosed: { model.blockRuleEditorClosed() }"))
         XCTAssertTrue(settings.contains("jevLink.accessibilityIdentifier(\"settings-connections-jev\")"))
         // The pane « Définition du travail » stays usable while config.json is locked: it never writes it.

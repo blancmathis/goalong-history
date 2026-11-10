@@ -126,15 +126,15 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         .accessibilityIdentifier("blocages-page")
         // « Connecter Jev » inside the page opens the Jev rule, not another page.
         .environment(\.openJevSettings) { editing = .jev }
-        .sheet(item: $editing) { subject in
+        // A link that opened a rule (Jev) is used up when the rule closes: the page does not open it again by itself.
+        // Told at the close itself, not from `onChange`: a hidden kept page reads its changes late.
+        .sheet(item: Binding(get: { editing }, set: { editing = $0; if $0 == nil { onRuleClosed() } })) { subject in
             BlockRuleEditor(subject: subject, blocking: blocking, braise: braise, focus: focus, now: now,
                             sessionDraft: sessionDraft, onOpenRecording: onOpenRecording, onOpenWork: onOpenWork,
                             onPrepareRed: { _ = BraiseRuntime.shared.ensureController() },
-                            onClose: { editing = nil })
+                            onClose: { editing = nil; onRuleClosed() })
                 .goalongControls()
         }
-        // A link that opened a rule (Jev) is used up when the rule closes: the page does not open it again by itself.
-        .onChange(of: editing?.id) { id in if id == nil { onRuleClosed() } }
         .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
             if let id = editingList, let blocking {
                 BlockListSheet(controller: blocking, listID: id, now: now ?? GoalongToday.now) { editingList = nil }
