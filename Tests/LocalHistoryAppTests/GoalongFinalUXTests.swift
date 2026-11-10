@@ -19,9 +19,12 @@ final class GoalongFinalUXTests: XCTestCase {
         XCTAssertTrue(SettingsPane.matches("JSON").contains(.advanced))
         XCTAssertTrue(SettingsPane.matches("remplacement").contains(.chatGPT))
         XCTAssertTrue(SettingsPane.matches("quotidien").contains(.website))
-        XCTAssertEqual(SettingsPane.matches("  \n "), [.applications, .jev, .modules, .permissions, .storage, .advanced])
+        XCTAssertEqual(SettingsPane.matches("  \n "), [.work, .applications, .modules, .permissions, .storage, .advanced])
         XCTAssertTrue(SettingsPane.matches("fichier signé").contains(.tools))
-        XCTAssertEqual(SettingsPane.matches("typesafe"), [.jev])
+        // Jev has no pane: it is a rule of « Blocages », and the Settings home links to it.
+        XCTAssertTrue(SettingsPane.matches("typesafe").isEmpty)
+        XCTAssertTrue(SettingsPane.matchesJev("typesafe"))
+        XCTAssertEqual(SettingsPane.matches("classement"), [.work])
         XCTAssertTrue(SettingsPane.matches("minuterie").isEmpty)
         for term in ["blocage", "bloquer", "verrouiller", "geler", "cold turkey", "braise"] {
             XCTAssertTrue(SettingsPane.matches(term).contains(.modules), term)

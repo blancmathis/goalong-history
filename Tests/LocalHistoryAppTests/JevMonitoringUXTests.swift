@@ -5,9 +5,11 @@ import XCTest
 
 final class JevMonitoringUXTests: XCTestCase {
     func testMonitoringIsItsOwnPrimaryDestination() {
-        // Jev lives in Réglages › Jev; the old destination still opens it.
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .blocking, .settings])
-        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .settings)
+        // Jev is a rule of the page « Blocages »; the old destination opens that rule.
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .history, .blocking, .settings])
+        XCTAssertEqual(DashboardSection.monitoring.sidebarParent, .blocking)
+        XCTAssertEqual(DashboardSection.monitoring.keptPage, "blocages")
+        XCTAssertEqual(BlocagesTarget(.monitoring), .jev)
         XCTAssertFalse(ConcentrationHubPage.tabs.contains(.monitoring))
         XCTAssertEqual(DashboardSection.monitoring.simpleTitle, "Jev")
         XCTAssertEqual(DashboardSection(rawValue: "monitoring"), .monitoring)
@@ -15,14 +17,32 @@ final class JevMonitoringUXTests: XCTestCase {
         XCTAssertEqual(DashboardSection.privacy.sidebarParent, .settings)
     }
 
-    func testSettingsHoldJevAndTheOldDestinationOpensIt() throws {
-        XCTAssertEqual(SettingsPane.matches(""), [.applications, .jev, .modules, .permissions, .storage, .advanced])
+    func testSettingsHaveNoJevPaneButTheirSearchLeadsToTheRule() throws {
+        XCTAssertEqual(SettingsPane.matches(""), [.work, .applications, .modules, .permissions, .storage, .advanced])
         for query in ["jev", "typesafe", "surveillance"] {
-            XCTAssertEqual(SettingsPane.matches(query), [.jev], query)
+            XCTAssertTrue(SettingsPane.matches(query).isEmpty, query)
+            XCTAssertTrue(SettingsPane.matchesJev(query), query)
         }
-        XCTAssertTrue(try source("SettingsPage.swift").contains("JevMonitoringPage(onOpenRecording:"))
-        let model = try source("DashboardViewModel.swift")
-        XCTAssertTrue(model.contains("if section == .monitoring {\n                openSettingsPane(.jev)"))
+        for query in ["", "  ", "stockage"] { XCTAssertFalse(SettingsPane.matchesJev(query), query) }
+        let settings = try source("SettingsPage.swift")
+        XCTAssertFalse(settings.contains("JevMonitoringPage("), "one place for Jev's settings: its rule")
+        XCTAssertTrue(settings.contains("{ model.selectSection(.monitoring) }"))
+        XCTAssertTrue(settings.contains("jevLink.accessibilityIdentifier(\"settings-jev\")"))
+        let blocages = try source("Blocages/BlocagesPage.swift")
+        XCTAssertTrue(blocages.contains("if target == .jev { editing = .jev; return }"))
+        // The closed rule gives the plain page back (the route itself is exercised in `make test-ui`).
+        // Told at the close itself: an `onChange` of a hidden kept page runs late, after the next link (CI, #319).
+        XCTAssertTrue(blocages.contains("onClose: { editing = nil; onRuleClosed() })"))
+        XCTAssertTrue(blocages.contains("set: { editing = $0; if $0 == nil { onRuleClosed() } }"))
+        XCTAssertFalse(blocages.contains(".onChange(of: editing"))
+        XCTAssertTrue(blocages.contains("onRuleClosed: { model.blockRuleEditorClosed() }"))
+        XCTAssertTrue(settings.contains("jevLink.accessibilityIdentifier(\"settings-connections-jev\")"))
+        // The pane « Définition du travail » stays usable while config.json is locked: it never writes it.
+        XCTAssertTrue(settings.contains("content.disabled(settingsStore.configLocked && pane != .home && pane != .work)"))
+        let work = try source("GoalongWorkPage.swift")
+        for writer in ["settingsStore", "saveConfig", "GoalongSettingsStore"] {
+            XCTAssertFalse(work.contains(writer), "the work definition must not write config.json: \(writer)")
+        }
     }
 
     func testActivationRequiresSetupButDeactivationNeverDoes() {
@@ -55,10 +75,9 @@ final class JevMonitoringUXTests: XCTestCase {
 
     func testMenuAndSidebarReachThePageWithoutTruncatingItsName() throws {
         let root = try source("DashboardRootView.swift")
-        XCTAssertTrue(root.contains("case .concentration, .distractions, .blocking, .braise:\n                BlocagesPage(model: model)"))
+        XCTAssertTrue(root.contains("case .concentration, .distractions, .blocking, .braise, .monitoring:\n                BlocagesPage(model: model)"))
         // On « Blocages », Jev is a rule: its row and the hints open the rule editor on Jev.
         XCTAssertTrue(try source("Blocages/BlocagesPage.swift").contains(".environment(\\.openJevSettings) { editing = .jev }"))
-        XCTAssertTrue(root.contains("case .settings, .monitoring:\n                SettingsPage(model: model)"))
         XCTAssertTrue(try source("Concentration/ConcentrationHubPage.swift").contains(".environment(\\.openJevSettings) { model.selectSection(.monitoring) }"))
         XCTAssertTrue(try source("AppDelegate.swift").contains("onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) }"))
         XCTAssertTrue(try source("JevControls.swift").contains("Ouvrir Jev…"))

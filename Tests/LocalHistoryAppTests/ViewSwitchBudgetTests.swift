@@ -139,12 +139,13 @@ final class ViewSwitchBudgetTests: XCTestCase {
     /// Cold ratios (R14c) = highest seen / 0.7 over those 4 runs and 2 more (load 17-22): 1 j 2.53 · 7 j 3.30 ·
     /// 28 j 7.43 · overview 1.19. The sidebar pages other than the overview are not Activité's: their cold stays the
     /// block at the click (R14a; their own later reads are two-moded, history 20 or 37 ms), highest seen settings 0.89 ·
-    /// history 0.60 · work 0.91 · blocking 0.58 (the page « Blocages »; work and blocking widened to keep 30 %). Before R14c the first Activité click waited on
+    /// history 0.60 · work 0.91 · blocking 0.58 (the page « Blocages »; blocking widened to keep 30 %). « Mon travail » (work) left
+    /// the sidebar on 2026-11-10: it is a pane of Réglages, with no sidebar click to time. Before R14c the first Activité click waited on
     /// EventKit's permission answer (×2-3 in cold): its budgets were 9.7-20 × ref and let that wait through.
     static let switchBudgetRatios: [String: (warm: Double, cold: Double)] = [
         "activite-1j": (warm: 3.6, cold: 3.6), "activite-7j": (warm: 3.3, cold: 4.7), "activite-28j": (warm: 6.8, cold: 10.6),
         "overview": (warm: 1.9, cold: 1.7), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
-        "work": (warm: 1.15, cold: 1.3), "blocking": (warm: 1.1, cold: 0.85),
+        "blocking": (warm: 1.1, cold: 0.85),
     ]
 
     /// R14c: the reference is timed 6 times in a run (before the first pass, then after each). When the slowest of the
@@ -192,7 +193,7 @@ final class ViewSwitchBudgetTests: XCTestCase {
 
             var samples: [ViewSwitchTimingTests.Sample] = []
             var references: [Double] = [Self.referenceMs()]
-            let sections: [DashboardSection] = [.settings, .history, .work, .blocking, .overview]
+            let sections: [DashboardSection] = [.settings, .history, .blocking, .overview]
             for pass in 0..<5 {
                 for period in ["7", "28", "1"] {
                     let button = try XCTUnwrap(ViewSwitchTimingTests.periodButton(period, in: host), "no period \(period)")

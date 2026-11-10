@@ -123,7 +123,7 @@ annule immédiatement les requêtes, échantillons, rappels et effets, sans ratt
 ## Plan and review
 
 **Plan** (« Plan du jour »): an optional one-line intention for the day and 1…10 items. Item:
-`{ id, title (1…140), project? (free text, matched by name to « Mon travail » tasks), estimateMinutes?
+`{ id, title (1…140), project? (free text, matched by name to « Définition du travail » tasks), estimateMinutes?
 (5…600), status: open | done | dropped | moved(toDay) }`. File `Focus/plans/YYYY-MM-DD.json`.
 
 **Review** (« Bilan »): per item done / partly / not done / moved to a day; « Demain, je commence

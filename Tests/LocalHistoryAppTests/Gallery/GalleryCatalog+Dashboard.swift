@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 @testable import LocalHistoryApp
 
-/// Main window pages (spec C §6: shell, Activité, Mon travail, Historique, Temps d'écran, Conversations IA, Bilan…).
+/// Main window pages (spec C §6: shell, Activité, Définition du travail, Historique, Temps d'écran, Conversations IA, Bilan…).
 extension GalleryCatalog {
     /// `homeDirectoryForCurrentUser` answers `/Users/exemple` until the entry ends. Set last, after the fixture is
     /// written in the shard HOME: only text read from the home (a command to copy) changes.
@@ -14,7 +14,7 @@ extension GalleryCatalog {
         ctx.cleanups.append { if let previous { setenv(key, previous, 1) } else { unsetenv(key) } }
     }
 
-    /// The day's contexts by task with the member's verdicts (Mon travail › Vérifier et corriger, and the sheet
+    /// The day's contexts by task with the member's verdicts (Définition du travail › Vérifier et corriger, and the sheet
     /// Activité opens with « Corriger »), loaded from the classified fixture.
     static var workReviewEntry: GalleryEntry {
         var review: GoalongWorkReviewModel?
@@ -56,7 +56,10 @@ extension GalleryCatalog {
                       fixture: .recordingOn),
             dashboard("fenetre/espace-faible", section: .overview, sizes: [.window, .full(1240)], environment: { $0.freeBytes = 900_000_000 },
                       fixture: .recordingOn),
-            dashboard("mon-travail/vide", section: .work, sizes: [.window, .full(1240)]),
+            // « Mon travail » is the pane « Définition du travail » of Réglages (spec-blocages-20261110 § 6). The ids stay,
+            // so the comparison shows the move. The first entry names the pane; the others take the old destination
+            // (`.work`), which the app routes to the same pane.
+            dashboard("mon-travail/vide", section: .settings, pane: .work, sizes: [.window, .full(1240)]),
             dashboard("mon-travail/definition-enregistree", section: .work, configure: { _, _ in
                 try JevWorkContextStore.shared.save("Goalong : app macOS et site. Atlas : préparer le lancement.",
                     applications: "Xcode et GitHub pour Goalong. T3 Code pour coder avec les agents.",
@@ -105,13 +108,6 @@ extension GalleryCatalog {
                 showFixedHome(ctx)
                 GoalongCLIInstallation.galleryExecutableURL = URL(fileURLWithPath: "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
                 ctx.cleanups.append { GoalongCLIInstallation.galleryExecutableURL = nil }
-            }),
-            // Without a key but with history on and a work definition: not the same image as Réglages › Jev, which
-            // the section opens (C2-couverture-01).
-            dashboard("surveillance/a-configurer", section: .monitoring, fixture: .recordingOn, configure: { _, _ in
-                try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
-                    applications: "Xcode, Terminal et GitHub pour Atlas.", content: "Documentation Swift.",
-                    procrastination: "youtube.com, Messages")
             }),
             dashboard("concentration/page", section: .concentration, sizes: [.window, .full(1240)]),
             dashboard("distractions/page", section: .distractions),

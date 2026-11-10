@@ -174,7 +174,7 @@ final class T046UnitConcentrationTests: XCTestCase {
         XCTAssertNil(added.error); XCTAssertEqual(added.settings.limits.weekdays, [1, 3])
     }
 
-    // « Son nom dans « Mon travail » », pas-à-pas de la cible, « M’engager », liste de l'enjeu (J-0082, J-0083, J-0085, J-0086)
+    // « Son nom dans « Définition du travail » », pas-à-pas de la cible, « M’engager », liste de l'enjeu (J-0082, J-0083, J-0085, J-0086)
     func testCommitmentDraftDefaultsBoundsStepsAndCompleteness() {
         let day = FocusCommitmentPeriod(kind: .day, key: "2026-10-15")
         var draft = FocusCommitmentDraft(period: day)

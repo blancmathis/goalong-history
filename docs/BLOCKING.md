@@ -21,9 +21,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - `UserDefaults` key `goalong.module.blocking.enabled`, default `false`. Read through
   `GoalongModuleStore` (`Sources/LocalHistoryApp/GoalongModules.swift`), cheap, never starts anything.
 - Off: no `BlockingController`, no timer, no observer, no window, no file under `Blocking/`, no
-  permission request, no system component. The sidebar entry **Garde-fous** (⌘5, T-048 B2) holds
-  **Blocages** and **Écran rouge**; Blocages stays visible and only offers the switch.
-- On: Garde-fous › Blocages can start blocks and programs. Turning the module on creates
+  permission request, no system component. The sidebar entry **Blocages** (⌘3, one page since
+  docs/spec-blocages-20261110.md) holds the block rules and the red screen; it stays visible and only offers the switch.
+- On: the page Blocages can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
 - Off is refused while anything is locked (locked session, locked program, freeze) and while any
@@ -34,7 +34,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 
 ## Rules from the owner
 
-- Lists come from the member only. Never from the « Mon travail » agent, Jev, analytics or history.
+- Lists come from the member only. Never from the work-definition agent, Jev, analytics or history.
   Static suggestions (a fixed catalog the member taps to add) are allowed; nothing is added without a
   tap.
 - Reuse the existing observation (`ContextMonitor` / `ContextProvider`) and the Jev window technique
@@ -54,7 +54,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Mode block / allowlist | « Bloquer ces éléments » / « Tout bloquer sauf ces éléments » |
 | Manual session | Blocage (« Bloquer maintenant ») |
 | Weekly windows | Programme (blocking) / Plages protégées (red screen) |
-| Sidebar section holding both | Garde-fous |
+| Sidebar page holding both | Blocages |
 | Lock kinds | Libre / Difficile / Mot de passe / Verrouillé |
 | Program lock | « Programme verrouillé jusqu'au … » |
 | Quota | « X min par jour » |

@@ -119,10 +119,6 @@ final class ConcentrationHubRenderingTests: XCTestCase {
                        VStack(alignment: .leading, spacing: 24) {
                            VStack(alignment: .leading, spacing: 6) {
                                Text("Jev").goalongPageTitle()
-                               // The pane's lead, as SettingsPage draws it under the title (R2c-12, R-289 4).
-                               if let lead = SettingsPane.jev.lead {
-                                   Text(lead).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                               }
                            }
                            JevMonitoringPage(onOpenRecording: {}, embedded: true)
                        }

@@ -70,6 +70,7 @@ import XCTest
     func testTheOldDestinationsOpenTheOnePage() {
         let parts: [(DashboardSection, BlocagesTarget)] = [
             (.blocking, .top), (.distractions, .lists), (.concentration, .sessions), (.braise, .redScreen),
+            (.monitoring, .jev),
         ]
         for (section, target) in parts {
             XCTAssertEqual(section.keptPage, "blocages", section.rawValue)
@@ -81,13 +82,37 @@ import XCTest
             }
         }
         // A destination saved by an older version (a link, the CLI, the last page shown) still names the page.
-        for name in ["concentration", "distractions", "blocking", "braise"] {
+        for name in ["concentration", "distractions", "blocking", "braise", "monitoring"] {
             XCTAssertEqual(DashboardSection(rawValue: name)?.keptPage, "blocages", name)
         }
         XCTAssertEqual(BlocagesTarget(.overview), .top)
-        XCTAssertEqual(DashboardSection.primarySections, [.overview, .work, .history, .blocking, .settings])
+        XCTAssertEqual(DashboardSection.primarySections, [.overview, .history, .blocking, .settings])
         XCTAssertEqual(DashboardSection.blocking.title, "Blocages"); XCTAssertEqual(DashboardSection.blocking.simpleTitle, "Blocages")
         XCTAssertTrue(DashboardSection.preheated.contains(.blocking), "built at rest: the first click draws nothing new")
+    }
+
+    /// « Mon travail » is no page: the old destination is the pane « Définition du travail » of Réglages.
+    func testTheWorkDestinationIsASettingsPane() throws {
+        XCTAssertEqual(DashboardSection.work.keptPage, "settings")
+        XCTAssertEqual(DashboardSection.work.sidebarParent, .settings)
+        XCTAssertEqual(DashboardSection.work.simpleTitle, "Définition du travail")
+        XCTAssertFalse(DashboardSection.preheated.contains(.work))
+        XCTAssertFalse(DashboardSection.primarySections.contains(.work))
+        XCTAssertEqual(DashboardSection(rawValue: "work"), .work, "a saved destination still decodes")
+        XCTAssertTrue(SettingsPane.primary.contains(.work))
+        XCTAssertEqual(SettingsPane.work.title, "Définition du travail")
+        for query in ["travail", "définition", "classement", "mon travail", "objectif"] {
+            XCTAssertTrue(SettingsPane.matches(query).contains(.work), query)
+        }
+        let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/LocalHistoryApp")
+        let model = try String(contentsOf: app.appendingPathComponent("DashboardViewModel.swift"), encoding: .utf8)
+        XCTAssertTrue(model.contains("if section == .work {\n                openSettingsPane(.work)\n                return"))
+        let root = try String(contentsOf: app.appendingPathComponent("DashboardRootView.swift"), encoding: .utf8)
+        XCTAssertTrue(root.contains("case .settings, .work:\n                SettingsPage(model: model)"),
+                      "a restored `.work` selection still draws Réglages")
+        let page = try String(contentsOf: app.appendingPathComponent("GoalongWorkPage.swift"), encoding: .utf8)
+        XCTAssertFalse(page.contains("PageHeader("), "no page of its own")
     }
 
     func testANewMemberSeesEveryPartAndHowToStart() {

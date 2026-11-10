@@ -510,7 +510,7 @@ struct GoalongAnalyticsContent: View {
                 if workStatus.isClassifying {
                     ProgressView().controlSize(.small)
                 } else if !workStatus.hasDefinition || workStatus.problem != nil {
-                    Button(workStatus.hasDefinition ? "Ouvrir Mon travail" : "Définir mon travail", action: onWork)
+                    Button(workStatus.hasDefinition ? "Ouvrir la définition du travail" : "Définir mon travail", action: onWork)
                         .buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("activity-define-work")
                 } else {
                     Button(classifyLabel, action: onClassify).buttonStyle(LHSecondaryButtonStyle())
@@ -585,8 +585,8 @@ struct GoalongAnalyticsContent: View {
             Text("Votre travail par projet, quelles que soient les applications.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             if !payload.isPreview {
-                // « Mon travail » opens over Activité: the definition changes where its effect shows.
-                Button("Mon travail…", action: onWork).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                // « Définition du travail » opens over Activité: the definition changes where its effect shows.
+                Button("Définition du travail…", action: onWork).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
                     .help("Changer ce qui compte comme travail pour vous")
                     .accessibilityIdentifier("activity-tasks-definition")
             }
@@ -952,7 +952,7 @@ struct GoalongAnalyticsContent: View {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     if blocks.isEmpty {
                         Text(current.workSeconds > 0 ? "Aucune séance de 25 minutes ou plus sur cette période."
-                             : "Décrivez votre travail dans Mon travail pour voir apparaître vos séances.")
+                             : "Décrivez votre travail dans « Définition du travail » pour voir apparaître vos séances.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     ForEach(blocks.sorted { $0.workSeconds > $1.workSeconds }.prefix(5)) { block in
@@ -1020,7 +1020,7 @@ struct GoalongAnalyticsContent: View {
                     ForEach(GoalongAgendaSection.readingNotes, id: \.self) { Text($0) }
                 }
                 Text("Temps actif = Travail + Hors travail + À classer. Le travail et le focus sont inclus dans l’actif ; ce ne sont pas des heures supplémentaires.")
-                Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition (Mon travail) à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
+                Text("Goalong ne décide jamais qu’une app ou un site est productif. Un agent applique votre définition du travail à chaque contexte — app, site et titre de fenêtre — et vos corrections priment. Sans verdict, le temps reste à classer, pas à zéro. Hors travail ne signifie pas procrastination.")
                 Text("Les moyennes par jour ne comptent que les jours observés. Aujourd’hui est comparé à hier à la même heure ; une période, à la moyenne de la précédente.")
                 Text("La plus longue séance de travail suit une même tâche, même en changeant d’application. Sans tâche connue, Goalong montre à la place la plus longue séance dans une même app ou un même site. Aucune des deux ne mesure l’attention ni l’efficacité.")
                 Text("Un écart de plus de deux minutes entre observations ou une interruption de collecte coupe la continuité. Les appels, lectures et présentations observés au premier plan comptent même sans clavier ni souris. Les périodes sans saisie et sans signal d’usage, privées ou non observées restent distinctes. Rien n’est prolongé avant la première trace ou après la dernière.")

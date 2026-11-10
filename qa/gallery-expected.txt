@@ -2854,3 +2854,96 @@ temps-ecran/vide--   # Blocages (page unique) : une entrée « Blocages » rempl
 terminal/aide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
 terminal/installe--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
 blocages/   # Blocages (page unique) : nouvelle page et son éditeur de règle
+activite/28-jours--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/7-jours--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/apercu-developpeur--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-code--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-coverage--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-reports--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-rhythm--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-sessions--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-sommeil--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-temps-ecran--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-texture--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/detail-usage--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/enregistrement-desactive--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/jour-realiste--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/journee-vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/mode-developpeur--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/non-classe--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/permission-manquante--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+activite/traces-isolees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes nomment « Définition du travail »
+agenda/acces-refuse--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/detail-acces-refuse--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/detail-avec-donnees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/detail-non-demande--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/detail-vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/jour-avec-donnees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/reglages-acces-non-demande--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+agenda/reglages-acces-refuse--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+ambiance/barre-telechargement--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+ambiance/page-fenetre--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+bilan/chargement--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes disent « votre définition du travail »
+bilan/erreur--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes disent « votre définition du travail »
+bilan/non-connecte--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes disent « votre définition du travail »
+bilan/rapport--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale ; les textes disent « votre définition du travail »
+blocages/editeur-jev--   # Définition du travail (PR 2) : nouvelle entrée, l'éditeur de la règle Jev (l'ancienne « surveillance/a-configurer »)
+braise/page-fenetre--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+compte/acces-refuse--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+compte/relie--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+concentration-maintenant/reglages--   # Définition du travail (PR 2) : le texte nomme « Définition du travail » au lieu de « Mon travail »
+concentration-maintenant/reglages-jour-choisi--   # Définition du travail (PR 2) : le texte nomme « Définition du travail » au lieu de « Mon travail »
+concentration/page--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+confidentialite/choix-par-defaut--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+confidentialite/pause-globale--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+confidentialite/suivi-actif--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+conversations-ia/gestion-remplie--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+conversations-ia/indexees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+conversations-ia/vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+distractions/page--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+fenetre/espace-faible--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+fenetre/interactions-indisponibles--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+fenetre/pause-globale--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+fenetre/stockage-plein--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+fenetre/stockage-refuse--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+historique/chronologie--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+historique/journee-passee-vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+historique/journee-vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+historique/vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mises-a-jour/a-jour--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mises-a-jour/disponible--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mises-a-jour/erreur--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mises-a-jour/non-configure--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mises-a-jour/recherche--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+mon-travail/classement-avec-donnees--   # Définition du travail (PR 2) : la page « Mon travail » devient le panneau Réglages › Définition du travail
+mon-travail/definition-enregistree--   # Définition du travail (PR 2) : la page « Mon travail » devient le panneau Réglages › Définition du travail
+mon-travail/definition-et-donnees--   # Définition du travail (PR 2) : la page « Mon travail » devient le panneau Réglages › Définition du travail
+mon-travail/vide--   # Définition du travail (PR 2) : la page « Mon travail » devient le panneau Réglages › Définition du travail
+partage/avec-donnees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+partage/vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+programme/page--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings-sheets/analyse-donnees--   # Définition du travail (PR 2) : le texte dit « l'agent qui classe votre travail » au lieu de « l'agent de Mon travail »
+settings/accueil--   # Définition du travail (PR 2) : « Définition du travail » remplace « Jev » dans la liste ; « Mon travail » quitte la barre latérale
+settings/accueil-etat-inconnu--   # Définition du travail (PR 2) : « Définition du travail » remplace « Jev » dans la liste ; « Mon travail » quitte la barre latérale
+settings/accueil-ouverture-desactivee--   # Définition du travail (PR 2) : « Définition du travail » remplace « Jev » dans la liste ; « Mon travail » quitte la barre latérale
+settings/applications--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/avance--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/avance-developpeur--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/chatgpt--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/chatgpt-consentement--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/connexions--   # Définition du travail (PR 2) : la ligne « Jev » ouvre la règle Jev ; « Mon travail » quitte la barre latérale
+settings/enregistrement--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/enregistrement-actif--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/jev--   # Définition du travail (PR 2) : le panneau Réglages › Jev disparaît, Jev est une règle de la page « Blocages »
+settings/modules--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/non-enregistre--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/outils--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/permission-manquante--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/permissions--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/site--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/stockage--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+settings/stockage-avec-donnees--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+surveillance/a-configurer--   # Définition du travail (PR 2) : la destination ouvre la règle Jev de « Blocages » ; remplacée par blocages/editeur-jev
+temps-ecran/vide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+terminal/aide--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)
+terminal/installe--   # Définition du travail (PR 2) : « Mon travail » quitte la barre latérale (Activité, Historique, Blocages, Réglages)

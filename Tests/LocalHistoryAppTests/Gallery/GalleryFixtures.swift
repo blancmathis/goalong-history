@@ -98,9 +98,9 @@ import SwiftUI
             now: { GalleryClock.now }, defaults: ctx.defaults, availableBytes: { freeBytes },
             analyticsReader: GoalongAnalyticsReader(root: AppPaths.applicationSupportDirectory, now: { GalleryClock.now }))
         model.navigationStore.showWelcome = options.showWelcome
-        if options.section == .monitoring {
-            // Jev has no page of its own: the app routes it to Réglages › Jev.
-            model.selectSection(.monitoring)
+        if options.section == .work {
+            // The work definition has no page of its own: the app routes it to Réglages › Définition du travail.
+            model.selectSection(.work)
         } else {
             model.navigationStore.selectedSection = options.section
             model.navigationStore.settingsPane = options.settingsPane

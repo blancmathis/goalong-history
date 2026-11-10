@@ -461,7 +461,7 @@ struct GoalongDayNoteSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Note du \(GoalongUIFormat.day(day))").font(LHTheme.sheetTitleFont)
-            Text("Ce qui a marqué la journée, ou ce que les chiffres ne montrent pas. La note reste sur ce Mac. Elle n’est envoyée que si vous cochez « Note du jour » dans les sources du bilan : elle sert alors au bilan et à l’agent de « Mon travail ».")
+            Text("Ce qui a marqué la journée, ou ce que les chiffres ne montrent pas. La note reste sur ce Mac. Elle n’est envoyée que si vous cochez « Note du jour » dans les sources du bilan : elle sert alors au bilan et à l’agent qui classe votre travail.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             GoalongTextArea(text: $text, placeholder: "Par exemple : journée coupée par deux rendez-vous.", minHeight: 96)
                 .accessibilityIdentifier("activity-note-text")

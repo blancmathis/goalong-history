@@ -1,4 +1,4 @@
-# Mon travail — définition du travail et classement par agent
+# Définition du travail — ce qui compte comme travail et classement par agent
 
 Goalong ne décide jamais qu’une application ou un site est productif. Une même app
 sert au travail puis à autre chose (YouTube pour un cours puis pour se distraire,
@@ -7,14 +7,14 @@ l’utilisateur, avec ses mots, et appliqué par un agent à ce qu’il faisait 
 
 ## Ce que voit l’utilisateur
 
-- **Mon travail** (barre latérale) : la définition (projets et objectifs, apps et sites
+- **Réglages › Définition du travail** (l’ancienne page « Mon travail ») : la définition (projets et objectifs, apps et sites
   et à quoi ils servent, contenus qui comptent comme travail, ce qui n’en est pas), l’état
   de l’agent, et « Vérifier et corriger » pour une journée.
 - **Activité** : tuile Travail, carte **Tâches** (temps par projet, quelles que soient les
   apps), Concentration = plus longue session sur une même tâche, changements d’app « dont
   N sans quitter la tâche ». Sans définition, une carte invite à la rédiger.
-- **Réglages › Jev** : affiche un résumé de la même définition et renvoie vers
-  Mon travail. Il n’existe qu’une définition (`JevWorkContextStore`, 800 octets).
+- **Blocages › Jev** (la règle Jev) : affiche un résumé de la même définition et renvoie vers
+  Réglages › Définition du travail. Il n’existe qu’une définition (`JevWorkContextStore`, 800 octets).
 
 ## Modèle
 

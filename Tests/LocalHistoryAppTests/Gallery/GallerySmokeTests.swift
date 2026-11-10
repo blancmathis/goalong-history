@@ -246,12 +246,14 @@ final class GallerySmokeTests: XCTestCase {
         let sections = Set(entries.compactMap(\.section))
         // .activity opens the same page as .history (same PNG; DashboardRootView → UnifiedHistoryPage): historique/ covers
         // it, NOT_COVERED says so (R-61). The skip is this one table entry, so the guard fails if historique/ goes (R-289 2).
-        let coveredBy: [DashboardSection: DashboardSection] = [.activity: .history]
+        // .monitoring opens « Blocages » with the Jev rule's editor, a sheet the window capture does not show:
+        // blocages/editeur-jev draws it, and the page is the one of .blocking.
+        let coveredBy: [DashboardSection: DashboardSection] = [.activity: .history, .monitoring: .blocking]
         for section in DashboardSection.allCases where section != .settings {
             XCTAssertTrue(sections.contains(coveredBy[section] ?? section), "no gallery entry for DashboardSection.\(section)")
         }
         let panes = Set(entries.compactMap(\.pane))
-        let allPanes: [SettingsPane] = [.home, .recording, .applications, .connections, .website, .chatGPT, .jev, .modules,
+        let allPanes: [SettingsPane] = [.home, .recording, .applications, .connections, .website, .chatGPT, .work, .modules,
                                         .permissions, .storage, .advanced, .tools]
         for pane in allPanes { XCTAssertTrue(panes.contains(pane), "no gallery entry for SettingsPane.\(pane)") }
         var seen = Set<String>()

@@ -590,7 +590,7 @@
                 confirmDestructiveAction(
                     title: "Effacer tout l’historique détaillé ?",
                     message:
-                        "Les événements détaillés enregistrés sur ce Mac seront supprimés, ainsi que leurs analyses et mémoires, les appels, l’activité de développement, les notes du jour et les verdicts et corrections de « Mon travail ». Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
+                        "Les événements détaillés enregistrés sur ce Mac seront supprimés, ainsi que leurs analyses et mémoires, les appels, l’activité de développement, les notes du jour et les verdicts et corrections du classement du travail. Les sceaux cryptographiques sont conservés : les périodes concernées restent visibles, mais ne pourront plus être partagées qu’en mode privé."
                         + Self.commitmentWarning(since: nil)
                 )
             else { return }

@@ -101,5 +101,29 @@ final class DashboardFollowTodayTests: XCTestCase {
         XCTAssertEqual(model.navigationStore.selectedDay, local.startOfDay(for: clock))
         XCTAssertTrue(model.navigationStore.isTodaySelected)
     }
+
+    /// « Mon travail » is no page (docs/spec-blocages-20261110.md § 6): its destination opens the pane
+    /// « Définition du travail » of Réglages, and Jev's destination stays a destination of the page « Blocages ».
+    @MainActor func testTheWorkDestinationOpensItsSettingsPane() throws {
+        let model = try model()
+        model.selectSection(.history)
+        model.selectSection(.work)
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .work)
+        model.selectSection(.settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .home, "the sidebar entry still opens the Settings home")
+        model.selectSection(.monitoring)
+        XCTAssertEqual(model.navigationStore.selectedSection, .monitoring)
+        XCTAssertEqual(BlocagesTarget(model.navigationStore.selectedSection), .jev)
+        // The rule closes: the page is the plain one again, so showing it again does not reopen the rule.
+        model.blockRuleEditorClosed()
+        XCTAssertEqual(model.navigationStore.selectedSection, .blocking)
+        XCTAssertEqual(BlocagesTarget(model.navigationStore.selectedSection), .top)
+        // A rule closed by a link that leaves the page changes nothing more.
+        model.openRecordingSettings()
+        model.blockRuleEditorClosed()
+        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
+        XCTAssertEqual(model.navigationStore.settingsPane, .recording)
+    }
 }
 #endif

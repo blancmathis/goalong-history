@@ -416,6 +416,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             GoalongSheetFooter(inset: 28) {
                 Spacer()
                 Button("Fermer", action: onClose).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("block-rule-close")
             }
         case .now:
             if !showsComposer {

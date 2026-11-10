@@ -3,7 +3,7 @@ import SwiftUI
 import LocalHistoryCore
 
 /// The single definition of work, shared by Activité (through the classification agent)
-/// and real-time monitoring. Edited in Mon travail.
+/// and real-time monitoring. Edited in Réglages › Définition du travail, and in Activité's sheet.
 @MainActor struct JevWorkContextControls: View {
     enum Purpose { case workDefinition, monitoring }
     @ObservedObject private var store: JevWorkContextStore

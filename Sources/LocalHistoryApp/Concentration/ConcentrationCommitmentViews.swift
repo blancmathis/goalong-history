@@ -645,7 +645,7 @@ struct FocusCommitmentDraft: Equatable {
             }
             if draft.kind == .task {
                 row("Tâche") {
-                    TextField("Son nom dans « Mon travail »", text: $draft.task)
+                    TextField("Son nom dans « Définition du travail »", text: $draft.task)
                         .textFieldStyle(GoalongFieldStyle()).frame(maxWidth: 300)
                         .disabled(harderOnly)
                         .accessibilityIdentifier("concentration-commitment-task")

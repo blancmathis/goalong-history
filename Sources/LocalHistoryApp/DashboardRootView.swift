@@ -116,11 +116,9 @@
             switch section {
             case .overview, .analytics:
                 GoalongAnalyticsPage(model: model, navigation: $activityNavigation, analytics: activity)
-            case .work:
-                GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
-            case .concentration, .distractions, .blocking, .braise:
+            case .concentration, .distractions, .blocking, .braise, .monitoring:
                 BlocagesPage(model: model)
             case .activity:
                 ActivityPage(
@@ -148,7 +146,7 @@
                 }
             case .ambiance:
                 AmbiancePage(model: model)
-            case .settings, .monitoring:
+            case .settings, .work:
                 SettingsPage(model: model)
             }
         }
@@ -437,7 +435,7 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .work, .history, .blocking, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .history, .blocking, .settings]
 
         /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
         /// R-73 (R4d-9): the one global sign of a sound download, on Ambiance's row; the page keeps its own text.
@@ -478,7 +476,7 @@
         var simpleTitle: String {
             switch self {
             case .overview, .analytics: return "Activité"
-            case .work: return "Mon travail"
+            case .work: return "Définition du travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
             case .blocking: return "Blocages"
@@ -501,14 +499,12 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
-            case .concentration, .distractions, .blocking, .braise: return .blocking
+            case .concentration, .distractions, .blocking, .braise, .monitoring: return .blocking
             case .ambiance:
                 return .ambiance
-            case .work:
-                return .work
             case .history, .activity, .screenTime:
                 return .history
-            case .agentActivity, .privacy, .cli, .settings, .monitoring:
+            case .agentActivity, .privacy, .cli, .settings, .work:
                 return .settings
             }
         }

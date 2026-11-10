@@ -65,7 +65,7 @@ final class JevProcrastinationStoreTests: XCTestCase {
         }
         XCTAssertFalse(source.contains("setEnabled("))
         XCTAssertFalse(source.contains("JevMonitor.shared"))
-        // One definition of work: edited in Mon travail, summarised on the monitoring page.
+        // One definition of work: edited in Réglages › Définition du travail, summarised in the Jev rule.
         XCTAssertTrue(try appSource("JevMonitoringPage.swift").contains("GoalongWorkDefinitionSummary(onOpen: onOpenWork)"))
         XCTAssertTrue(try appSource("GoalongWorkPage.swift").contains("JevWorkContextControls(purpose: .workDefinition)"))
     }
