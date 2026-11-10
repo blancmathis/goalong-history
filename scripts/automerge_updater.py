@@ -31,7 +31,7 @@ FAILED = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILU
 IN_FLIGHT_MAX_AGE = timedelta(minutes=90)
 LOG_CAP, LOG_KEEP = 200_000, 50_000
 PR_FIELDS = ("number,title,headRefName,headRefOid,isDraft,isCrossRepository,createdAt,"
-             "mergeable,autoMergeRequest,baseRefName,statusCheckRollup")
+             "mergeable,autoMergeRequest,baseRefName,statusCheckRollup,updatedAt")
 
 
 def gh(*args, gh_bin="gh"):
@@ -70,13 +70,18 @@ def required_pending(pr, required):
 
 
 def last_activity(pr):
-    """Latest check timestamp (startedAt/completedAt/createdAt) or None."""
+    """Latest check timestamp (startedAt/completedAt/createdAt), else the PR's updatedAt, or None.
+
+    Falling back to updatedAt keeps a PR whose required checks never started from
+    holding the queue forever: it is skipped once it has been quiet for 90 min."""
     stamps = []
     for item in pr.get("statusCheckRollup") or []:
         for key in ("startedAt", "completedAt", "createdAt"):
             value = item.get(key)
             if value and not value.startswith("0001"):
                 stamps.append(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    if not stamps and pr.get("updatedAt"):
+        stamps.append(datetime.fromisoformat(pr["updatedAt"].replace("Z", "+00:00")))
     return max(stamps) if stamps else None
 
 

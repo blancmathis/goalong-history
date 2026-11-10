@@ -70,6 +70,13 @@ class Decide(unittest.TestCase):
         fresh = dict(old, startedAt="2026-11-10T08:30:00Z")
         self.assertEqual(decide([pr(1, checks=[fresh])], REQ, lambda p: 0, now)[0], "wait")
 
+    def test_checks_never_started_falls_back_to_updated_at(self):
+        now = datetime(2026, 11, 10, 9, 0, tzinfo=timezone.utc)
+        quiet = dict(pr(1), updatedAt="2026-11-10T06:00:00Z")
+        self.assertEqual(decide([quiet], REQ, lambda p: 0, now)[0], "idle")
+        recent = dict(pr(1), updatedAt="2026-11-10T08:30:00Z")
+        self.assertEqual(decide([recent], REQ, lambda p: 0, now)[0], "wait")
+
     def test_outcomes(self):
         out = check_outcomes([run("a"), run("b", "", "QUEUED"), {"__typename": "StatusContext", "context": "c", "state": "ERROR"}])
         self.assertEqual(out, {"a": "passed", "b": "pending", "c": "failed"})
