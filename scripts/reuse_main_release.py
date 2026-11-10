@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tagged release from the bytes main already published, never a second build.
 
-locate SHA VERSION   (any runner) wait for continuous-release to publish SHA, then print
+locate SHA VERSION   (any runner) wait for continuous-release at SHA to finish (deltas included), then print
                      found=true|false and tag=main-<run>-<attempt> (the release holding its archive).
 verify SHA VERSION TAG  (macOS) download the latest-main generation of SHA into dist/ and
                      prove, before anything is published, that it is exactly what main built,
@@ -92,6 +92,22 @@ def capture(sha, tag):
 def locate(sha, version):
     deadline = time.monotonic() + WAIT_SECONDS
     while True:
+        runs = api(f'actions/workflows/{WORKFLOW}/runs?head_sha={sha}&event=push&per_page=20')['workflow_runs']
+        finished = bool(runs) and all(r['status'] == 'completed' for r in runs)
+        if runs and not finished and time.monotonic() <= deadline:
+            # publish-latest-main names SHA in the rolling release before publish-deltas replaces
+            # its manifest and feed with the delta generation: copying earlier captures a
+            # generation that is no longer the final one. Copy only once main is done.
+            print(f'continuous-release for {sha} still running; waiting.', flush=True)
+            time.sleep(30)
+            continue
+        if not finished:
+            summary(f'continuous-release for {sha} has no finished push run: full build fallback.')
+            return output(found='false')
+        latest = max(runs, key=lambda r: (r['run_number'], r.get('run_attempt', 1)))
+        if latest['conclusion'] != 'success':
+            summary(f'continuous-release for {sha} ended {latest["conclusion"]}: full build fallback.')
+            return output(found='false')
         manifest = rolling_manifest()
         if manifest and manifest.get('sourceCommit') == sha:
             got = (manifest.get('product') or {}).get('version')
@@ -107,12 +123,8 @@ def locate(sha, version):
                 return output(found='false')
             summary(f'Reusing the {version} generation main published for {sha} ({tag}).')
             return output(found='true', tag=tag)
-        runs = api(f'actions/workflows/{WORKFLOW}/runs?head_sha={sha}&event=push&per_page=20')['workflow_runs']
-        if not runs or all(r['status'] == 'completed' for r in runs) or time.monotonic() > deadline:
-            summary(f'No published main generation for {sha} in {ROLLING}: full build fallback.')
-            return output(found='false')
-        print(f'continuous-release for {sha} still running; waiting.', flush=True)
-        time.sleep(30)
+        summary(f'No published main generation for {sha} in {ROLLING}: full build fallback.')
+        return output(found='false')
 
 
 def require(condition, message):
