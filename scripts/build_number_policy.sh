@@ -7,12 +7,52 @@
 # from the current GitHub run may use it. Local builds stay below and always upgrade.
 
 LOCALHISTORY_RELEASE_BUILD_EPOCH=30000000
+# make local (owner try, signed like a release): the base release's run slot with this attempt.
+LOCALHISTORY_LOCAL_TRY_ATTEMPT=99
 
 localhistory_release_build_number() {
   local run_id="$1"
   local attempt="$2"
   printf '%s.%s.%s\n' "$LOCALHISTORY_RELEASE_BUILD_EPOCH" \
     "$((run_id / 10000))" "$(((run_id % 10000) * 100 + attempt))"
+}
+
+# A local try installed beside nothing (it replaces Goalong in /Applications) must outrank the
+# release it replaces, or Sparkle reinstalls that release at once, and must stay below every later
+# release, or it blocks updates. It reuses the base release's run slot with attempt 99 (hosted
+# attempts stop far earlier): a later run has a larger ID, so the next release still upgrades it.
+localhistory_local_try_build_number() {
+  local base="$1"
+  if [[ ! "$base" =~ ^${LOCALHISTORY_RELEASE_BUILD_EPOCH}\.([1-9][0-9]*)\.([1-9][0-9]*)$ ]]; then
+    echo "A local try needs a published release build as its base; got: $base" >&2
+    return 1
+  fi
+  local high="${BASH_REMATCH[1]}" low="${BASH_REMATCH[2]}"
+  local slot=$((10#$low / 100)) attempt=$((10#$low % 100))
+  if (( attempt < 1 || attempt >= LOCALHISTORY_LOCAL_TRY_ATTEMPT || slot > 9999 )); then
+    echo "Base build $base has no free local-try slot." >&2
+    return 1
+  fi
+  printf '%s.%s.%s\n' "$LOCALHISTORY_RELEASE_BUILD_EPOCH" "$high" "$((slot * 100 + LOCALHISTORY_LOCAL_TRY_ATTEMPT))"
+}
+
+# make local trusts the public manifest only as a base: a forged far-future build would otherwise
+# pin the try above every real release. Its run slot (high part) must stay near the installed build
+# and below a generous ceiling from a known point (high 4266167 on 2026-11-10, +5000 per day).
+LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH=4266167
+LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH=1794268800
+localhistory_manifest_base_plausible() { # BUILD [INSTALLED_BUILD] [NOW_EPOCH]
+  local build="$1" installed="${2:-}" now="${3:-$(date +%s)}"
+  local re="^${LOCALHISTORY_RELEASE_BUILD_EPOCH}\\.([1-9][0-9]*)\\.[1-9][0-9]*$"
+  [[ "$build" =~ $re ]] || return 1
+  local high="${BASH_REMATCH[1]}" days=$(( (now - LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH) / 86400 ))
+  (( days < 0 )) && days=0
+  local ceiling=$(( LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH + days * 5000 + 1000 ))
+  if [[ "$installed" =~ $re ]]; then
+    local near=$(( BASH_REMATCH[1] + 3000 ))
+    (( near < ceiling )) && ceiling=$near
+  fi
+  (( 10#$high <= ceiling ))
 }
 
 localhistory_validate_build_number() {
@@ -31,9 +71,15 @@ localhistory_validate_build_number() {
   if [[ "$development" == 1 ]]; then
     return 0
   fi
+  # make local: exactly the try number of the release it replaces; never inside CI.
+  if [[ "${GITHUB_ACTIONS:-}" != "true" && -n "${LOCALHISTORY_LOCAL_TRY_BASE:-}" ]] \
+     && [[ "$build" == "$(localhistory_local_try_build_number "$LOCALHISTORY_LOCAL_TRY_BASE" 2>/dev/null)" ]]; then
+    return 0
+  fi
   local run_id="${GITHUB_RUN_ID:-}"
   local attempt="${GITHUB_RUN_ATTEMPT:-1}"
   if [[ "${GITHUB_ACTIONS:-}" == "true" && "$run_id" =~ ^[1-9][0-9]*$ && "$attempt" =~ ^[1-9][0-9]?$ ]] \
+     && (( 10#$attempt < LOCALHISTORY_LOCAL_TRY_ATTEMPT )) \
      && [[ "$build" == "$(localhistory_release_build_number "$run_id" "$attempt")" ]]; then
     return 0
   fi
