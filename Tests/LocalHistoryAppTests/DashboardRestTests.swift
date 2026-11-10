@@ -72,7 +72,7 @@ final class DashboardRestTests: XCTestCase {
                 if let button = ViewSwitchTimingTests.node("sidebar-\(section.rawValue)", in: host) {
                     XCTAssertEqual(ViewSwitchAX.flag(button, "accessibilityPerformPress"), true, "press \(section)")
                 } else {
-                    model.selectSection(section)  // Blocage: the hub's tab does this
+                    model.selectSection(section)  // an old destination has no entry: a link or the menu opens it
                 }
                 XCTAssertNotNil(ViewSwitchTimingTests.settle(host, model: model, timeout: 20), "\(section) never completed")
                 pump()
@@ -82,14 +82,14 @@ final class DashboardRestTests: XCTestCase {
             // control, one the page shown observes.
             let variants: [(section: DashboardSection, page: String, inner: Set<String>, store: String)] = [
                 (.overview, "activite", [], "snapshot"),
-                (.concentration, "concentration", ["concentration-maintenant"], "navigation"),
-                (.blocking, "safeguards", ["blocage"], "navigation"),
+                (.blocking, "blocages", [], "navigation"),
+                (.concentration, "blocages", [], "navigation"),  // an old destination: the same page, at its part
                 (.settings, "reglages", [], "settings"),
             ]
             for variant in variants { show(variant.section) }
             DashboardBodyProbe.counting = false
             XCTAssertNotNil(ViewSwitchTimingTests.keptPages(in: host), "the pages are not kept")
-            for probe in ["activite", "concentration", "concentration-maintenant", "safeguards", "blocage", "reglages", "historique", "travail"] {
+            for probe in ["activite", "blocages", "reglages", "historique", "travail"] {
                 XCTAssertGreaterThan(DashboardBodyProbe.counts[probe] ?? 0, 0, "the page \(probe) was never built")
             }
 
@@ -100,7 +100,7 @@ final class DashboardRestTests: XCTestCase {
                     let now = model.snapshotStore.snapshot
                     XCTAssertTrue(model.publishSnapshot(Self.changed(now)), "a changed read was dropped")
                     return { XCTAssertTrue(model.publishSnapshot(now)) }
-                case "navigation":  // another Réglages pane: the hub observes the navigation, and stays shown
+                case "navigation":  // another Réglages pane: « Blocages » observes the navigation, and stays shown
                     let pane = model.navigationStore.settingsPane
                     model.navigationStore.settingsPane = pane == .modules ? .home : .modules
                     return { model.navigationStore.settingsPane = pane }

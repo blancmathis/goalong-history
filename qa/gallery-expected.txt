@@ -2764,3 +2764,93 @@ agenda/acces-refuse--   # Refonte Activité « Le relevé » (2026-11-10) : la m
 fenetre/espace-faible--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)
 fenetre/interactions-indisponibles--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)
 fenetre/stockage-plein--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)
+activite/28-jours--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/7-jours--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/apercu-developpeur--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-code--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-coverage--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-reports--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-rhythm--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-sessions--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-sommeil--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-temps-ecran--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-texture--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/detail-usage--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/enregistrement-desactive--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/jour-realiste--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/journee-vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/mode-developpeur--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/non-classe--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/permission-manquante--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+activite/traces-isolees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/acces-refuse--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/detail-acces-refuse--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/detail-avec-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/detail-non-demande--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/detail-vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/jour-avec-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/reglages-acces-non-demande--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+agenda/reglages-acces-refuse--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+ambiance/barre-telechargement--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+ambiance/page-fenetre--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+bilan/chargement--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+bilan/erreur--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+bilan/non-connecte--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+bilan/rapport--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+braise/page-fenetre--   # Blocages (page unique) : l'ancienne destination ouvre la page « Blocages »
+compte/acces-refuse--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+compte/relie--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+concentration/page--   # Blocages (page unique) : l'ancienne destination ouvre la page « Blocages »
+confidentialite/choix-par-defaut--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+confidentialite/pause-globale--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+confidentialite/suivi-actif--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+conversations-ia/gestion-remplie--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+conversations-ia/indexees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+conversations-ia/vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+distractions/page--   # Blocages (page unique) : l'ancienne destination ouvre la page « Blocages »
+fenetre/espace-faible--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+fenetre/interactions-indisponibles--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+fenetre/pause-globale--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+fenetre/stockage-plein--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+fenetre/stockage-refuse--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+historique/chronologie--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+historique/journee-passee-vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+historique/journee-vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+historique/vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mises-a-jour/a-jour--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mises-a-jour/disponible--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mises-a-jour/erreur--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mises-a-jour/non-configure--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mises-a-jour/recherche--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mon-travail/classement-avec-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mon-travail/definition-enregistree--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mon-travail/definition-et-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+mon-travail/vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+partage/avec-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+partage/vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+programme/page--   # Blocages (page unique) : l'ancienne destination ouvre la page « Blocages »
+settings/accueil--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/accueil-etat-inconnu--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/accueil-ouverture-desactivee--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/applications--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/avance--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/avance-developpeur--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/chatgpt--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/chatgpt-consentement--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/connexions--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/enregistrement--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/enregistrement-actif--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/jev--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/modules--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/non-enregistre--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/outils--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/permission-manquante--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/permissions--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/site--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/stockage--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+settings/stockage-avec-donnees--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+surveillance/a-configurer--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+temps-ecran/vide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+terminal/aide--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+terminal/installe--   # Blocages (page unique) : une entrée « Blocages » remplace « Concentration » et « Garde-fous » dans la barre latérale
+blocages/   # Blocages (page unique) : nouvelle page et son éditeur de règle

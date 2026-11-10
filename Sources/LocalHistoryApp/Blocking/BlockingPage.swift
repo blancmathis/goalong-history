@@ -510,10 +510,26 @@ struct BlockingMeter: View {
     /// « Plus tard »: a one-time block that starts by itself.
     @State private var later = false
     @State private var startAt = Calendar.current.date(byAdding: .hour, value: 1, to: GoalongToday.now) ?? GoalongToday.now
+    /// Inside the rule editor of « Blocages »: the rows alone, without the section title and the card.
+    var bare = false
+    /// The red screen, when it runs: a block that starts now can also hold the red and the brightness to its end.
+    var braise: BraiseController?
+    /// Shown in the editor, next to the main button.
+    var onCancel: (() -> Void)?
+    /// A block started or scheduled: the editor closes.
+    var onDone: () -> Void = {}
+    @State private var red = false
+    @State private var intensity = 0.6
+    @State private var brightness: Double?
 
-    init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free) {
+    init(controller: BlockingController, now: Date, later: Bool = false, lock: BlockLock = .free, bare: Bool = false,
+         braise: BraiseController? = nil, onCancel: (() -> Void)? = nil, onDone: @escaping () -> Void = {}) {
         self.controller = controller
         self.now = now
+        self.bare = bare
+        self.braise = braise
+        self.onCancel = onCancel
+        self.onDone = onDone
         _later = State(initialValue: later)
         _lock = State(initialValue: lock)
         _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now)
@@ -521,6 +537,9 @@ struct BlockingMeter: View {
 
     /// Lists only: the whole Mac always starts now.
     private var scheduling: Bool { later && !wholeMac }
+    /// The red part of a block that starts now. A block scheduled for later has none: a one-time window has no start.
+    private var redPart: Bool { braise != nil && !wholeMac && !scheduling && (red || brightness != nil) }
+    private var anyListSelected: Bool { !selected.isDisjoint(with: controller.lists.map(\.id)) }
 
     /// The page's `now` moves every 30 s only: it draws the labels; a click reads the clock again.
     private func plan(at date: Date) -> BlockingNowPlan {
@@ -536,8 +555,8 @@ struct BlockingMeter: View {
     private var freezePromise: BlockingFreezePromise { BlockingFreezePromise(end: end, now: now) }
 
     private var startHint: String? {
-        BlockingProtectionDetails.startHint(wholeMac: wholeMac, frozen: controller.freeze != nil, hasLists: !controller.lists.isEmpty,
-                                            anySelected: !selected.isDisjoint(with: controller.lists.map(\.id)),
+        BlockingProtectionDetails.startHint(wholeMac: wholeMac, frozen: controller.freeze != nil,
+                                            hasLists: !controller.lists.isEmpty || redPart, anySelected: anyListSelected || redPart,
                                             needsPassword: lock == .password && !controller.hasPassword)
     }
 
@@ -590,116 +609,124 @@ struct BlockingMeter: View {
     }
 
     var body: some View {
-        GoalongSection(title: "Bloquer") {
-            LHCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    row("Quoi") {
-                        BlockingFlow(spacing: 8) {
-                            ForEach(controller.lists) { list in
-                                BlockingListChip(list: list, selected: !wholeMac && selected.contains(list.id)) {
-                                    wholeMac = false
-                                    if selected.contains(list.id) { selected.remove(list.id) } else { selected.insert(list.id) }
-                                }
-                            }
-                            BlockingNewListChip { id in wholeMac = false; selected.insert(id) }
-                            BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
+        Group {
+            if bare { form } else { GoalongSection(title: "Bloquer") { LHCard { form } } }
+        }
+        .onAppearWhenShown { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
+        .alert((pending ?? plan(at: now)).lockTitle(lock), isPresented: $confirmingLock) {
+            Button("Annuler", role: .cancel) {}
+            Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { controller.recordGuardConsent(); start(pending) } }
+        } message: {
+            Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
+        }
+        .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
+            Button("Annuler", role: .cancel) {}
+            Button("Geler") {
+                controller.recordGuardConsent()
+                // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
+                guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) } // wall: page input; the controller moves it to its trusted frame
+                controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
+                wholeMac = false
+                if controller.freeze != nil { onDone() }
+            }
+        } message: {
+            Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                                      needed: controller.guardNeedsConsent))
+        }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            row("Quoi") {
+                BlockingFlow(spacing: 8) {
+                    ForEach(controller.lists) { list in
+                        BlockingListChip(list: list, selected: !wholeMac && selected.contains(list.id)) {
+                            wholeMac = false
+                            if selected.contains(list.id) { selected.remove(list.id) } else { selected.insert(list.id) }
                         }
                     }
-                    if !wholeMac {
-                        row("Quand") {
-                            HStack(spacing: 10) {
-                                GoalongSegmentedControl("Quand", selection: $later, options: [false, true]) {
-                                    $0 ? "Plus tard" : "Maintenant"
-                                }
-                                if later {
-                                    DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                        .goalongDateField()
-                                        .environment(\.locale, Locale(identifier: "fr_FR"))
-                                        .accessibilityIdentifier("blocking-start-at")
-                                }
-                            }
+                    BlockingNewListChip { id in wholeMac = false; selected.insert(id) }
+                    BlockingWholeMacChip(selected: wholeMac) { wholeMac.toggle() }
+                }
+            }
+            if !wholeMac {
+                // In the editor « Quand » already names the trigger: this row is the start.
+                row(bare ? "Début" : "Quand") {
+                    HStack(spacing: 10) {
+                        GoalongSegmentedControl(bare ? "Début" : "Quand", selection: $later, options: [false, true]) {
+                            $0 ? "Plus tard" : (bare ? "Tout de suite" : "Maintenant")
+                        }
+                        if later {
+                            DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
+                                .goalongDateField()
+                                .environment(\.locale, Locale(identifier: "fr_FR"))
+                                .accessibilityIdentifier("blocking-start-at")
                         }
                     }
-                    row("Pendant") {
-                        HStack(spacing: 10) {
-                            GoalongSegmentedControl("Durée", selection: $span,
-                                                    options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
-                                switch $0 {
-                                case .minutes(let value): return BlockingFormat.duration(minutes: value)
-                                case .until: return "Jusqu’à…"
-                                }
-                            }
-                            if span == .until {
-                                DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                                    .goalongDateField()
-                                    .environment(\.locale, Locale(identifier: "fr_FR"))
-                            }
+                }
+            }
+            row("Pendant") {
+                HStack(spacing: 10) {
+                    GoalongSegmentedControl("Durée", selection: $span,
+                                            options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
+                        switch $0 {
+                        case .minutes(let value): return BlockingFormat.duration(minutes: value)
+                        case .until: return "Jusqu’à…"
                         }
                     }
-                    if wholeMac {
-                        row("Écran") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                GoalongSegmentedControl("Écran", selection: $freezeMode, options: BlockFreeze.Mode.allCases) {
-                                    $0 == .shield ? "Écran Goalong" : "Session verrouillée"
+                    if span == .until {
+                        DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
+                            .goalongDateField()
+                            .environment(\.locale, Locale(identifier: "fr_FR"))
+                    }
+                }
+            }
+            if wholeMac {
+                row("Écran") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        GoalongSegmentedControl("Écran", selection: $freezeMode, options: BlockFreeze.Mode.allCases) {
+                            $0 == .shield ? "Écran Goalong" : "Session verrouillée"
+                        }
+                        if freezeMode == .shield {
+                            BlockingFlow(spacing: 6) {
+                                ForEach(kept) { app in
+                                    BlockingItemChip(item: .app(app), removable: true) { kept.removeAll { $0 == app } }
                                 }
-                                if freezeMode == .shield {
-                                    BlockingFlow(spacing: 6) {
-                                        ForEach(kept) { app in
-                                            BlockingItemChip(item: .app(app), removable: true) { kept.removeAll { $0 == app } }
-                                        }
-                                        Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
-                                            .buttonStyle(LHQuietButtonStyle())
-                                            .accessibilityIdentifier("blocking-freeze-keep")
-                                            .popover(isPresented: $picking) {
-                                                BlockingAppPicker(excluded: Set(kept.map(\.bundleIdentifier))) { kept.append($0) }
-                                            }
+                                Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
+                                    .buttonStyle(LHQuietButtonStyle())
+                                    .accessibilityIdentifier("blocking-freeze-keep")
+                                    .popover(isPresented: $picking) {
+                                        BlockingAppPicker(excluded: Set(kept.map(\.bundleIdentifier))) { kept.append($0) }
                                     }
-                                }
-                                BlockingLockExplainer(lock: .locked,
-                                                      text: freezeMode == .shield
-                                                          ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
-                                                          : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
                             }
                         }
-                    } else {
-                        row("Arrêt") { BlockingLockPicker(controller: controller, lock: $lock) }
-                    }
-                    HStack {
-                        Spacer()
-                        if let hint = startHint {
-                            Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
-                                .accessibilityIdentifier("blocking-start-hint")
-                        }
-                        Button { confirm() } label: {
-                            // « Bloquer » without a lock reads as the section's closed lock, never an open one (UI-17C, écran 1).
-                            Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock == .free ? "lock" : lock.symbol))
-                        }
-                        .buttonStyle(LHPrimaryButtonStyle())
-                        .disabled(wholeMac ? controller.freeze != nil
-                                           : selected.isDisjoint(with: controller.lists.map(\.id)) || (lock == .password && !controller.hasPassword))
-                        .accessibilityIdentifier(wholeMac ? "blocking-freeze" : "blocking-start")
+                        BlockingLockExplainer(lock: .locked,
+                                              text: freezeMode == .shield
+                                                  ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
+                                                  : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
                     }
                 }
+            } else {
+                if let braise, !scheduling { row("Écran") { redRows(braise) } }
+                row("Arrêt") { BlockingLockPicker(controller: controller, lock: $lock) }
             }
-            .onAppearWhenShown { if selected.isEmpty, let first = controller.lists.first { selected = [first.id] } }
-            .alert((pending ?? plan(at: now)).lockTitle(lock), isPresented: $confirmingLock) {
-                Button("Annuler", role: .cancel) {}
-                Button(lock == .password ? "Protéger" : "Verrouiller") { if let pending { controller.recordGuardConsent(); start(pending) } }
-            } message: {
-                Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
-            }
-            .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
-                Button("Annuler", role: .cancel) {}
-                Button("Geler") {
-                    controller.recordGuardConsent()
-                    // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
-                    guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) } // wall: page input; the controller moves it to its trusted frame
-                    controller.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
-                    wholeMac = false
+            HStack {
+                Spacer()
+                if let hint = startHint {
+                    Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
+                        .accessibilityIdentifier("blocking-start-hint")
                 }
-            } message: {
-                Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
-                                          needed: controller.guardNeedsConsent))
+                if let onCancel {
+                    Button("Annuler", action: onCancel).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
+                }
+                Button { confirm() } label: {
+                    // « Bloquer » without a lock reads as the section's closed lock, never an open one (UI-17C, écran 1).
+                    Label(actionTitle, systemImage: wholeMac ? "snowflake" : (startsLater ? "calendar" : lock == .free ? "lock" : lock.symbol))
+                }
+                .buttonStyle(LHPrimaryButtonStyle())
+                .disabled(wholeMac ? controller.freeze != nil
+                                   : !(anyListSelected || redPart) || (lock == .password && !controller.hasPassword))
+                .accessibilityIdentifier(wholeMac ? "blocking-freeze" : "blocking-start")
             }
         }
     }
@@ -710,10 +737,52 @@ struct BlockingMeter: View {
         let ids = controller.lists.map(\.id).filter(selected.contains)
         guard let plan = promised.confirmed(at: Date()) else { return refuseEndPassed() } // wall: page input; the controller moves it to its trusted frame
         if plan.startsLater {
-            if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false }
-        } else {
-            controller.start(listIDs: ids, until: plan.end, lock: lock)
-            later = false
+            if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false; onDone() }
+            return
+        }
+        // Both parts are checked before one is written: a refused red screen starts no block, and the reverse.
+        let holds = redPart ? braise : nil
+        let level = red ? intensity : 0
+        if let refusal = holds?.holdRefusal(intensity: level, brightness: brightness, until: plan.end, lock: lock) {
+            controller.error = refusal.message; return
+        }
+        var started = false
+        if !ids.isEmpty || holds == nil {
+            guard controller.start(listIDs: ids, until: plan.end, lock: lock) else { return }
+            started = true
+        }
+        if let holds {
+            do { _ = try holds.holdNow(intensity: level, brightness: brightness, until: plan.end, lock: lock) } catch {
+                controller.error = (error as? RedScreenRefusal)?.message ?? error.localizedDescription
+                // The block runs: the sheet closes with the message. An open sheet would start a second block.
+                guard started else { return }
+            }
+        }
+        later = false
+        onDone()
+    }
+
+    /// The red screen and the brightness held to the end of the block, with the block's stop rule.
+    private func redRows(_ braise: BraiseController) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Écran rouge", isOn: $red).toggleStyle(.goalongSwitchInline).accessibilityIdentifier("blocking-now-red")
+            if red { level("Rouge à", value: $intensity, range: BraiseController.minimumHoldIntensity...1) }
+            Toggle("Luminosité bloquée", isOn: Binding(get: { brightness != nil }, set: { brightness = $0 ? 0.4 : nil }))
+                .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("blocking-now-brightness")
+                .disabled(brightness == nil && !braise.canControlBrightness)
+            if let value = brightness {
+                level("Luminosité à", value: Binding(get: { value }, set: { brightness = $0 }), range: BrightnessLockRules.levelRange)
+            } else if !braise.canControlBrightness {
+                Text("Aucun écran de ce Mac ne peut être réglé par Goalong.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            }
+        }
+        .frame(minHeight: 32, alignment: .center)
+    }
+
+    private func level(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack { Text(title); Spacer(); Text(GoalongUIFormat.percent(value.wrappedValue * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
+            Slider(value: value, in: range).accessibilityLabel(title).accessibilityValue("\(Int(value.wrappedValue * 100)) pour cent")
         }
     }
 
@@ -924,10 +993,11 @@ struct BlockingLockExplainer: View {
 @MainActor struct BlockingProtectionDetails: View {
     @ObservedObject var controller: BlockingController
     @State private var passwordPurpose: BlockingPasswordSheet.Purpose?
+    @Environment(\.goalongSectionTitleHidden) private var titleHidden
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Protection").font(LHTheme.cardTitleFont)
+            if !titleHidden { Text("Protection").font(LHTheme.cardTitleFont) }
             VStack(spacing: 0) {
                 statusRow(symbol: "arrow.clockwise", title: "Lancer à l’ouverture de session",
                           ok: controller.protection.launchAtLogin,

@@ -2,6 +2,7 @@ import AppleScreenTime
 #if os(macOS)
     import AppKit
     import Ambiance
+    import Combine
     import Foundation
     import LocalHistoryCore
     import UniformTypeIdentifiers
@@ -558,6 +559,7 @@ import AppleScreenTime
                 GoalongSwitchTiming.begin(section.rawValue)
             }
             selectedSection = section
+            navigationStore.sectionRequests.send(section)
             if dashboardIsVisible, section == .agentActivity {
                 agentActivityRuntime.scanNow(
                     forceFullDiscovery: false,
