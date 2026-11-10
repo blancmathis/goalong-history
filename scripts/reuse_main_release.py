@@ -2,7 +2,7 @@
 """Tagged release from the bytes main already published, never a second build.
 
 locate SHA VERSION   (any runner) wait for continuous-release to publish SHA, then print
-                     found=true|false and tag=main-<run>-<attempt> for $GITHUB_OUTPUT.
+                     found=true|false and tag=main-<run>-<attempt> (the release holding its archive).
 verify SHA VERSION TAG  (macOS) download the latest-main generation of SHA into dist/ and
                      prove, before anything is published, that it is exactly what main built,
                      signed and verified: hashes, sizes, Sigstore attestations of the
@@ -70,9 +70,13 @@ def rolling_manifest():
     return json.loads(raw)
 
 
-def publisher_tag(manifest):
-    publisher = manifest.get('publisher') or {}
-    return f"main-{int(publisher['runId'])}-{int(publisher['runAttempt'])}"
+def immutable_tag(manifest):
+    # The immutable release that holds this generation: main-<run>-<attempt> of the full build,
+    # or of the Prepare run whose candidate main promoted. The feed's archive URL names it, and
+    # verify() binds that URL to the archive digest, the public receipt and the attestations.
+    url = (manifest.get('fullEnclosure') or {}).get('url', '')
+    match = re.fullmatch(rf'https://github\.com/{re.escape(REPO)}/releases/download/(main-\d+-\d+)/{re.escape(ARCHIVE)}', url)
+    return match[1] if match else None
 
 
 def capture(sha, tag):
@@ -82,7 +86,7 @@ def capture(sha, tag):
     run('gh', 'release', 'download', ROLLING, '--repo', REPO, '--dir', DIST, '--clobber',
         *sum((['--pattern', name] for name in [*PUBLISHED, FEED]), []))
     manifest = json.loads((DIST / 'release-manifest.json').read_text())
-    return manifest.get('sourceCommit') == sha and publisher_tag(manifest) == tag
+    return manifest.get('sourceCommit') == sha and immutable_tag(manifest) == tag
 
 
 def locate(sha, version):
@@ -94,7 +98,10 @@ def locate(sha, version):
             if got != version:
                 summary(f'main published {sha} as {got}, not {version}: full build fallback.')
                 return output(found='false')
-            tag = publisher_tag(manifest)
+            tag = immutable_tag(manifest)
+            if not tag:
+                summary(f'{ROLLING} names no immutable archive for {sha}: full build fallback.')
+                return output(found='false')
             if not capture(sha, tag):
                 summary(f'{ROLLING} moved past {sha} while it was being copied: full build fallback.')
                 return output(found='false')
@@ -153,7 +160,7 @@ def verify(sha, version, tag):
             and manifest.get('sourceDirty') is False, 'manifest is not the clean main tree')
     require(product.get('version') == version and product.get('bundleIdentifier') == 'ai.goalong.localhistory'
             and product.get('edition') == 'unified', 'manifest product differs')
-    require(publisher_tag(manifest) == tag, 'manifest publisher differs from the immutable tag')
+    require(immutable_tag(manifest) == tag, 'manifest archive URL is not the immutable tag')
     listed = {a['path']: a for a in manifest.get('artifacts', [])}
     # continuous-release binds these in the manifest; the DMG and the .sha256 files are bound
     # by their own attestations (step 3), the digest files below and the DMG = ZIP check (step 6).
