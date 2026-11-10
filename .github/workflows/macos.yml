@@ -30,23 +30,6 @@ jobs:
           sw_vers
           xcrun swift --version
 
-      - name: SwiftPM cache key
-        id: spm-key
-        run: |
-          # The toolchain and the OS image are part of the key: a restored .build never
-          # crosses compilers. Sources are not part of the key on purpose: SwiftPM rebuilds
-          # what changed, and the most recent cache of this branch (or of main) is reused.
-          toolchain="$( { sw_vers; xcrun swift --version; xcode-select -p; } 2>&1 | shasum -a 256 | cut -c1-16)"
-          echo "prefix=spm-debug-v1-${{ runner.os }}-${{ runner.arch }}-${ImageVersion:-none}-$toolchain-${{ hashFiles('Package.resolved', 'Package.swift') }}-" >> "$GITHUB_OUTPUT"
-
-      - name: Restore SwiftPM build cache
-        id: spm-cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4
-        with:
-          path: .build
-          key: ${{ steps.spm-key.outputs.prefix }}${{ github.sha }}
-          restore-keys: ${{ steps.spm-key.outputs.prefix }}
-
       - name: Build tests
         shell: bash
         run: |
@@ -64,15 +47,6 @@ jobs:
             fi
             [[ $STATUS -eq 0 ]] || exit "$STATUS"
           fi
-
-      - name: Save SwiftPM build cache
-        # Pull requests only read the cache: main (and manual runs) write it, so PR runs
-        # do not churn the 10 GB repository cache.
-        if: github.event_name != 'pull_request' && steps.spm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4
-        with:
-          path: .build
-          key: ${{ steps.spm-key.outputs.prefix }}${{ github.sha }}
 
       - name: Tests
         shell: bash
