@@ -1,4 +1,4 @@
-.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status \
+.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status local \
 	gallery gallery-diff gallery-accept gallery-index gallery-clean gallery-compare
 
 VERSION ?= 0.6.0
@@ -79,6 +79,12 @@ dev-stop:
 
 dev-status:
 	$(GOALONG_DEV_ENV) ./scripts/dev_app.sh status
+
+# make local: this checkout as the real Goalong in /Applications, signed like a release, without
+# GitHub (scripts/local_try.sh). NO_INSTALL=1 OUT=/abs/dir stops before install (agents, dry runs).
+local:
+	GOALONG_LOCAL_NO_INSTALL="$(call goalong_dev_setting,NO_INSTALL)" \
+	GOALONG_LOCAL_OUT="$(call goalong_dev_setting,OUT)" ./scripts/local_try.sh
 
 dmg: app
 	./scripts/package_release.sh
