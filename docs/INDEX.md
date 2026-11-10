@@ -43,6 +43,7 @@ Product behavior, security guarantees or implementation contracts.
 - [Selected website analysis](SITE-ANALYSIS.md)
 - [CLI](CLI.md)
 - [Releasing](RELEASING.md)
+- [Auto-merge updater (merge-queue substitute)](AUTOMERGE-UPDATER.md)
 
 ## Accepted target not yet shipped
 

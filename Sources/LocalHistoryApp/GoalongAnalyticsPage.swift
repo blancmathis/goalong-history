@@ -43,6 +43,8 @@ struct GoalongAnalyticsPage: View {
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
+    /// « Mon travail » over Activité (`GoalongWorkSheet`).
+    @State private var showingWork = false
     /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
     @State private var detail: GoalongActivityDetail? = GoalongAnalyticsPage.initialDetail
     @AppStorage(GoalongDeveloperPreferences.enabledKey) private var developerMode = false
@@ -158,7 +160,7 @@ struct GoalongAnalyticsPage: View {
                                     GoalongActivityEmptyCopy.StorageStop(kind: $0, since: runtimeStore.runtime.storageInterruptedSince)
                                 },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
-                                onWork: { model.selectSection(.work) },
+                                onWork: { showingWork = true },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
                                 onClassify: { agent.classify(day: GoalongWorkAgent.manualTarget(days: payload.current.days, fallback: selection.day)) },
                                 onHistory: { openHistory(selection.day) },
@@ -224,6 +226,7 @@ struct GoalongAnalyticsPage: View {
         }
         .background(LHTheme.pageBackground)
         .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
+        .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls() }
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
         .sheet(isPresented: $editingNote) {
             GoalongDayNoteSheet(day: selection.day, initial: systemValue?.note ?? "",
@@ -303,6 +306,7 @@ struct GoalongAnalyticsPage: View {
             showingPreview = false
             showingAnalysisChoice = false
             reviewRequest = nil
+            showingWork = false
             previewNavigation = GoalongActivityNavigation()
         }
         .onChange(of: work.verdicts) { _ in

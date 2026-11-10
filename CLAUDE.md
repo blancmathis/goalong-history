@@ -5,10 +5,18 @@
 - Si un dépôt local ne fetch plus (`bad object refs/heads/feat/garant-mac-20261008`), créer le worktree depuis `~/Developer/goalong-motion-placement-app-20260918`. Ne pas supprimer cette branche locale.
 - Contexte projet (état, décisions, pièges) : `CONTEXT.md` du checkout principal (non versionné).
 
-## Deux voies seulement
+## Trois voies
 1. **Goalong Dev** (itération locale) : `make dev` construit le worktree en une app séparée qui tourne **à côté** de Goalong installé. Ne publie rien.
-2. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
-- Aucun autre déploiement local. Ne jamais installer une build locale dans `/Applications` : Sparkle la remplace (build `YYYYMMDD.HHMMSS` < `30000000.x`). Les agents launchd `ai.goalong.local-*` sont désactivés : ne pas les recharger.
+2. **Goalong local** (essai réel, sans GitHub) : `make local` remplace Goalong dans `/Applications` par le worktree, signé comme une release. Ne publie rien. Voir plus bas.
+3. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
+- Aucune autre installation locale dans `/Applications` : `make install-source` garde un numéro `YYYYMMDD.HHMMSS` < `30000000.x`, que Sparkle remplace aussitôt.
+- Agent launchd `ai.goalong.local-auto-deploy` (publication rapide après merge, signée sur le Mac) : seul le propriétaire le démarre (`python3 scripts/install_local_auto_deploy.py --start`). Les agents ne chargent ni ne rechargent aucun `ai.goalong.local-*`.
+
+## Goalong local (`make local`)
+- `scripts/local_try.sh` : build release, arch du Mac, sans tests (faire `make check` avant), signée avec le certificat épinglé et les droits release, Sparkle actif. Bundle id `ai.goalong.localhistory` : permissions et données réelles gardées.
+- Numéro de build : créneau d’essai (tentative 99) de la release la plus récente connue (app installée et manifeste public). Sparkle ne réinstalle donc pas cette release par-dessus ; la release suivante (run plus récent) remplace l’essai normalement. Politique : `scripts/build_number_policy.sh`, test `scripts/test_build_number_policy.sh`.
+- L’installation passe par `scripts/install_from_source.sh` (même identité de signature exigée, refus pendant un blocage sévère, fermeture propre, retour arrière). Refus si l’app installée est plus récente que l’essai.
+- **Agents** : seulement `make local NO_INSTALL=1 OUT=/private/tmp/…` (build, signe, vérifie ; ni fermeture, ni installation). L’installation est faite par le propriétaire.
 
 ## Goalong Dev (`make dev`)
 - App `~/Applications/Goalong Dev.app` : bundle id `ai.goalong.localhistory.dev`, processus `Goalong History Dev`, même certificat que la release (exigence désignée sans empreinte : les permissions accordées restent d’un build à l’autre). Icône DEV, point orange en barre des menus, titres « — Dev », bandeau branche · commit · données.
@@ -25,7 +33,7 @@
 
 ## Interdits
 - Jamais forcer la fermeture : un blocage actif peut refuser de quitter ; le résoudre dans l’app.
-- Ne pas modifier `/Applications/Goalong History.app`, ni le trousseau, ni `blocking.json` à la main app ouverte.
+- Ne pas modifier `/Applications/Goalong History.app` (hors `make local` lancé par le propriétaire), ni le trousseau, ni `blocking.json` à la main app ouverte.
 
 ## Vérifications
 - Jamais `swift test` nu. Trois commandes, toutes en HOME jetable (`scripts/run_swift_tests.sh`) : `make check` (boucle rapide : build incrémental + tests des cibles modifiées vs `origin/main`, ou `FILTER=Regex`, sans les 5 tests lents ; durée affichée), `make test` (suite complète puis rapport des tests ignorés ; un skip absent de `scripts/expected_skips.txt` fait échouer), `make test-ui` (rendus et tests AX opt-in, `GOALONG_*_SNAPSHOTS` / `*_UI_TESTS`, sans fenêtre visible ; dit si l’écran est verrouillé ; PNG dans `/tmp/goalong-test-ui-*`). Un test opt-in nouveau doit entrer dans `expected_skips.txt` (`python3 scripts/skip_report.py LOG --emit-allowlist` aide). Les cibles App et Ambiance chargent le hook `GoalongHeadlessTestSupport`, qui supprime à la sortie les plists `UserDefaults(suiteName:)` créés par la course (jamais ceux qui existaient) ; `scripts/clean_leaked_test_prefs.sh [--dry-run|--delete] [--include-other-test-suites]` nettoie les anciennes fuites (`goalong-auto-consent-*` seulement par défaut). Puis `make audit`.

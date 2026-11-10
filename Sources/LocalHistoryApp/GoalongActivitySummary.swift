@@ -20,6 +20,14 @@ struct GoalongActivitySummary {
             let reference = label.hasPrefix("les ") ? "aux " + label.dropFirst(4) : "à " + label
             return "\(delta > 0 ? "+" : "−")\(GoalongActivitySummary.duration(abs(delta))) de temps actif \(isDay ? "" : "par jour ")par rapport \(reference)"
         }
+
+        /// The same comparison under the « Temps actif » figure: the column already names the measure and its
+        /// « par jour ». Under a minute of difference the two are alike, and the line says so.
+        var figureLine: String {
+            guard abs(delta) >= 60 else { return "Comme \(label)" }
+            let reference = label.hasPrefix("les ") ? "aux " + label.dropFirst(4) : "à " + label
+            return "\(delta > 0 ? "+" : "−")\(GoalongActivitySummary.duration(abs(delta))) par rapport \(reference)"
+        }
     }
 
     struct Insight: Identifiable, Equatable {
