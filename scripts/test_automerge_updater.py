@@ -2,6 +2,7 @@
 """Unit tests for the auto-merge updater decision (no network)."""
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -49,6 +50,25 @@ class Decide(unittest.TestCase):
         prs = [pr(1, "2026-11-10T09:00:00Z", checks=[run("verify", "FAILURE")]), pr(2, "2026-11-10T10:00:00Z")]
         action, chosen, _ = decide(prs, REQ, lambda p: 0 if p["number"] == 1 else 2)
         self.assertEqual((action, chosen["number"]), ("update", 2))
+
+    def test_green_but_blocked_is_skipped_not_waited(self):
+        prs = [pr(1, "2026-11-10T09:00:00Z", checks=[run("build-test-package"), run("verify")]),
+               pr(2, "2026-11-10T10:00:00Z")]
+        action, chosen, reasons = decide(prs, REQ, lambda p: 0 if p["number"] == 1 else 2)
+        self.assertEqual((action, chosen["number"]), ("update", 2))
+        self.assertTrue(any("#1 skipped" in r for r in reasons))
+
+    def test_green_blocked_alone_is_idle(self):
+        prs = [pr(1, checks=[run("build-test-package"), run("verify")])]
+        self.assertEqual(decide(prs, REQ, lambda p: 0)[0], "idle")
+
+    def test_stale_pending_is_skipped(self):
+        old = {"__typename": "CheckRun", "name": "verify", "status": "IN_PROGRESS", "conclusion": "",
+               "startedAt": "2026-11-10T06:00:00Z"}
+        now = datetime(2026, 11, 10, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(decide([pr(1, checks=[old])], REQ, lambda p: 0, now)[0], "idle")
+        fresh = dict(old, startedAt="2026-11-10T08:30:00Z")
+        self.assertEqual(decide([pr(1, checks=[fresh])], REQ, lambda p: 0, now)[0], "wait")
 
     def test_outcomes(self):
         out = check_outcomes([run("a"), run("b", "", "QUEUED"), {"__typename": "StatusContext", "context": "c", "state": "ERROR"}])

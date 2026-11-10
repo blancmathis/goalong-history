@@ -10,8 +10,9 @@ had to click "Update branch". This agent does that click.
 ## Rule (each run, every 2 min)
 1. Open PRs on `main` with auto-merge enabled, same repository, not draft.
    Fork PRs, drafts and PRs without auto-merge are never touched.
-2. If one is already up to date with `main` and no required check failed, it is
-   in flight: wait. One PR at a time, so a merge never re-stales a PR that is
+2. If one is already up to date with `main` and a required check is still
+   pending (activity within 90 min), it is in flight: wait. Green but blocked
+   (review, conversation) or stale: skipped, next PR considered. One PR at a time, so a merge never re-stales a PR that is
    mid-run.
 3. Otherwise: the oldest (auto-merge enable time) PR that is behind `main`, not
    conflicting, with no failed required check, gets
@@ -32,7 +33,8 @@ wakes. Priority: `ProcessType=Background`, `Nice=10`, `LowPriorityIO`.
 ## Commands
 - Dry run: `python3 scripts/automerge_updater.py --dry-run`
 - Install and start: `python3 scripts/install_automerge_updater.py --start`
-- Remove: `python3 scripts/install_automerge_updater.py --remove`
+- Remove: `python3 scripts/install_automerge_updater.py --remove` (deletes agent and controller copy; the state dir with logs stays)
+- Safety: no required checks found, or `gh` logged out/offline → no update; one log line per distinct error; logs are capped.
 - Logs: `~/Library/Application Support/GoalongAutomergeUpdater/agent.log`
   (one line per change of decision, plus every update).
 - Tests: `python3 scripts/test_automerge_updater.py`

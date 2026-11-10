@@ -18,7 +18,7 @@ LABEL = "ai.goalong.automerge-updater"
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--start", action="store_true", help="load the agent now")
-    parser.add_argument("--remove", action="store_true", help="unload and delete the agent")
+    parser.add_argument("--remove", action="store_true", help="unload and delete the agent and its controller copy")
     parser.add_argument("--interval", type=int, default=120)
     args = parser.parse_args()
     if os.uname().sysname != "Darwin" or os.getuid() == 0:
@@ -31,7 +31,8 @@ def main():
         subprocess.run(["launchctl", "bootout", f"{domain}/{LABEL}"], check=True)
     if args.remove:
         plist.unlink(missing_ok=True)
-        print(f"Removed {LABEL}; logs kept in {state}")
+        (state / "automerge_updater.py").unlink(missing_ok=True)
+        print(f"Removed {LABEL} and its controller copy; state dir kept (logs, last-decision): {state}")
         return
     python, gh = shutil.which("python3"), shutil.which("gh") or "/opt/homebrew/bin/gh"
     if not python or not Path(gh).exists():
