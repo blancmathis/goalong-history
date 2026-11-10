@@ -2751,3 +2751,16 @@ terminal/installe--   # T-048 B2 : entrée « Garde-fous » ajoutée à la barre
 braise/page--   # T-048 D2 : section « Verrou de luminosité » (aucun écran pilotable dans la galerie)
 braise/editeur-de-regle--   # T-048 D2 : option « Verrouiller aussi la luminosité » dans l'éditeur de plage
 braise/verrou-luminosite--   # T-048 D2 : nouvel état, verrou protégé « Difficile », écran externe non pilotable
+activite/jour-realiste--   # Refonte Activité « Le relevé » (2026-11-10) : ligne de contexte, trois chiffres avec la marque de leur série, fil sans légende, tâches en lignes compactes, « Explorer » en index sur deux colonnes
+activite/7-jours--   # Refonte Activité « Le relevé » (2026-11-10) : idem, chiffres « par jour »
+activite/28-jours--   # Refonte Activité « Le relevé » (2026-11-10) : idem, chiffres « par jour »
+activite/non-classe--   # Refonte Activité « Le relevé » (2026-11-10) : héros « à classer », deux chiffres (hors travail, temps actif)
+activite/apercu-developpeur--   # Refonte Activité « Le relevé » (2026-11-10) : idem jour réaliste, sans les actions (aperçu)
+activite/mode-developpeur--   # Refonte Activité « Le relevé » (2026-11-10) : idem jour réaliste
+activite/journee-vide--   # Refonte Activité « Le relevé » (2026-11-10) : « Explorer » en index sur deux colonnes
+activite/traces-isolees--   # Refonte Activité « Le relevé » (2026-11-10) : « Explorer » en index sur deux colonnes
+agenda/jour-avec-donnees--   # Refonte Activité « Le relevé » (2026-11-10) : la même page Activité, jour réaliste avec agenda
+agenda/acces-refuse--   # Refonte Activité « Le relevé » (2026-11-10) : la même page Activité, jour réaliste, accès à l’agenda refusé
+fenetre/espace-faible--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)
+fenetre/interactions-indisponibles--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)
+fenetre/stockage-plein--   # Refonte Activité « Le relevé » (2026-11-10) : la fenêtre montre Activité, journée vide (« Explorer » en index)

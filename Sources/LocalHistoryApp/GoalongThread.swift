@@ -173,6 +173,8 @@
         let day: GoalongLocalAnalytics.Day
         let range: ClosedRange<Date>
         var hourStride = 2
+        /// False where the figures above already name each class beside its mark (Activité's summary).
+        var showsLegend = true
         @State private var pointer: CGFloat?
         @State private var width: CGFloat = 1
 
@@ -181,7 +183,7 @@
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    GoalongActivityClassLegend()
+                    if showsLegend { GoalongActivityClassLegend() }
                     Spacer(minLength: 8)
                     readout
                 }
@@ -269,6 +271,8 @@
         let period: GoalongLocalAnalytics.Period
         var onDay: (Date) -> Void = { _ in }
         var calendar: Calendar = .current
+        /// False where the figures above already name each class beside its mark (Activité's summary).
+        var showsLegend = true
 
         private var dense: Bool { period.days.count > 10 }
         private let labelWidth: CGFloat = 64
@@ -277,7 +281,7 @@
         var body: some View {
             let hours = GoalongThreadGeometry.sharedHours(period.days, calendar: calendar)
             VStack(alignment: .leading, spacing: 10) {
-                GoalongActivityClassLegend()
+                if showsLegend { GoalongActivityClassLegend() }
                 VStack(spacing: 0) {
                     ForEach(period.days) { day in
                         GoalongWeaveRow(day: day, hours: hours, dense: dense, labelWidth: labelWidth, totalWidth: totalWidth,
