@@ -213,6 +213,12 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             ranges.holds = ranges.holds.filter { !known.contains($0.key) }
             ranges.follows = true; changed = true
         }
+        // A red range of 00:00 → 24:00 saved before T-050 was unusable (shown « En pause »): now it would start by surprise.
+        // Once, before the brightness lock below adds its own « Toujours » range.
+        if ranges.fullDayPaused != true {
+            for range in ranges.program.ranges where range.startMinute == 0 && range.endMinute == 1_440 { ranges.disabled.insert(range.id) }
+            ranges.fullDayPaused = true; changed = true
+        }
         // Only a lock that was never protected moves: a protected one (even past its wall end, the continuous clock
         // decides) stays in « En cours » with its stop, and moves at a later launch once it is free.
         if let lock = ranges.brightnessLock, lock.effectiveLock == .free || lock.end == nil,
@@ -763,7 +769,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             for (id, level) in before { _ = brightnessDriver.setBrightness(level, of: id) }
         }
         if preview?.brightness == nil, previewBrightnessBefore != nil { previewBrightnessBefore = nil; store.savePreviewBrightness(nil) }
-        gamma.set(active: screen.active, intensity: screen.active ? screen.intensity : preferences.intensity, brightness: preferences.brightness,
+        // A rule that holds the brightness alone (red at 0) tints nothing: the filter's own dimming must not run for it
+        // (T-050 lot A2). The manual red and any real red keep the filter.
+        let tints = screen.active && (manual || screen.intensity > 0)
+        gamma.set(active: tints, intensity: tints ? screen.intensity : preferences.intensity, brightness: preferences.brightness,
                   animated: preview == nil && runsTimers && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         boundaryTimer?.invalidate(); boundaryTimer = nil
         var events: [Date] = []

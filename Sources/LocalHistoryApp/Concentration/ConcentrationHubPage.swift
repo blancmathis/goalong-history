@@ -394,13 +394,17 @@ extension EnvironmentValues {
     @ObservedObject private var modules = GoalongModuleStore.shared
     /// GoalongSegmentedControl draws `.disabled` itself, labels in secondary text (≥ 4.5:1, UI-16A, 5): no extra fade here.
     @Environment(\.isEnabled) private var isEnabled
+    /// False inside the rule editor: its « Quand » box already carries the title (T-050 lot A2).
+    var showsTitle = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Text("Quand").font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
-                Spacer(minLength: 8)
+                if showsTitle {
+                    Text("Quand").font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
+                    Spacer(minLength: 8)
+                }
                 GoalongSegmentedControl("Quand recevoir les rappels", selection: Binding(get: { monitor.scope }, set: { monitor.setScope($0) }),
                                         options: JevMonitoringScope.allCases) {
                     $0 == .always ? "Toujours" : "Pendant mes séances"

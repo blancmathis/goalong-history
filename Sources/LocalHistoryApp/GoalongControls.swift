@@ -630,7 +630,7 @@
                         Text(title(option)).lineLimit(1)
                             .frame(maxWidth: fills ? .infinity : nil)
                     }
-                    .buttonStyle(GoalongSegmentStyle(selected: selected))
+                    .buttonStyle(GoalongSegmentStyle(selected: selected, unavailable: unavailable(option) != nil && !selected))
                     .disabled(unavailable(option) != nil && !selected)
                     .help(unavailable(option) ?? "")
                     .accessibilityHint(unavailable(option) ?? "")
@@ -673,6 +673,8 @@
 
     private struct GoalongSegmentStyle: ButtonStyle {
         let selected: Bool
+        /// A choice this screen does not allow: struck through, so it never looks like a choice (no fade: contrast stays ≥ 4.5:1).
+        var unavailable = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.controlSize) private var controlSize
         @Environment(\.isFocused) private var isFocused
@@ -683,6 +685,7 @@
             let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius - 2, style: .continuous)
             let small = controlSize == .small || controlSize == .mini
             configuration.label
+                .strikethrough(unavailable)
                 .font(.system(size: small ? 12 : 13, weight: selected ? .semibold : .medium))
                 .padding(.horizontal, small ? 10 : 14)
                 .frame(minHeight: small ? 22 : 26)

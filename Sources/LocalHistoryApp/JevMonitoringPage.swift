@@ -102,7 +102,7 @@ struct JevActivationAvailability: Equatable {
                         .accessibilityIdentifier("jev-status")
                 }
             }
-            JevScopeControl().disabled(!enabled || !availability.hasKey)
+            JevScopeControl(showsTitle: false).disabled(!enabled || !availability.hasKey)
             connectionRow
             if !availability.localHistoryEnabled {
                 HStack(alignment: .top, spacing: 12) {

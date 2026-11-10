@@ -63,6 +63,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static let alwaysSentence = "Actif tout le temps, jusqu’à ce que vous l’arrêtiez."
     /// Product question raised in T-050: a locked rule without an end would never stop.
     static let alwaysLockedReason = "Une règle « Toujours » verrouillée ne s’arrêterait jamais."
+    /// A range typed by hand in « Horaires » with the form of « Toujours » (every day, 00:00 → 24:00) and « Verrouillé ».
+    static let hoursAlwaysLockedReason = "Tous les jours, de 00:00 à 24:00, c’est une règle « Toujours » : verrouillée, elle ne s’arrêterait jamais. Changez les heures ou le niveau d’arrêt."
     static let focusLockReason = "Une séance Pomodoro ou avec intention s’arrête librement ou se verrouille, sans autre niveau."
     static let focusScreenReason = "Une séance Pomodoro ou avec intention ne porte pas encore l’écran rouge ni la luminosité."
     static let laterScreenReason = "Un blocage programmé plus tard ne porte pas l’écran rouge ni la luminosité."
@@ -112,7 +114,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @State private var pendingFreezeAt = GoalongToday.now
 
     init(subject: Subject, blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
-         now: Date? = nil, trigger: Trigger? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
+         now: Date? = nil, trigger: Trigger? = nil, draft startDraft: BlockRuleDraft? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
          onOpenRecording: @escaping () -> Void = {},
          onOpenWork: @escaping () -> Void = {}, onPrepareRed: @escaping () -> Void = {}, onClose: @escaping () -> Void) {
         self.subject = subject
@@ -138,7 +140,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
         _trigger = State(initialValue: trigger ?? first)
         _sessionDraft = State(initialValue: composer ?? .remembered())
-        _draft = State(initialValue: rule)
+        _draft = State(initialValue: startDraft ?? rule)
         let clock = now ?? GoalongToday.now
         _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: clock) ?? clock)
         _until = State(initialValue: Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock)
@@ -202,7 +204,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     func lockUnavailable(_ lock: BlockLock) -> String? {
         switch trigger {
         case .jev: return lock == .free ? nil : Self.jevLockReason
-        case .always: if lock == .locked { return Self.alwaysLockedReason }
+        case .always: if lock == .locked, !keepsAlwaysLock { return Self.alwaysLockedReason }
         case .session:
             if freezing { return lock == .locked ? nil : Self.freezeLockReason }
             if usesFocus {
@@ -218,10 +220,27 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         return nil
     }
 
+    /// A rule that already exists keeps its stored level in the form, even where a new rule could not have it: saving
+    /// never weakens a stop in silence (T-050 lot A2). The engines still judge any real weakening.
+    private var keepsAlwaysLock: Bool { rule?.key.isAlways == true && rule?.key.lock == .locked }
+
     /// The level the engine receives: the chosen one, or the nearest one it has.
     var stopLevel: BlockLock {
         if freezing { return .locked }
+        if let rule, draft.lock == rule.key.lock { return draft.lock }
         return lockUnavailable(draft.lock) == nil ? draft.lock : .free
+    }
+
+    /// « Horaires » only: every day, 00:00 → 24:00, « Verrouillé ». Refused with its reason, never turned into « Libre ».
+    var hoursAlwaysLocked: Bool {
+        trigger == .schedule && draft.weekdays == Set(1...7) && draft.startMinute == 0 && draft.endMinute == 1_440
+            && draft.lock == .locked && !keepsAlwaysLock
+    }
+
+    /// Why « Enregistrer » is greyed for a rule. Nil = the engines may judge it.
+    var ruleProblem: String? {
+        if hoursAlwaysLocked { return Self.hoursAlwaysLockedReason }
+        return ruleDraft.problem
     }
 
     private var showsConsent: Bool {
@@ -381,6 +400,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     private var hoursHint: String {
+        if hoursAlwaysLocked { return Self.hoursAlwaysLockedReason }
         if draft.weekdays.isEmpty || draft.startMinute == draft.endMinute {
             return "Choisissez au moins un jour et deux heures différentes."
         }
@@ -413,7 +433,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                         time("Fin", minute: Binding(get: { draft.endMinute % 1_440 }, set: { draft.endMinute = $0 == 0 ? 1_440 : $0 }))
                     }
                     .frame(minHeight: 32)
-                    help(hoursHint)
+                    help(hoursHint, warning: hoursAlwaysLocked).accessibilityIdentifier("block-rule-hours-hint")
                 }
             }
         }
@@ -474,7 +494,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                             .accessibilityLabel("Intention, facultative")
                             .accessibilityIdentifier("concentration-intent")
                             .frame(minHeight: 32)
-                        help(usesFocus ? "La séance passe par Concentration : son minuteur, ses pauses et son bilan."
+                        help(usesFocus ? "Avec une intention ou en Pomodoro, la séance a son minuteur, ses pauses et son bilan."
                                        : "Sans intention, en Continu, c’est un blocage simple.")
                     }
                 }
@@ -631,9 +651,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @ViewBuilder private var redPart: some View {
         let reason = screenUnavailable
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Écran rouge", isOn: Binding(get: { reason == nil && draft.red }, set: { draft.red = $0 }))
+            Toggle("Teinte rouge", isOn: Binding(get: { reason == nil && draft.red }, set: { draft.red = $0 }))
                 .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
                 .disabled(reason != nil)
+                .accessibilityLabel("Écran rouge")
                 .accessibilityIdentifier("block-rule-red")
             if reason == nil, draft.red {
                 level("Rouge à", value: $draft.intensity, in: redRange, spoken: "Intensité du rouge") { value, holding in
@@ -655,10 +676,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         let reason = screenUnavailable ?? (braise?.canControlBrightness == false && draft.brightness == nil
             ? "Aucun écran de ce Mac ne peut être réglé par Goalong." : nil)
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Luminosité bloquée", isOn: Binding(get: { reason == nil && draft.brightness != nil },
+            Toggle("Niveau fixé", isOn: Binding(get: { reason == nil && draft.brightness != nil },
                                                        set: { draft.brightness = $0 ? 0.4 : nil }))
                 .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
                 .disabled(reason != nil)
+                .accessibilityLabel("Luminosité bloquée")
                 .accessibilityIdentifier("block-rule-brightness")
             if reason == nil, let value = draft.brightness {
                 level("Luminosité à", value: Binding(get: { value }, set: { draft.brightness = $0 }),
@@ -787,7 +809,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private var primaryDisabled: Bool {
         switch trigger {
-        case .always, .schedule: return ruleDraft.problem != nil || !unreadableFields.isEmpty
+        case .always, .schedule: return ruleProblem != nil || !unreadableFields.isEmpty
         case .jev: return false
         case .session:
             if usesFocus { return focus?.currentSession != nil }

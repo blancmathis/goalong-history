@@ -7,12 +7,30 @@ import XCTest
 @testable import LocalHistoryApp
 
 /// Fake gamma that keeps the last state asked: no test touches the real gamma table.
+/// Screen driver that notes whether the crash file already existed when the first screen moved (point 8, :196).
+final class CrashOrderDriver: DisplayBrightnessDriving, @unchecked Sendable {
+    private let inner = FakeBrightness(level: 0.8)
+    private let crashFileExists: () -> Bool
+    private(set) var crashFileExistedAtFirstSet: Bool?
+    init(crashFileExists: @escaping () -> Bool) { self.crashFileExists = crashFileExists }
+    var isAvailable: Bool { inner.isAvailable }
+    func displays() -> [BrightnessDisplay] { inner.displays() }
+    func brightness(of display: UInt32) -> Double? { inner.brightness(of: display) }
+    func setBrightness(_ value: Double, of display: UInt32) -> Bool {
+        if crashFileExistedAtFirstSet == nil { crashFileExistedAtFirstSet = crashFileExists() }
+        return inner.setBrightness(value, of: display)
+    }
+}
+
 final class LotAGamma: BraiseGammaDriving {
     var onError: ((String) -> Void)?
     var onDisplays: ((Int) -> Void)?
     private(set) var active = false
     private(set) var intensity = 0.0
-    func set(active: Bool, intensity: Double, brightness: Double, animated: Bool) { self.active = active; self.intensity = intensity }
+    private(set) var brightness = 1.0
+    func set(active: Bool, intensity: Double, brightness: Double, animated: Bool) {
+        self.active = active; self.intensity = intensity; self.brightness = brightness
+    }
     func restore() { active = false }
     func checkAfterSystemChange() {}
 }
@@ -68,8 +86,8 @@ final class LotAGamma: BraiseGammaDriving {
     }
     private func editor(_ subject: BlockRuleEditor.Subject, blocking: BlockingController? = nil, braise: BraiseController? = nil,
                         focus: ConcentrationController? = nil, trigger: BlockRuleEditor.Trigger? = nil,
-                        session: FocusComposerDraft? = nil) -> BlockRuleEditor {
-        BlockRuleEditor(subject: subject, blocking: blocking, braise: braise, focus: focus, now: wednesday10h, trigger: trigger,
+                        session: FocusComposerDraft? = nil, draft: BlockRuleDraft? = nil) -> BlockRuleEditor {
+        BlockRuleEditor(subject: subject, blocking: blocking, braise: braise, focus: focus, now: wednesday10h, trigger: trigger, draft: draft,
                         maxHeight: 2_000, sessionDraft: session ?? FocusComposerDraft(), onClose: {})
     }
     private func pomodoro() -> FocusComposerDraft { var d = FocusComposerDraft(); d.kind = .pomodoro; return d }
@@ -308,6 +326,119 @@ final class LotAGamma: BraiseGammaDriving {
     /// Point 16: the section of the session settings no longer reads as the app's « Réglages ».
     func testPoint16FocusSettingsTitle() {
         XCTAssertEqual(FocusSettingsSection.title, "Réglages des séances")
+    }
+
+    // MARK: Corrections after the review (lot A, round 2)
+
+    private func allDay(_ lock: BlockLock) -> BlockRuleDraft {
+        var d = BlockRuleDraft(); d.weekdays = Set(1...7); d.startMinute = 0; d.endMinute = 1_440; d.lock = lock; return d
+    }
+
+    /// « Horaires », 7 days, 00:00 → 24:00, « Verrouillé »: refused with its reason; the other levels are not.
+    func testHoursEveryDayAllDayLockedIsRefusedWithItsReason() throws {
+        let locked = editor(.new, trigger: .schedule, draft: allDay(.locked))
+        XCTAssertTrue(locked.hoursAlwaysLocked)
+        XCTAssertEqual(locked.ruleProblem, BlockRuleEditor.hoursAlwaysLockedReason)
+        XCTAssertTrue(visibleText(locked).contains { $0.contains("règle « Toujours »") }, "the reason is on screen")
+        for level in [BlockLock.free, .typing, .password] {
+            let other = editor(.new, trigger: .schedule, draft: allDay(level))
+            XCTAssertFalse(other.hoursAlwaysLocked, "\(level)")
+            XCTAssertNotEqual(other.ruleProblem, BlockRuleEditor.hoursAlwaysLockedReason)
+        }
+        var weekdays = allDay(.locked); weekdays.weekdays = Set(1...5)
+        XCTAssertFalse(editor(.new, trigger: .schedule, draft: weekdays).hoursAlwaysLocked)
+    }
+
+    /// An existing rule never falls back to « Libre » in silence: the real level shows and saving keeps it.
+    func testExistingRuleKeepsItsRealStopLevel() throws {
+        for level in [BlockLock.typing, .locked] {
+            let root = try root(), clocks = Clocks(wednesday10h)
+            let first = try braise(clocks, store: store(root))
+            first.shutdown()
+            var file = first.ranges
+            let range = BlockProgramRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440, lock: level)
+            file.program.ranges = [range]; file.disabled = []; file.fullDayPaused = true; file.follows = true
+            file.intensities[range.id] = 0.5
+            try store(root).saveRanges(file)
+            let next = try braise(clocks, store: store(root), clearing: false)
+            let rule = try XCTUnwrap(BlockRules.current(blocking: blocking(), braise: next, now: wednesday10h, calendar: paris)
+                .first { $0.key.lock == level })
+            for trigger in [BlockRuleEditor.Trigger.always, .schedule] {
+                let open = editor(.rule(rule), blocking: blocking(), braise: next, trigger: trigger)
+                XCTAssertEqual(open.stopLevel, level, "\(level) via \(trigger)")
+                XCTAssertFalse(open.hoursAlwaysLocked, "an existing rule is not refused")
+            }
+            if level == .locked { XCTAssertNil(editor(.rule(rule), blocking: blocking(), braise: next).lockUnavailable(.locked)) }
+        }
+    }
+
+    /// Minor 1: a red range 00:00 → 24:00 already saved comes back paused, once; re-enabled it stays on.
+    func testSavedFullDayRedRangeIsPausedOnceAndStaysOnAfterReEnabling() throws {
+        let root = try root(), clocks = Clocks(wednesday10h)
+        let first = try braise(clocks, store: store(root))
+        first.shutdown()
+        var old = first.ranges
+        let full = BlockProgramRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440)
+        old.program.ranges = [full]; old.intensities[full.id] = 0.7; old.disabled = []; old.follows = true; old.fullDayPaused = nil
+        try store(root).saveRanges(old)
+        let gamma = LotAGamma(), second = try braise(clocks, store: store(root), gamma: gamma, clearing: false)
+        XCTAssertTrue(second.ranges.disabled.contains(full.id), "paused at the first start")
+        XCTAssertFalse(gamma.active)
+        try second.saveRange(full, intensity: 0.7, enabled: true)
+        XCTAssertTrue(gamma.active, "re-enabled by the user")
+        second.shutdown()
+        let gamma3 = LotAGamma(), third = try braise(clocks, store: store(root), gamma: gamma3, clearing: false)
+        XCTAssertFalse(third.ranges.disabled.contains(full.id), "once: the second start leaves it active")
+        XCTAssertTrue(gamma3.active)
+        third.shutdown()
+    }
+
+    /// :262 — a protected lock stays at the first launch and becomes a rule « Toujours » at a later launch, once free.
+    func testProtectedBrightnessLockBecomesARuleAtALaterLaunchOnceFree() throws {
+        let root = try root(), clocks = Clocks(wednesday10h)
+        let first = try braise(clocks, store: store(root)); first.shutdown()
+        var file = first.ranges
+        file.brightnessLock = BrightnessLockState(level: 0.4, lock: .locked, end: wednesday10h.addingTimeInterval(3_600))
+        try store(root).saveRanges(file)
+        let second = try braise(clocks, store: store(root), clearing: false)
+        XCTAssertEqual(second.ranges.brightnessLock?.level, 0.4)
+        XCTAssertFalse(second.ranges.program.ranges.contains { BlockRule.Key($0).isAlways })
+        second.shutdown()
+        // The protection has ended: what is left on file is the level alone.
+        var freed = second.ranges
+        freed.brightnessLock?.lock = nil; freed.brightnessLock?.end = nil; freed.brightnessLock?.deadline = nil; freed.brightnessLock?.boot = nil
+        try store(root).saveRanges(freed)
+        clocks.pass(7_200)
+        let third = try braise(clocks, store: store(root), clearing: false)
+        XCTAssertNil(third.ranges.brightnessLock)
+        let always = try XCTUnwrap(third.ranges.program.ranges.first { BlockRule.Key($0).isAlways })
+        XCTAssertEqual(try XCTUnwrap(third.ranges.brightness(of: always.id)), 0.4, accuracy: 0.0001)
+        third.shutdown()
+    }
+
+    /// :196 — the crash file is written before the first screen moves.
+    func testPreviewWritesTheCrashFileBeforeTheScreenMoves() throws {
+        let root = try root(), clocks = Clocks(wednesday10h), st = store(root)
+        let driver = CrashOrderDriver(crashFileExists: { !st.loadPreviewBrightness().isEmpty })
+        let c = try BraiseController(store: st, gamma: LotAGamma(), runsTimers: false, clock: { clocks.now }, calendar: paris,
+                                     continuous: { clocks.up }, boot: { "boot-1" }, brightness: driver, hasPassword: { false },
+                                     verifyPassword: { _ in .wrong(remaining: 3) })
+        addTeardownBlock { @MainActor in c.shutdown() }
+        c.showPreview(brightness: 0.3, holding: true); c.enforceBrightnessNow()
+        XCTAssertEqual(driver.crashFileExistedAtFirstSet, true)
+    }
+
+    /// Point 6 of the brief: a rule with the screen level only (red at 0) never dims through the colour filter.
+    func testBrightnessOnlyRuleDoesNotDimThroughTheFilter() throws {
+        let clocks = Clocks(wednesday10h), gamma = LotAGamma(), dir = try root(), st = store(dir)
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("Braise"), withIntermediateDirectories: true)
+        var prefs = Preferences(); prefs.brightness = 0.4; try st.save(prefs)
+        let c = try braise(clocks, store: st, gamma: gamma)
+        XCTAssertEqual(c.preferences.brightness, 0.4, accuracy: 0.0001)
+        let range = BlockProgramRange(weekdays: Set(1...7), startMinute: 9 * 60, endMinute: 12 * 60)
+        try c.saveRange(range, intensity: 0, brightness: .some(0.5))
+        c.evaluate()
+        XCTAssertFalse(gamma.active, "no filter for a level-only rule")
     }
 
     // MARK: Rendering

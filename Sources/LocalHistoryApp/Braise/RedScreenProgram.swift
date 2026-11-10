@@ -35,6 +35,9 @@ struct RedScreenProgram: Codable, Equatable {
     /// « Suivre mes horaires », gone since T-050: always true after `BraiseController`'s one-time migration. Kept so an
     /// older Goalong reads the file the same way.
     var follows = false
+    /// T-050 lot A2: set once the ranges of 00:00 → 24:00 saved before this version were paused (they were unusable
+    /// before, shown « En pause », and now would start). Absent in older files.
+    var fullDayPaused: Bool?
     /// Window stopped for today (« Arrêter »): range → end of that window.
     var skips: [UUID: Date] = [:]
     var holds: [UUID: Hold] = [:]
