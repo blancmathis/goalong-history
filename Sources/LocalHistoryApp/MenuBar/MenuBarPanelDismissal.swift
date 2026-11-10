@@ -3,7 +3,10 @@
 
     /// T-048 D1: closes the menu bar panel on a click outside it and on Esc.
     ///
-    /// A `.transient` popover closes on outside clicks only while its app is active. Goalong is a menu bar
+    /// T-051: the popover is `.applicationDefined`, so AppKit never closes it by itself (focus or activation
+    /// changes, pointer leaving the icon). It closes only here: click elsewhere, Esc, second click on the icon.
+    ///
+    /// Before T-051, a `.transient` popover closes on outside clicks only while its app is active. Goalong is a menu bar
     /// app: a click on its icon (and, since 0.6.178, a click relayed from the helper's icon) does not
     /// activate it, so the panel stayed open until a second click on the icon.
     /// Fix: activate Goalong when the panel opens (the panel gets the keyboard), and watch mouse downs in
@@ -15,6 +18,8 @@
             /// Events sent to Goalong itself; return nil to swallow one.
             var addLocalMonitor: (NSEvent.EventTypeMask, @escaping (NSEvent) -> NSEvent?) -> Any?
             var removeMonitor: (Any) -> Void
+            /// True when a Goalong event lands in the panel's window or one opened from it (a click there keeps the panel open).
+            var isInsidePanel: (NSEvent) -> Bool = { _ in false }
             /// Brings Goalong forward so the panel takes the keyboard.
             var activate: () -> Void
             /// The app that was frontmost before the panel opened; given back when Esc closes the panel.
@@ -29,6 +34,24 @@
                     let app = NSWorkspace.shared.frontmostApplication
                     return app?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app
                 })
+        }
+
+        /// True when `window` is the panel's window or hangs from it (child window via `parent`, sheet via
+        /// `sheetParent`). Generic over the window type so tests need no real window.
+        static func isInside<W: AnyObject>(_ window: W?, panel: W?, parents: (W) -> [W]) -> Bool {
+            guard let panel else { return false }
+            var seen = Set<ObjectIdentifier>()
+            var pending = window.map { [$0] } ?? []
+            while let next = pending.popLast() {
+                if next === panel { return true }
+                guard seen.insert(ObjectIdentifier(next)).inserted else { continue }
+                pending += parents(next)
+            }
+            return false
+        }
+
+        static func isInside(_ window: NSWindow?, panel: NSWindow?) -> Bool {
+            isInside(window, panel: panel) { [$0.parent, $0.sheetParent].compactMap { $0 } }
         }
 
         static let outsideClicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -54,10 +77,21 @@
             if let global = hooks.addGlobalMonitor(Self.outsideClicks, { [weak self] _ in
                 MainActor.assumeIsolated { self?.close() }
             }) { monitors.append(global) }
-            if let local = hooks.addLocalMonitor(.keyDown, { [weak self] event in
-                guard event.keyCode == Self.escapeKeyCode else { return event }
-                MainActor.assumeIsolated { self?.dismissByKeyboard() }
-                return nil
+            if let local = hooks.addLocalMonitor([.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown], { [weak self] event in
+                switch event.type {
+                case .keyDown:
+                    guard event.keyCode == Self.escapeKeyCode else { return event }
+                    MainActor.assumeIsolated { self?.dismissByKeyboard() }
+                    return nil
+                default:
+                    // A click in another Goalong window or on our own icon closes the panel; the click still goes on.
+                    // Mouse moves and exits never come here: leaving the icon or the panel keeps it open.
+                    MainActor.assumeIsolated {
+                        guard let self, !self.hooks.isInsidePanel(event) else { return }
+                        self.close()
+                    }
+                    return event
+                }
             }) { monitors.append(local) }
             hooks.activate()
         }
