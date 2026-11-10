@@ -10,31 +10,51 @@ on:
         description: Version without the leading v
         required: true
         type: string
+      dry_run:
+        description: Verify everything, publish nothing (any branch; tests this workflow)
+        type: boolean
+        default: false
+      source_commit:
+        description: Dry run only — main commit whose published bytes to check (default current main)
+        type: string
+        required: false
+      rebuild:
+        description: Build again instead of reusing the bytes main already published
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   id-token: write
   attestations: write
   artifact-metadata: write
+  actions: read
+  checks: read
 
 concurrency:
   group: goalong-history-release-${{ github.ref }}
   cancel-in-progress: false
 
+# A tagged release ships the exact bytes main already built, tested, signed, attested
+# and published to the update feed (continuous-release.yml). reuse re-verifies all of
+# it before publishing; the full build below runs only when main has no generation of
+# this commit at this version (or on explicit rebuild).
 jobs:
-  release:
-    runs-on: macos-15
-    timeout-minutes: 45
-    env:
-      PRODUCT: Goalong History
-      BUNDLE_ID: ai.goalong.localhistory
+  locate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      found: ${{ steps.locate.outputs.found }}
+      tag: ${{ steps.locate.outputs.tag }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - name: Refuse a manual release from a non-main or stale commit
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
         shell: bash
         env:
           INPUT_VERSION: ${{ inputs.version }}
@@ -59,6 +79,117 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve source commit and version
+        id: source
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$INPUT_VERSION"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "Invalid version: $VERSION" >&2
+            exit 1
+          fi
+          SHA="$GITHUB_SHA"
+          if [[ "$DRY_RUN" == true ]]; then
+            SHA="${SOURCE_COMMIT:-$(git ls-remote origin refs/heads/main | cut -f1)}"
+            echo "Dry run: nothing will be attested or published." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -n "$SOURCE_COMMIT" ]]; then
+            echo "source_commit is for dry runs only." >&2
+            exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Full commit SHA required: $SHA" >&2; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the generation main published for this commit
+        id: locate
+        if: ${{ !inputs.rebuild }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/reuse_main_release.py locate "${{ steps.source.outputs.sha }}" "${{ steps.source.outputs.version }}"
+
+  reuse:
+    needs: locate
+    if: needs.locate.outputs.found == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GODEBUG: http2client=0
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.locate.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify the published main generation before reuse
+        run: python3 scripts/reuse_main_release.py verify "${{ needs.locate.outputs.sha }}" "$VERSION" "${{ needs.locate.outputs.tag }}"
+
+      - name: Attest Community release provenance
+        if: ${{ !inputs.dry_run }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+
+      - name: Publish GitHub release
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.locate.outputs.version) }}
+          target_commitish: ${{ github.sha }}
+          name: Goalong History ${{ needs.locate.outputs.version }} Community Build
+          body: |
+            Free Community Build of Goalong History `${{ needs.locate.outputs.version }}`, built from `${{ github.sha }}`. These are the exact bytes of the signed update published from that commit (`${{ needs.locate.outputs.tag }}`).
+
+            This build keeps a pinned, stable Apple Development code-signing identity but is not Apple-notarized. On first launch, macOS may require **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper globally.
+
+            Verify the SHA-256 file and `release-manifest.json`. GitHub also publishes a Sigstore-backed provenance attestation: `gh attestation verify <downloaded-file> --repo blancmathis/goalong-history`.
+
+            This installer uses the same signed Community main update channel. Installation is user-approved; automatic checks can be disabled in Settings.
+
+            Updates preserve the pinned signing identity. Migration from legacy ad-hoc builds may require a final macOS approval. Existing history and settings are preserved.
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(needs.locate.outputs.version, '-') }}
+          files: |
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+
+  release:
+    # Full build fallback, unchanged: main has no generation of this commit at this version.
+    needs: locate
+    if: needs.locate.result == 'success' && needs.locate.outputs.found != 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      PRODUCT: Goalong History
+      BUNDLE_ID: ai.goalong.localhistory
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.locate.outputs.sha }}
+
       - name: Prepare stable code-signing identity
         env:
           MACOS_SIGNING_CERTIFICATE_P12: ${{ secrets.MACOS_SIGNING_CERTIFICATE_P12 }}
@@ -70,16 +201,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="${{ inputs.version }}"
-          fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
-            echo "Invalid version: $VERSION" >&2
-            exit 1
-          fi
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "value=${{ needs.locate.outputs.version }}" >> "$GITHUB_OUTPUT"
           ./scripts/resolve_rolling_version.sh "$GITHUB_RUN_NUMBER" | grep '^build=' >> "$GITHUB_OUTPUT"
 
       - name: Build universal Community app
@@ -125,6 +247,7 @@ jobs:
             --edition unified
 
       - name: Attest Community release provenance
+        if: ${{ !inputs.dry_run }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
@@ -137,6 +260,7 @@ jobs:
             dist/release-manifest.json
 
       - name: Publish GitHub release
+        if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@5113cdc90fd4d541c801c55356214017bf5ae34b # v3
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.value) }}
