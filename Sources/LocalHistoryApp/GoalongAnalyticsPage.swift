@@ -162,7 +162,8 @@ struct GoalongAnalyticsPage: View {
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { showingWork = true },
                                 onReview: { task in if !previewActive { reviewRequest = GoalongWorkReviewRequest(day: selection.day, task: task) } },
-                                onClassify: { agent.classify(day: GoalongWorkAgent.manualTarget(days: payload.current.days, fallback: selection.day)) },
+                                // The manual pass lives in the work settings now; Activité only opens them.
+                                onClassify: { showingWork = true },
                                 onHistory: { openHistory(selection.day) },
                                 onProjects: { if !previewActive { showingAnalysisChoice = true } },
                                 onHistoryDay: openHistory,
@@ -270,11 +271,6 @@ struct GoalongAnalyticsPage: View {
                 if navigationStore.selectedSection == .overview {
                     GoalongSwitchTiming.end(DashboardSection.overview.rawValue, stage: "data", last: true)
                 }
-            }
-            // Contexts seen for the first time are classified in the background, at most
-            // once per day shown (today: every 15 minutes), only with the user's consent.
-            if !request.isPreview, let payload = analytics.payload, !Task.isCancelled {
-                agent.classifyIfNeeded(payload.current.days)
             }
             // R13c: the other periods of this day are read once in the background, so that a first switch to them
             // is shown from memory too. A new selection cancels this task and the preload with it.
@@ -526,7 +522,7 @@ struct GoalongAnalyticsPage: View {
     private var workStatus: GoalongWorkStatus {
         GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
             progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)),
-            classifiesOnOpen: work.automatic && agent.readiness == .ready)
+            classifiesOnOpen: work.backgroundConsent && agent.readiness == .ready)
     }
 
     /// The same reading as the recording banner, so the page body never contradicts it.

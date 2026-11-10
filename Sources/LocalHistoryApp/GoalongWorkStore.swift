@@ -18,6 +18,8 @@ extension Notification.Name {
     static let shared = GoalongWorkStore()
     nonisolated static let fileName = "work-classification.json"
     static let maximumEntries = 20_000
+    /// Corrections keep the label the user saw; examples sent to the agent are a few of them.
+    static let maximumCorrections = 160
 
     struct Entry: Codable, Equatable {
         var verdict: GoalongWorkVerdict
@@ -62,10 +64,34 @@ extension Notification.Name {
     private struct Document: Codable, Equatable {
         var version = 1
         var revision = ""
+        /// The former « classer automatiquement » switch. Kept so older builds read the file; it starts nothing.
         var automatic = true
         var entries: [String: Entry] = [:]
         var corrections: [Correction] = []
+        /// The user's app and site rules (B1). Absent in older files.
+        var rules: [GoalongWorkRule] = []
+        /// Agent verdict per group of contexts, for the current revision only.
+        var groups: [String: GoalongWorkAssignment] = [:]
+        /// Version of the background consent text the user checked; nil: not given.
+        var backgroundConsent: Int?
+
+        private enum CodingKeys: String, CodingKey { case version, revision, automatic, entries, corrections, rules, groups, backgroundConsent }
+        init() {}
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decode(Int.self, forKey: .version)
+            revision = try c.decode(String.self, forKey: .revision)
+            automatic = try c.decode(Bool.self, forKey: .automatic)
+            entries = try c.decode([String: Entry].self, forKey: .entries)
+            corrections = try c.decode([Correction].self, forKey: .corrections)
+            rules = try c.decodeIfPresent([GoalongWorkRule].self, forKey: .rules) ?? []
+            groups = try c.decodeIfPresent([String: GoalongWorkAssignment].self, forKey: .groups) ?? [:]
+            backgroundConsent = try c.decodeIfPresent(Int.self, forKey: .backgroundConsent)
+        }
     }
+    /// Raise when the background consent text changes meaning: an older consent no longer counts.
+    static let backgroundConsentVersion = 1
+    nonisolated static let usageFileName = "work-classification-usage.json"
 
     @Published private(set) var verdicts = GoalongWorkVerdicts()
     @Published private(set) var lastError: String?
@@ -81,8 +107,19 @@ extension Notification.Name {
             document.automatic = automatic; persist()
         }
     }
+    /// The user checked the current background consent text. The former switch never counts.
+    @Published var backgroundConsent: Bool {
+        didSet {
+            let value = backgroundConsent ? Self.backgroundConsentVersion : nil
+            guard value != document.backgroundConsent else { return }
+            document.backgroundConsent = value; persist()
+        }
+    }
+    /// Calls and tokens of the classification, per day (14 days, on this Mac).
+    @Published private(set) var usage = GoalongWorkUsage()
     private var document: Document
     private let fileURL: URL
+    private var usageURL: URL { fileURL.deletingLastPathComponent().appendingPathComponent(Self.usageFileName) }
     private let definitionSource: @MainActor () -> GoalongWorkDefinition
     /// Task names measured by an unsettled « tâche » commitment of Concentration (T-045 H3-02).
     /// Nil: its file is unreadable, so any agent verdict may still be measured.
@@ -124,6 +161,8 @@ extension Notification.Name {
         }
         document = loaded
         automatic = loaded.automatic
+        backgroundConsent = loaded.backgroundConsent == Self.backgroundConsentVersion
+        usage = Self.loadUsage(fileURL.deletingLastPathComponent().appendingPathComponent(Self.usageFileName))
         reconcileDefinition()
         observer = NotificationCenter.default.addObserver(forName: .jevWorkContextDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.reconcileDefinition() }
@@ -165,6 +204,66 @@ extension Notification.Name {
     }
 
     func entry(for key: String) -> Entry? { document.entries[key] }
+
+    /// The user's app and site rules.
+    var rules: [GoalongWorkRule] { document.rules }
+    /// Agent verdicts per group, for local inheritance.
+    var groupVerdicts: [String: GoalongWorkAssignment] { document.groups }
+
+    /// Every answer of the user, most recent first: app and site rules, then the « ce contexte
+    /// seulement » answers (former corrections, with their label when it was kept).
+    var answers: [GoalongWorkRule] {
+        let labels = Dictionary(document.corrections.map { ($0.key, $0.label) }, uniquingKeysWith: { _, last in last })
+        let contexts = document.entries.filter { $0.value.byOwner && $0.value.verdict != .unclear }.compactMap { key, entry in
+            GoalongWorkRule(scope: .context, target: key,
+                            label: labels[key].map { [$0.title ?? "", $0.host ?? $0.application].filter { !$0.isEmpty }.joined(separator: " · ") } ?? "",
+                            verdict: entry.verdict, task: entry.task, day: entry.seen)
+        }
+        return (document.rules + contexts).sorted { ($0.day ?? "") == ($1.day ?? "") ? $0.target < $1.target : ($0.day ?? "") > ($1.day ?? "") }
+    }
+
+    /// The user's rule for a whole application or site. `nil` removes it. Never set by Goalong itself.
+    func setRule(scope: GoalongWorkSource, target: String, label: String, verdict: GoalongWorkVerdict?, task: String? = nil, day: String) {
+        guard scope == .application || scope == .site else { return }
+        let normalized = scope == .site ? GoalongWorkRule.siteTarget(target) : target.lowercased()
+        document.rules.removeAll { $0.scope == scope && $0.target == normalized }
+        if let verdict, let rule = GoalongWorkRule(scope: scope, target: normalized, label: label, verdict: verdict, task: task, day: day) {
+            document.rules.append(rule)
+        }
+        publish(); persist()
+    }
+
+    /// Saves the agent's verdicts per group (work or not work), so later members inherit them without a call.
+    func mergeGroups(_ verdicts: [String: GoalongWorkAssignment], revision: String) {
+        guard revision == document.revision else { return }
+        let decided = verdicts.filter { $0.value.verdict != .unclear }
+        guard !decided.isEmpty else { return }
+        document.groups.merge(decided) { _, new in new }
+        if document.groups.count > Self.maximumEntries {
+            for key in document.groups.keys.sorted().prefix(document.groups.count - Self.maximumEntries) { document.groups.removeValue(forKey: key) }
+        }
+        persist()
+    }
+
+    /// Counts one call against the day and the week.
+    func recordUsage(day: String, at date: Date, tokens: Int, estimated: Bool, background: Bool,
+                     weeklyBefore: Int?, weeklyAfter: Int?) {
+        usage.record(day: day, at: date, tokens: tokens, estimated: estimated, background: background,
+                     weeklyBefore: weeklyBefore, weeklyAfter: weeklyAfter)
+        do {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(usage).write(to: usageURL, options: [.atomic])
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: usageURL.path)
+        } catch {
+            SupportDiagnostics.shared.failure(error, component: .storage)
+        }
+    }
+
+    private static func loadUsage(_ url: URL) -> GoalongWorkUsage {
+        guard let data = try? SupportDiagnostics.readPrivateFile(url, maximum: 1_024 * 1_024) else { return GoalongWorkUsage() }
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode(GoalongWorkUsage.self, from: data)) ?? GoalongWorkUsage()
+    }
 
     /// Saves one agent answer. A newer definition or an owner correction always wins.
     /// Returns the verdicts actually stored (none for an older definition).
@@ -209,8 +308,8 @@ extension Notification.Name {
             document.entries[key] = Entry(verdict: verdict, task: assignment.task, byOwner: true, seen: day)
             if verdict != .unclear {
                 document.corrections.append(Correction(key: key, label: label, verdict: verdict, task: assignment.task))
-                if document.corrections.count > GoalongWorkClassification.maximumExamples * 4 {
-                    document.corrections.removeFirst(document.corrections.count - GoalongWorkClassification.maximumExamples * 4)
+                if document.corrections.count > Self.maximumCorrections {
+                    document.corrections.removeFirst(document.corrections.count - Self.maximumCorrections)
                 }
             }
         } else {
@@ -263,6 +362,7 @@ extension Notification.Name {
     /// Those kept are marked, so they are classified again once the commitment settles.
     func forgetAgentVerdicts() {
         document.entries = Self.marked(keptAcrossReclassification(document.entries, committed: committedTasks()), keptFrom: document.revision)
+        document.groups = [:]
         publish(); persist()
     }
 
@@ -286,6 +386,7 @@ extension Notification.Name {
         writesBlocked = false; automaticChangedWhileBlocked = false
         storageNotice = nil; lastError = nil
         automatic = document.automatic
+        backgroundConsent = document.backgroundConsent == Self.backgroundConsentVersion
         reconcileDefinition()
     }
     #endif
@@ -293,7 +394,7 @@ extension Notification.Name {
     /// Full clear: the saved file is rewritten without any title, and the unreadable copies
     /// (kept aside or left in place) go too, since they hold the same titles.
     func removeAll() {
-        document.entries = [:]; document.corrections = []
+        document.entries = [:]; document.corrections = []; document.rules = []; document.groups = [:]
         if writesBlocked { try? FileManager.default.removeItem(at: fileURL) }
         liftWriteBlock(keepingSavedCorrections: false)
         publish(); persist()
@@ -309,6 +410,7 @@ extension Notification.Name {
             document.entries = Self.marked(keptAcrossReclassification(document.entries, committed: committedTasks()),
                                            keptFrom: document.revision)
             document.revision = revision
+            document.groups = [:]
             if hadAgentVerdicts || !FileManager.default.fileExists(atPath: fileURL.path) { persist() }
         }
         releaseSettledVerdicts()
@@ -342,7 +444,8 @@ extension Notification.Name {
     private func publish() {
         let next = GoalongWorkVerdicts(document.entries.mapValues {
             GoalongWorkAssignment(verdict: $0.verdict, task: $0.task, byOwner: $0.byOwner)
-        }, retries: document.entries.mapValues { GoalongWorkRetryState(attempts: $0.attempts, lastAskedDay: $0.lastAskedDay) })
+        }, retries: document.entries.mapValues { GoalongWorkRetryState(attempts: $0.attempts, lastAskedDay: $0.lastAskedDay) },
+           rules: GoalongWorkRules(document.rules))
         guard next != verdicts else { return }
         verdicts = next
         NotificationCenter.default.post(name: .goalongWorkVerdictsDidChange, object: self)
@@ -388,9 +491,12 @@ extension Notification.Name {
         let changed = Set(document.entries.filter { $0.value.byOwner }.keys)
         var corrections = saved.corrections.filter { !changed.contains($0.key) }
         corrections.append(contentsOf: document.corrections)
-        let limit = GoalongWorkClassification.maximumExamples * 4
+        let limit = Self.maximumCorrections
         if corrections.count > limit { corrections.removeFirst(corrections.count - limit) }
         document.entries = entries; document.corrections = corrections
+        if document.rules.isEmpty { document.rules = saved.rules }
+        if saved.revision == document.revision { document.groups.merge(saved.groups) { current, _ in current } }
+        if document.backgroundConsent == nil { document.backgroundConsent = saved.backgroundConsent }
         if !automaticChangedWhileBlocked {
             document.automatic = saved.automatic
             automatic = saved.automatic

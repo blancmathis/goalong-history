@@ -63,9 +63,9 @@
             XCTAssertNil(agent.runningDay)
         }
 
-        func testClassifyIfNeededDoesNothingWhenNotReady() {
+        func testBackgroundTickDoesNothingWhenNotReady() {
             let agent = agent(definition: GoalongWorkDefinition())
-            agent.classifyIfNeeded([], now: day)
+            agent.backgroundTick(now: day)
             XCTAssertNil(agent.lastError)
             XCTAssertNil(agent.runningDay)
         }

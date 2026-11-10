@@ -172,7 +172,7 @@ struct GoalongAnalyticsContent: View {
                     methodology.padding(.horizontal, -6)
                     Text(payload.isPreview ? "Données fictives, non enregistrées."
                          : workStatus.classifiesOnOpen
-                         ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT. Actualisé à \(time(payload.updatedAt))."
+                         ? "Durées calculées sur ce Mac ; nouveaux contextes classés par ChatGPT deux fois par jour au plus. Actualisé à \(time(payload.updatedAt))."
                          : "Calculé sur ce Mac, sans envoi. Actualisé à \(time(payload.updatedAt)).")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText)
                         .padding(.top, 12)
@@ -485,10 +485,7 @@ struct GoalongAnalyticsContent: View {
     }
 
     private var classifyLabel: String {
-        guard !isDay else { return "Classer maintenant" }
-        let target = GoalongWorkAgent.manualTarget(days: current.days, fallback: current.days.last?.date ?? GoalongToday.now)
-        if GoalongToday.isToday(target) { return "Classer aujourd’hui" }
-        return "Classer le \(GoalongActivitySummary.weekdayDate(target))"
+        "Ouvrir le classement"
     }
 
     private func workCard(_ summary: GoalongActivitySummary) -> some View {
@@ -1029,7 +1026,7 @@ struct GoalongAnalyticsContent: View {
                 Text("Le Temps d’écran Apple garde ses propres sources et appareils. Il n’est jamais additionné aux observations Goalong. Les conversations et le temps machine ne s’ajoutent pas non plus au temps actif.")
                 Text("Les bilans et projets sont des analyses déjà enregistrées. "
                      + (workStatus.classifiesOnOpen
-                        ? "Le classement automatique est activé : ouvrir cette page envoie à votre compte ChatGPT les contextes pas encore classés, selon vos choix de données. "
+                        ? "Le classement en arrière-plan est activé : deux envois par jour au plus vers votre compte ChatGPT, selon vos choix de données. Consulter cette page n’envoie rien. "
                         : "Consulter cette page ne lance ni classement ni bilan. ")
                      + "Sport, sommeil et travail hors ordinateur ne sont pas déduits de l’activité du Mac.")
             }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)

@@ -80,10 +80,10 @@ import SwiftUI
         }
         .onAppearWhenShown { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
-            // A new definition re-classifies today straight away when the user allowed it. The pane of Réglages
-            // (drawn only while it is the open pane) and Activité's sheet can both hear the change: while the
-            // sheet is open only the sheet answers, so the agent runs once, not twice.
-            if work.automatic, inSheet || Self.openSheet == nil { agent.classify(day: GoalongToday.now, userInitiated: false) }
+            // A new definition is a reason to check the background schedule now, within its daily
+            // limits. The pane of Réglages and Activité's sheet can both hear the change: while the sheet
+            // is open only the sheet answers, so the check runs once, not twice.
+            if work.backgroundConsent, inSheet || Self.openSheet == nil { agent.backgroundTick() }
         }
         .onChange(of: runtime.connectionState) { state in
             guard classifyWhenConnected, case .connected = state else { return }
@@ -96,8 +96,8 @@ import SwiftUI
         .alert("Autoriser ChatGPT à classer votre temps ?", isPresented: $confirmingConsent) {
             Button("Annuler", role: .cancel) {}
             Button("Autoriser") {
+                // The background pass has its own consent, off by default: this one allows the manual pass.
                 if consents.set(.chatGPTAnalysis, enabled: true, surface: .settings) {
-                    work.automatic = true
                     // The account state was not checked while analysis was off.
                     classifyWhenConnected = true
                     runtime.refreshAccount(userInitiated: true)
@@ -135,12 +135,12 @@ import SwiftUI
             // and an empty definition before a history turned off (P-3).
             let canClassify = Self.canClassify(analysisConsent: consents.isEnabled(.chatGPTAnalysis),
                 historyConsent: consents.isEnabled(.localComputerHistory), historyOff: agent.readiness == .historyOff)
-            Toggle("Classer automatiquement les nouveaux contextes",
-                   isOn: Binding(get: { Self.automaticSwitchShowsOn(automatic: work.automatic, consented: canClassify) },
-                                 set: { work.automatic = $0 }))
+            Toggle("Classer en arrière-plan",
+                   isOn: Binding(get: { Self.automaticSwitchShowsOn(automatic: work.backgroundConsent, consented: canClassify) },
+                                 set: { work.backgroundConsent = $0 }))
                 .toggleStyle(.goalongSwitch).disabled(!canClassify)
                 .accessibilityIdentifier("work-automatic")
-            Text("Le classement a lieu quand vous ouvrez Activité, au plus toutes les 15 minutes. Un contexte déjà classé n’est jamais renvoyé.")
+            Text(GoalongWorkPage.backgroundConsentText)
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             if GoalongWorkSharingFilter(policy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory),
                                         selection: GoalongAnalysisSelection.load()).withholdsTitles {
@@ -153,6 +153,9 @@ import SwiftUI
             }
         }
     }
+
+    /// The background consent: rhythm, cap and data sent. The old « automatic » switch never counts.
+    static let backgroundConsentText = "Au plus \(GoalongWorkSchedule.backgroundCallsPerDay) envois par jour, vers 12 h 30 et 18 h 30 ou dès \(GoalongWorkSchedule.backlogTrigger) groupes de contextes en attente, dans la limite de \(GoalongWorkSchedule.dailyTokenCap.formatted(.number.locale(Locale(identifier: "fr_FR")))) jetons par jour, passage manuel compris. Pour chaque groupe nouveau : nom de l’app, site, titre de la fenêtre et durée, avec votre définition du travail et quelques-unes de vos réponses. Jamais ce que vous tapez, ni de capture d’écran. Vos exclusions s’appliquent ; rien ne part en pause, ni près de la limite du compte."
 
     /// Without consent nothing is classified: the switch reads off, whatever choice it will restore.
     /// Consent is read directly: `readiness` reports an empty definition or history off first.
