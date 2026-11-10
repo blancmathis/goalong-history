@@ -87,6 +87,30 @@ import XCTest
         XCTAssertEqual(fake.closes, 1)
     }
 
+    private final class Node {
+        var parent: Node?
+        var sheetParent: Node?
+    }
+
+    /// A window opened from the panel (child window, sheet, nested one) is part of the panel: a click there keeps it open.
+    func testWindowsOpenedFromThePanelCountAsInsideIt() {
+        let panel = Node(), child = Node(), sheet = Node(), nested = Node(), other = Node(), loop = Node()
+        child.parent = panel
+        sheet.sheetParent = child
+        nested.parent = sheet
+        loop.parent = loop
+        let parents: (Node) -> [Node] = { [$0.parent, $0.sheetParent].compactMap { $0 } }
+        func inside(_ w: Node?, _ p: Node? = panel) -> Bool { MenuBarPanelDismissal.isInside(w, panel: p, parents: parents) }
+        XCTAssertTrue(inside(panel))
+        XCTAssertTrue(inside(child))
+        XCTAssertTrue(inside(sheet))
+        XCTAssertTrue(inside(nested))
+        XCTAssertFalse(inside(other), "an unrelated Goalong window closes the panel")
+        XCTAssertFalse(inside(loop), "a parent loop ends")
+        XCTAssertFalse(inside(nil), "an event with no window is not inside")
+        XCTAssertFalse(inside(panel, nil), "no panel window, nothing is inside")
+    }
+
     func testClosingRemovesEveryMonitorOnceAndReopeningDoesNotStack() {
         let (dismissal, fake) = make()
         dismissal.begin()

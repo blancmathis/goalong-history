@@ -18,7 +18,7 @@
             /// Events sent to Goalong itself; return nil to swallow one.
             var addLocalMonitor: (NSEvent.EventTypeMask, @escaping (NSEvent) -> NSEvent?) -> Any?
             var removeMonitor: (Any) -> Void
-            /// True when a Goalong event lands in the panel's own window (a click there keeps the panel open).
+            /// True when a Goalong event lands in the panel's window or one opened from it (a click there keeps the panel open).
             var isInsidePanel: (NSEvent) -> Bool = { _ in false }
             /// Brings Goalong forward so the panel takes the keyboard.
             var activate: () -> Void
@@ -34,6 +34,24 @@
                     let app = NSWorkspace.shared.frontmostApplication
                     return app?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app
                 })
+        }
+
+        /// True when `window` is the panel's window or hangs from it (child window via `parent`, sheet via
+        /// `sheetParent`). Generic over the window type so tests need no real window.
+        static func isInside<W: AnyObject>(_ window: W?, panel: W?, parents: (W) -> [W]) -> Bool {
+            guard let panel else { return false }
+            var seen = Set<ObjectIdentifier>()
+            var pending = window.map { [$0] } ?? []
+            while let next = pending.popLast() {
+                if next === panel { return true }
+                guard seen.insert(ObjectIdentifier(next)).inserted else { continue }
+                pending += parents(next)
+            }
+            return false
+        }
+
+        static func isInside(_ window: NSWindow?, panel: NSWindow?) -> Bool {
+            isInside(window, panel: panel) { [$0.parent, $0.sheetParent].compactMap { $0 } }
         }
 
         static let outsideClicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]

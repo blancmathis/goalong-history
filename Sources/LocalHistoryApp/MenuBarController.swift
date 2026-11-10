@@ -22,8 +22,7 @@
         @MainActor private lazy var panelDismissal: MenuBarPanelDismissal = {
             var hooks = MenuBarPanelDismissal.Hooks.live
             hooks.isInsidePanel = { [weak self] event in
-                guard let window = self?.popover.contentViewController?.view.window else { return false }
-                return event.window === window
+                MenuBarPanelDismissal.isInside(event.window, panel: self?.popover.contentViewController?.view.window)
             }
             return MenuBarPanelDismissal(hooks: hooks) { [weak self] in self?.closePanel() }
         }()
