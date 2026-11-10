@@ -278,11 +278,18 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let observations = await Self.detachedForwardingCancellation(priority: .utility) {
-                    starts.map { day in
-                        GoalongWorkClassification.observe(root: root, day: day, calendar: calendar, shouldContinue: { !Task.isCancelled })
+                // The 7-day read runs on the same serial queue as the states of the page (never in the shared task
+                // threads); a cancellation of this pass stops it through the token.
+                let readToken = GoalongWorkStateModel.LoadToken()
+                let observations: [GoalongWorkClassification.Observation?] = await withTaskCancellationHandler(operation: {
+                    await withCheckedContinuation { continuation in
+                        GoalongWorkStateModel.readQueue.async {
+                            continuation.resume(returning: starts.map { day in
+                                GoalongWorkClassification.observe(root: root, day: day, calendar: calendar, shouldContinue: { !readToken.isCancelled })
+                            })
+                        }
                     }
-                }
+                }, onCancel: { readToken.cancel() })
                 guard operation == id else { return }
                 // Every readable day: answers known locally first, then what still needs the agent. Oldest first.
                 var resolvedLocally = 0
@@ -320,9 +327,7 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                         finish(id, outcome: starts.count > 1 ? "Tout ce qui pouvait être classé ces \(starts.count) derniers jours l’est déjà."
                                : "Tout ce qui pouvait être classé le \(GoalongUIFormat.day(start)) l’est déjà.")
                     } else {
-                        waiting = reason
-                        runningDay = nil; progress = nil
-                        if resolvedLocally > 0 { lastOutcome = "\(resolvedLocally) contexte\(resolvedLocally > 1 ? "s" : "") classé\(resolvedLocally > 1 ? "s" : "") par vos règles et les groupes déjà connus." }
+                        endBackgroundSkip(reason, resolvedLocally: resolvedLocally)
                     }
                     return
                 case .call:
@@ -391,20 +396,22 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 let privacyRevision = filter.policy.revision
                 guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                 let sentPrompt = prompt
-                // Counted when sent, at its estimate: a call that fails (timeout, refused answer, server error)
-                // still counts in the cap and in the calls of the day, so a failing call is never sent again and again.
+                // Counted when sent, at the larger of its estimate and the margin (the mean real cost of a call): a call
+                // that fails (timeout, refused answer, server error) still counts in the cap and in the calls of the day,
+                // so failing calls never pass the 24 000 tokens, however many times a pass is asked by hand.
                 let estimate = GoalongWorkClassification.estimatedTokens(prompt: sentPrompt, contexts: request.contexts.count)
-                store.recordUsage(day: today, at: Date(), tokens: estimate, estimated: true,
-                                  background: !userInitiated, weeklyBefore: before?.weeklyPercent, weeklyAfter: nil)
-                let result = try await Task.detached(priority: .userInitiated) {
-                    let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
-                    defer { try? FileManager.default.removeItem(at: directory) }
-                    return try session.generateWorkClassification(prompt: sentPrompt, privacyRevision: privacyRevision,
-                                                                  selectionRevision: selectionRevision, workingDirectory: directory)
-                }.value
+                let (result, counted) = try await Self.sendCounted(store: store, day: today, estimate: estimate, margin: margin,
+                                                                   background: !userInitiated, weeklyBefore: before?.weeklyPercent) {
+                    try await Task.detached(priority: .userInitiated) {
+                        let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
+                        defer { try? FileManager.default.removeItem(at: directory) }
+                        return try session.generateWorkClassification(prompt: sentPrompt, privacyRevision: privacyRevision,
+                                                                      selectionRevision: selectionRevision, workingDirectory: directory)
+                    }.value
+                }
                 let after = await Task.detached(priority: .utility) { session.readAccountLimits() }.value
                 // The real tokens replace the estimate when Codex reports them.
-                store.settleUsage(day: today, estimate: estimate, tokens: result.tokens, weeklyAfter: after?.weeklyPercent)
+                store.settleUsage(day: today, estimate: counted, tokens: result.tokens, weeklyAfter: after?.weeklyPercent)
                 lastLimits = after
                 guard operation == id else { return }
                 let assignments = try GoalongWorkClassification.apply(result.response, to: request)
@@ -435,6 +442,16 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         }
     }
 
+    /// The call is counted and written to disk at `max(estimate, margin)` BEFORE `send` runs, so a failure, a timeout or
+    /// a restart keeps the count. The caller settles it with the real tokens after an answer. Returns the counted tokens.
+    @MainActor static func sendCounted<R>(store: GoalongWorkStore, day: String, at date: Date = Date(), estimate: Int, margin: Int,
+                                          background: Bool, weeklyBefore: Int?, _ send: () async throws -> R) async throws -> (R, Int) {
+        let counted = max(estimate, margin)
+        store.recordUsage(day: day, at: date, tokens: counted, estimated: true, background: background,
+                          weeklyBefore: weeklyBefore, weeklyAfter: nil)
+        return (try await send(), counted)
+    }
+
     /// Runs a blocking job off the main actor and forwards a cancellation of the caller to it
     /// (a detached task does not inherit it, so its `shouldContinue` checks would never stop).
     nonisolated static func detachedForwardingCancellation<T: Sendable>(priority: TaskPriority,
@@ -454,6 +471,13 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
     func cancel() {
         operation = UUID(); task?.cancel(); session?.close(); session = nil
         runningDay = nil; progress = nil; rerunRequested = false; busyNotice = nil
+    }
+
+    /// A background pass that ends without a call. The notice of a refused click belonged to the run that just ended.
+    func endBackgroundSkip(_ reason: GoalongWorkState.Waiting?, resolvedLocally: Int) {
+        waiting = reason
+        runningDay = nil; progress = nil; busyNotice = nil
+        if resolvedLocally > 0 { lastOutcome = "\(resolvedLocally) contexte\(resolvedLocally > 1 ? "s" : "") classé\(resolvedLocally > 1 ? "s" : "") par vos règles et les groupes déjà connus." }
     }
 
     private func finish(_ id: UUID, outcome: String) {

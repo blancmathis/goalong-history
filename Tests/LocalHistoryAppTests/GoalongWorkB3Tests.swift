@@ -80,11 +80,12 @@
         // 4. Both consents name every data a call carries; the background consent must be given again.
         @MainActor func testConsentsNameEveryDataAndTheOldConsentIsAskedAgain() throws {
             for text in [GoalongWorkPage.backgroundConsentText, GoalongWorkPage.manualConsentText] {
-                for part in ["nom de l’app", "site", "titre de la fenêtre", "durée", "deux fenêtres voisines", "définition du travail",
-                             "réponses", "20 noms de vos tâches", "note de la journée", "240 caractères", "Données pour ChatGPT",
+                for part in ["nom de l’app", "site", "titre de la fenêtre", "durée", "deux moments voisins", "leur classement, leur tâche et leur durée", "pas de titre", "définition du travail",
+                             "réponses (app, site, titre et tâche)", "20 noms de vos tâches", "note de la journée", "240 caractères", "Données pour ChatGPT",
                              "Jamais vos frappes au clavier, ni de capture d’écran"] {
                     XCTAssertTrue(text.contains(part), part)
                 }
+                XCTAssertFalse(text.contains("titres de deux fenêtres"), "The neighbours carry no title")
             }
             XCTAssertEqual(GoalongWorkStore.backgroundConsentVersion, 2)
             let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
@@ -161,6 +162,62 @@
             XCTAssertNil(GoalongWorkPassLine.link(for: .noDefinition))
             var day = GoalongWorkUsage.Day(); day.weeklyPercentBefore = 11; day.weeklyPercentAfter = 12
             XCTAssertEqual(GoalongWorkUsageText.quota(day: day, limits: nil), "Quota de la semaine : \(GoalongUIFormat.percent(11)) avant le dernier passage, \(GoalongUIFormat.percent(12)) après")
+        }
+
+        // 1 (review 2). A call that fails counts at max(estimate, margin), on disk, and the cap of 24 000 holds.
+        private struct SendFailure: Error {}
+        @MainActor func testFailedManualCallsKeepTheDailyCapAcrossARestart() async throws {
+            let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+            // Calls measured at 9 000 tokens: the margin is 9 000, the estimate of the next call only 5 000.
+            let seed = store(in: root)
+            seed.recordUsage(day: "2026-11-09", at: date(12, day: 9), tokens: 9_000, estimated: false, background: true, weeklyBefore: nil, weeklyAfter: nil)
+            var sent = 0
+            for _ in 0..<5 {
+                let fresh = store(in: root)   // read back from disk, as after a restart
+                let agent = GoalongWorkAgent(store: fresh, root: root)
+                let margin = agent.callMargin(now: date(13), calendar: calendar)
+                XCTAssertEqual(margin, 9_000)
+                guard case .call = GoalongWorkSchedule.decide(now: date(13), pendingGroups: 5, usage: fresh.usage.day("2026-11-10"),
+                                                              manual: true, margin: margin, calendar: calendar) else { break }
+                do {
+                    _ = try await GoalongWorkAgent.sendCounted(store: fresh, day: "2026-11-10", at: date(13), estimate: 5_000, margin: margin,
+                                                               background: false, weeklyBefore: nil) { () async throws -> Int in sent += 1; throw SendFailure() }
+                    XCTFail("The failure must pass through")
+                } catch is SendFailure {}
+                // The count is on disk right after the failure, before any settle.
+                XCTAssertEqual(store(in: root).usage.day("2026-11-10").tokens, sent * 9_000)
+            }
+            let final = store(in: root).usage.day("2026-11-10")
+            XCTAssertEqual(sent, 2, "A third call would pass 24 000 (3 x 9 000 real)")
+            XCTAssertEqual(final.tokens, 18_000); XCTAssertEqual(final.calls, 2)
+            XCTAssertLessThanOrEqual(final.tokens, GoalongWorkSchedule.dailyTokenCap)
+            XCTAssertTrue(GoalongWorkSchedule.capReached(final, margin: 9_000))
+        }
+
+        func testClassifySendsThroughTheCountedPath() throws {
+            let agent = try source("GoalongWorkAgent.swift")
+            XCTAssertTrue(agent.contains("try await Self.sendCounted(store: store"))
+            XCTAssertTrue(agent.contains("settleUsage(day: today, estimate: counted"))
+            XCTAssertFalse(agent.contains("store.recordUsage(day: today"), "classify counts only through sendCounted")
+        }
+
+        // 6 (review 2). A background pass that ends without a call drops the notice of a refused click.
+        @MainActor func testBackgroundSkipClearsTheBusyNotice() throws {
+            let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+            let agent = GoalongWorkAgent(store: store(in: root), root: root)
+            agent.setRunningForTesting(date(12))
+            XCTAssertFalse(agent.startManualPass(now: date(12)))
+            XCTAssertEqual(agent.busyNotice, GoalongWorkAgent.busyText)
+            agent.endBackgroundSkip(nil, resolvedLocally: 2)
+            XCTAssertNil(agent.busyNotice); XCTAssertNil(agent.runningDay)
+            XCTAssertNotNil(agent.lastOutcome)
+        }
+
+        // 4 (review 2). The 7-day read of the pass uses the serial queue of the states of the page.
+        func testPassReadsOnTheSerialQueue() throws {
+            let agent = try source("GoalongWorkAgent.swift")
+            XCTAssertTrue(agent.contains("GoalongWorkStateModel.readQueue.async"))
+            XCTAssertFalse(agent.contains("let observations = await Self.detachedForwardingCancellation"))
         }
     }
 #endif

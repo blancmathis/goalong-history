@@ -115,8 +115,9 @@ enum GoalongWorkPassLine {
     private var operation = UUID()
     /// A newer load stops the reads of the older one.
     private var current: LoadToken?
-    private static let readQueue = DispatchQueue(label: "goalong.work-states.read", qos: .utility)
-    private final class LoadToken: @unchecked Sendable {
+    /// The one serial queue of the 7-day disk reads, shared with the pass of `GoalongWorkAgent` (T-049).
+    static let readQueue = DispatchQueue(label: "goalong.work-states.read", qos: .utility)
+    final class LoadToken: @unchecked Sendable {
         private let lock = NSLock(); private var cancelled = false
         var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
         func cancel() { lock.lock(); cancelled = true; lock.unlock() }
