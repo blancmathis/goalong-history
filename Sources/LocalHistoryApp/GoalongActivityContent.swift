@@ -20,7 +20,16 @@ struct GoalongWorkStatus: Equatable {
     var passLine: GoalongWorkPassLine.Line? = nil
     /// What the counts cover when it is more than one day (« 7 derniers jours »).
     var scopeNote: String? = nil
+    /// « À classer » of a one-day view, from the same states as the card (waiting, to clarify, too short); nil
+    /// until they are read, or when the view covers several days.
+    var unclassifiedSeconds: TimeInterval? = nil
     static let preview = GoalongWorkStatus()
+
+    /// Pure: the time not classified yet, read off the work states of a single day (review of PR #320, finding 9).
+    static func unclassifiedSeconds(_ seconds: [GoalongWorkState.Bucket: TimeInterval]?, dayCount: Int?) -> TimeInterval? {
+        guard let seconds, dayCount == 1 else { return nil }
+        return [.waiting, .toClarify, .tooShort].reduce(0) { $0 + (seconds[$1] ?? 0) }
+    }
 }
 
 /// The secondary views of Activité. The summary answers « combien, quand, sur quoi » ;
@@ -225,6 +234,11 @@ struct GoalongAnalyticsContent: View {
         }
     }
 
+    /// « À classer » of one day: the work states the card counts when read, so both say the same time.
+    private func dayUnclassified(_ summary: GoalongActivitySummary) -> Double {
+        workStatus.unclassifiedSeconds ?? summary.unclassifiedSeconds
+    }
+
     /// What the big figure holds: work once a verdict exists, else the time left to classify, else nothing (words).
     private func heroFigures(_ summary: GoalongActivitySummary) -> (work: String?, pending: String?) {
         let known = summary.workIsMeasurable || summary.workSeconds > 0
@@ -232,7 +246,7 @@ struct GoalongAnalyticsContent: View {
         let workFigure = GoalongActivityHeadline.workFigure(known: known, seconds: work)
         // R-91 (R4d-11): before any verdict the hero is still a figure, the time left to classify, at the same size.
         let pending = workFigure == nil ? GoalongActivityHeadline.pendingFigure(
-            known: known, seconds: isDay ? summary.unclassifiedSeconds : summary.averagePerDay(.unclassified)) : nil
+            known: known, seconds: isDay ? dayUnclassified(summary) : summary.averagePerDay(.unclassified)) : nil
         return (workFigure, pending)
     }
 
@@ -283,7 +297,7 @@ struct GoalongAnalyticsContent: View {
     private func secondaryFigures(_ summary: GoalongActivitySummary, figures: (work: String?, pending: String?)) -> some View {
         let value: (GoalongLocalAnalytics.Kind) -> Double = { kind in
             guard isDay else { return summary.averagePerDay(kind) ?? 0 }
-            return kind == .other ? summary.otherSeconds : summary.unclassifiedSeconds
+            return kind == .other ? summary.otherSeconds : dayUnclassified(summary)
         }
         let active = isDay ? current.activeSeconds : (summary.averageActivePerDay ?? 0)
         let unit = isDay ? nil : "par jour"
@@ -327,7 +341,7 @@ struct GoalongAnalyticsContent: View {
     private func headlineSplit(_ summary: GoalongActivitySummary, showsPending: Bool = true) -> String {
         let value: (GoalongLocalAnalytics.Kind) -> Double = { kind in
             guard isDay else { return summary.averagePerDay(kind) ?? 0 }
-            return kind == .other ? summary.otherSeconds : summary.unclassifiedSeconds
+            return kind == .other ? summary.otherSeconds : dayUnclassified(summary)
         }
         let active = isDay ? current.activeSeconds : (summary.averageActivePerDay ?? 0)
         var parts = ["sur \(duration(active)) de temps actif"]

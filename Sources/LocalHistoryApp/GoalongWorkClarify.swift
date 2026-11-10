@@ -20,19 +20,20 @@ enum GoalongWorkPassLine {
 
     static func line(isRunning: Bool, progress: String? = nil, waiting: GoalongWorkState.Waiting?, lastPass: Date?,
                      usageToday: GoalongWorkUsage.Day, pendingGroups: Int, now: Date,
-                     calendar: Calendar = .current) -> Line {
+                     margin: Int = GoalongWorkSchedule.minimumCallTokens, calendar: Calendar = .current) -> Line {
         if isRunning { return Line(text: progress ?? "Classement en cours…", linkTitle: nil) }
         if let waiting, waiting != .notYetPassed {
             return Line(text: waiting.message, linkTitle: link(for: waiting))
         }
         let last = lastPass.map { "Dernier passage : \(when($0, now: now, calendar: calendar))" } ?? "Pas encore de passage"
         return Line(text: last + " · Prochain passage : " + next(now: now, usageToday: usageToday, pendingGroups: pendingGroups,
-                                                                  calendar: calendar), linkTitle: nil)
+                                                                  margin: margin, calendar: calendar), linkTitle: nil)
     }
 
     static func link(for waiting: GoalongWorkState.Waiting) -> String? {
         switch waiting {
-        case .noDefinition: return "Écrire ma définition"
+        // The definition card already has « Écrire ma phrase »: one way in, not two for the same action.
+        case .noDefinition: return nil
         case .noConsent: return "Autoriser l’envoi"
         case .notConnected: return "Connecter ChatGPT"
         case .historyOff: return "Voir les réglages"
@@ -56,7 +57,8 @@ enum GoalongWorkPassLine {
     }
 
     /// The next time the background pass may call, from the same rules as `GoalongWorkSchedule.decide`.
-    static func next(now: Date, usageToday: GoalongWorkUsage.Day, pendingGroups: Int, calendar: Calendar = .current) -> String {
+    static func next(now: Date, usageToday: GoalongWorkUsage.Day, pendingGroups: Int,
+                     margin: Int = GoalongWorkSchedule.minimumCallTokens, calendar: Calendar = .current) -> String {
         if pendingGroups == 0 { return "rien à classer pour l’instant" }
         let start = calendar.startOfDay(for: now)
         func slot(_ index: Int, on day: Date) -> Date? {
@@ -64,7 +66,7 @@ enum GoalongWorkPassLine {
                           second: 0, of: day)
         }
         let capped = usageToday.backgroundCalls >= GoalongWorkSchedule.backgroundCallsPerDay
-            || usageToday.tokens + GoalongWorkSchedule.minimumCallTokens > GoalongWorkSchedule.dailyTokenCap
+            || GoalongWorkSchedule.capReached(usageToday, margin: margin)
         if !capped {
             if pendingGroups >= GoalongWorkSchedule.backlogTrigger { return "au prochain contrôle (quelques minutes)" }
             let slots = GoalongWorkSchedule.slots.indices.compactMap { slot($0, on: start) }
@@ -146,7 +148,7 @@ enum GoalongWorkPassLine {
             }.value
             guard operation == id else { return }
             apply(Self.snapshot(observations: observations, verdicts: store.verdicts, groups: store.groupVerdicts,
-                                permits: { filter.label($0) != nil }, blocker: agent.waitingReason(background: true),
+                                permits: { filter.label($0) != nil }, blocker: agent.waitingReason(background: true, sharingBlocked: filter.policy.blocked),
                                 dayCount: days.count))
         }
     }
@@ -465,7 +467,7 @@ enum GoalongWorkUsageText {
     static func quota(day: GoalongWorkUsage.Day, limits: GoalongAccountLimits?) -> String {
         if let before = day.weeklyPercentBefore, let after = day.weeklyPercentAfter {
             return before == after ? "\(GoalongUIFormat.percent(after)) du quota de la semaine utilisés au dernier passage"
-                : "Dernier passage : \(GoalongUIFormat.percent(before)) puis \(GoalongUIFormat.percent(after)) du quota de la semaine"
+                : "Quota de la semaine : \(GoalongUIFormat.percent(before)) avant le dernier passage, \(GoalongUIFormat.percent(after)) après"
         }
         if let weekly = limits?.weeklyPercent { return "\(GoalongUIFormat.percent(weekly)) du quota de la semaine utilisés" }
         return "Part du quota de la semaine : pas encore connue"

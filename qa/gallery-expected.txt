@@ -2950,3 +2950,6 @@ terminal/installe--   # Définition du travail (PR 2) : « Mon travail » quitte
 mon-travail/   # T-049 B1 : interrupteur « Classer en arrière-plan » (nouveau consentement, décoché) et son texte (rythme, plafond, données)
 activite/   # T-049 B1 : « Ouvrir le classement » remplace « Classer… » ; textes du classement en arrière-plan
 settings/   # T-049 B1 : statut ChatGPT lu sur le consentement d'arrière-plan, décoché par défaut
+agenda/jour-avec-donnees--   # T-049 B2/B3 : la page Activité de l'agenda montre la carte des états du classement
+agenda/acces-refuse--   # T-049 B2/B3 : idem, Activité de l'agenda avec la carte des états du classement
+settings-sheets/analyse-   # T-049 B3 : la note du jour sert « au classement automatique » (le mot « agent » disparaît)

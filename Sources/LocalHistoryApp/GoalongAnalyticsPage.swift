@@ -536,14 +536,16 @@ struct GoalongAnalyticsPage: View {
         let lastPass = work.usage.days.values.compactMap(\.lastCallAt).max()
         let line = GoalongWorkPassLine.line(isRunning: agent.isRunning, progress: agent.progress,
                                             waiting: snapshot?.blocker, lastPass: lastPass,
-                                            usageToday: usageToday, pendingGroups: snapshot?.pendingGroups ?? 0, now: now)
+                                            usageToday: usageToday, pendingGroups: snapshot?.pendingGroups ?? 0, now: now,
+                                            margin: agent.callMargin(now: now))
         return GoalongWorkStatus(hasDefinition: !work.definition.isEmpty, isClassifying: agent.isRunning,
             progress: agent.progress, problem: agent.isRunning ? nil : (agent.lastError ?? (agent.readiness == .ready ? nil : agent.readiness.message)),
             classifiesOnOpen: work.backgroundConsent && agent.readiness == .ready,
             definitionText: GoalongWorkDefinitionText.sentence(JevWorkContextStore.shared.context),
             counts: snapshot?.counts,
             seconds: snapshot?.seconds ?? [:], passLine: line,
-            scopeNote: (snapshot?.dayCount ?? 1) > 1 ? "Les \(snapshot?.dayCount ?? 1) derniers jours de la période." : nil)
+            scopeNote: (snapshot?.dayCount ?? 1) > 1 ? "Les \(snapshot?.dayCount ?? 1) derniers jours de la période." : nil,
+            unclassifiedSeconds: GoalongWorkStatus.unclassifiedSeconds(snapshot?.seconds, dayCount: snapshot?.dayCount))
     }
 
     /// The same reading as the recording banner, so the page body never contradicts it.

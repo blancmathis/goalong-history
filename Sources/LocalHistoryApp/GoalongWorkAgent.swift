@@ -130,6 +130,9 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
     @Published private(set) var waiting: GoalongWorkState.Waiting?
     /// The account limits read before and after the last call.
     @Published private(set) var lastLimits: GoalongAccountLimits?
+    /// A manual pass asked while one runs: nothing started, and the page says so until the run ends.
+    @Published private(set) var busyNotice: String?
+    static let busyText = "Un passage est en cours : votre demande n’a pas été lancée. Réessayez quand il sera fini."
 
     /// A background tick arrived during a run: the next tick handles it.
     private var rerunRequested = false
@@ -173,11 +176,32 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
 
     func backgroundTick(now: Date = Date()) {
         guard store.backgroundConsent, !isRunning, readiness == .ready, !ChatGPTRecapRuntime.shared.isBusyWithCodex else { return }
-        classify(day: now, userInitiated: false)
+        classify(days: GoalongWorkSchedule.days(endingOn: now), userInitiated: false)
+    }
+
+    /// The manual pass of Réglages (« Lancer un passage maintenant », « Tout reclasser »): the same days as the
+    /// background pass, oldest pending first, in the same daily cap. Refused with a message while a pass runs;
+    /// `prepare` (erasing the verdicts) then does not run either.
+    @discardableResult func startManualPass(now: Date = Date(), prepare: (() -> Void)? = nil) -> Bool {
+        guard !isRunning else { busyNotice = Self.busyText; return false }
+        prepare?()
+        classify(days: GoalongWorkSchedule.days(endingOn: now), userInitiated: true)
+        return true
+    }
+
+    #if DEBUG
+    /// Tests only: a pass seems to run on `day` (nil: none), without Codex.
+    func setRunningForTesting(_ day: Date?) { runningDay = day }
+    #endif
+
+    /// Room kept for one call today: the mean of the calls Codex measured this week.
+    func callMargin(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        GoalongWorkSchedule.callMargin(store.usage.week(endingOn: Self.dayString(now, calendar: calendar), calendar: calendar))
     }
 
     /// Why the agent cannot classify now, as « en attente » shows it; nil when it can.
-    func waitingReason(background: Bool = true, now: Date = Date()) -> GoalongWorkState.Waiting? {
+    /// `sharingBlocked`: read off the main thread by the caller; nil reads the policy here.
+    func waitingReason(background: Bool = true, now: Date = Date(), sharingBlocked: Bool? = nil) -> GoalongWorkState.Waiting? {
         switch readiness {
         case .noDefinition: return .noDefinition
         case .historyOff: return .historyOff
@@ -186,10 +210,10 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         case .paused: return .paused
         case .ready: break
         }
-        if GoalongPrivacyPolicy.load(in: root).blocked { return .sharingBlocked }
+        if sharingBlocked ?? GoalongPrivacyPolicy.load(in: root).blocked { return .sharingBlocked }
         if lastLimits?.isNear == true { return .accountLimitNear }
         let usage = store.usage.day(Self.dayString(now))
-        if usage.tokens + GoalongWorkSchedule.minimumCallTokens > GoalongWorkSchedule.dailyTokenCap { return .dailyCapReached }
+        if GoalongWorkSchedule.capReached(usage, margin: callMargin(now: now)) { return .dailyCapReached }
         if background, !store.backgroundConsent { return .backgroundConsentMissing }
         if background, usage.backgroundCalls >= GoalongWorkSchedule.backgroundCallsPerDay { return .dailyCapReached }
         if ChatGPTRecapRuntime.shared.isBusyWithCodex { return .codexBusy }
@@ -209,14 +233,21 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         return try? GoalongDayNoteStore.get(root: root, day: day)
     }
 
-    /// One pass over a day: answers known locally first (rules, group verdicts: no call),
-    /// then at most one call for the groups still pending, if the schedule allows it.
-    /// `userInitiated` is the manual pass of Réglages; it counts in the daily token cap.
+    /// One pass over a single day (see `classify(days:)`).
     func classify(day: Date, userInitiated: Bool = true, dayNote: String? = nil) {
+        classify(days: [day], userInitiated: userInitiated, dayNote: dayNote)
+    }
+
+    /// One pass over several days, oldest first: answers known locally first on every day (rules, group
+    /// verdicts: no call), then at most one call, for the oldest day with groups still pending, if the
+    /// schedule allows it. `userInitiated` is the manual pass of Réglages; it counts in the daily token cap.
+    /// The call is counted when it is sent: a call that fails still counts in the cap and in the 2 a day.
+    func classify(days: [Date], userInitiated: Bool = true, dayNote: String? = nil) {
         guard !isRunning else {
-            if !userInitiated { rerunRequested = true }
+            if !userInitiated { rerunRequested = true } else { busyNotice = Self.busyText }
             return
         }
+        guard !days.isEmpty else { return }
         let state = readiness
         guard state == .ready else {
             if userInitiated { lastError = state.message }
@@ -234,45 +265,60 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         }
         if !userInitiated, !store.backgroundConsent { return }
         let calendar = Calendar.current
-        let start = calendar.startOfDay(for: day)
+        let starts = days.map { calendar.startOfDay(for: $0) }.sorted()
         let id = UUID(); operation = id
-        runningDay = start; progress = "Lecture de la journée sur ce Mac…"
+        runningDay = starts.last; progress = starts.count > 1 ? "Lecture des derniers jours sur ce Mac…" : "Lecture de la journée sur ce Mac…"
         if userInitiated { lastError = nil }
         let definition = store.definition, revision = store.revision, root = self.root
         let policy = GoalongPrivacyPolicy.load(in: root), selection = GoalongAnalysisSelection.load(root: root)
         let filter = GoalongWorkSharingFilter(policy: policy, selection: selection)
         let selectionRevision = selection.revision
-        let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
-        let dayName = Self.dayString(start, calendar: calendar)
         let today = Self.dayString(Date(), calendar: calendar)
+        let margin = callMargin(calendar: calendar)
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let observation = await Self.detachedForwardingCancellation(priority: .utility) {
-                    GoalongWorkClassification.observe(root: root, day: start, calendar: calendar,
-                                                      shouldContinue: { !Task.isCancelled })
+                let observations = await Self.detachedForwardingCancellation(priority: .utility) {
+                    starts.map { day in
+                        GoalongWorkClassification.observe(root: root, day: day, calendar: calendar, shouldContinue: { !Task.isCancelled })
+                    }
                 }
                 guard operation == id else { return }
-                guard let observation else {
+                // Every readable day: answers known locally first, then what still needs the agent. Oldest first.
+                var resolvedLocally = 0
+                var readable: [(start: Date, observation: GoalongWorkClassification.Observation,
+                                pending: GoalongWorkClassification.Pending)] = []
+                for (day, observed) in zip(starts, observations) {
+                    guard let observation = observed else { continue }
+                    // Rules and owner answers are matched on what the Mac saw, before any masking.
+                    var labels: [String: GoalongWorkContext.Label] = [:]
+                    for (key, label) in observation.labels {
+                        if let known = store.verdicts.resolution(key: key, label: label), known.source != .agent { continue }
+                        labels[key] = filter.label(label)
+                    }
+                    // A group the agent already judged answers its new members without a call.
+                    let inherited = GoalongWorkClassification.inherited(labels: labels, verdicts: store.verdicts, groups: store.groupVerdicts)
+                    resolvedLocally += store.merge(inherited, revision: revision, day: Self.dayString(day, calendar: calendar)).count
+                    readable.append((day, observation, GoalongWorkClassification.pending(day: observation.day, labels: labels,
+                                                                                          verdicts: store.verdicts, calendar: calendar)))
+                }
+                guard !readable.isEmpty else {
                     throw GoalongWorkClassification.Failure.invalid("La journée n’a pas pu être lue entièrement. Réessayez ; rien n’a été envoyé.")
                 }
-                // Rules and owner answers are matched on what the Mac saw, before any masking.
-                var labels: [String: GoalongWorkContext.Label] = [:]
-                for (key, label) in observation.labels {
-                    if let known = store.verdicts.resolution(key: key, label: label), known.source != .agent { continue }
-                    labels[key] = filter.label(label)
-                }
-                // A group the agent already judged answers its new members without a call.
-                let inherited = GoalongWorkClassification.inherited(labels: labels, verdicts: store.verdicts, groups: store.groupVerdicts)
-                let resolvedLocally = store.merge(inherited, revision: revision, day: dayName).count
-                let pending = GoalongWorkClassification.pending(day: observation.day, labels: labels, verdicts: store.verdicts, calendar: calendar)
+                let totalGroups = readable.reduce(0) { $0 + $1.pending.keys.count }
+                let targetIndex = GoalongWorkSchedule.target(readable.indices.map { (day: $0, groups: readable[$0].pending.keys.count) })
+                let target = readable[targetIndex ?? readable.count - 1]
+                let start = target.start, observation = target.observation, pending = target.pending
+                let dayName = Self.dayString(start, calendar: calendar)
+                let note = dayNote ?? Self.sharedDayNote(root: root, day: start, selection: selection, policy: policy)
                 let usage = store.usage.day(today)
-                switch GoalongWorkSchedule.decide(now: Date(), pendingGroups: pending.keys.count, usage: usage,
-                                                  manual: userInitiated, calendar: calendar) {
+                switch GoalongWorkSchedule.decide(now: Date(), pendingGroups: totalGroups, usage: usage,
+                                                  manual: userInitiated, margin: margin, calendar: calendar) {
                 case .skip(let reason):
                     if userInitiated {
                         if let reason { throw GoalongWorkClassification.Failure.invalid(reason.message) }
-                        finish(id, outcome: "Tout ce qui pouvait être classé le \(GoalongUIFormat.day(start)) l’est déjà.")
+                        finish(id, outcome: starts.count > 1 ? "Tout ce qui pouvait être classé ces \(starts.count) derniers jours l’est déjà."
+                               : "Tout ce qui pouvait être classé le \(GoalongUIFormat.day(start)) l’est déjà.")
                     } else {
                         waiting = reason
                         runningDay = nil; progress = nil
@@ -305,7 +351,8 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 // The account's own limits, read without inference: stop before it runs out.
                 let before = await Task.detached(priority: .userInitiated) { session.readAccountLimits() }.value
                 guard operation == id else { return }
-                if let before { lastLimits = before }
+                // A read that failed leaves nothing shown: an older « limite proche » must not stay.
+                lastLimits = before
                 if before?.isNear == true {
                     waiting = .accountLimitNear
                     throw GoalongWorkClassification.Failure.invalid(GoalongWorkState.Waiting.accountLimitNear.message)
@@ -340,10 +387,15 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                         <= GoalongWorkSchedule.remainingTokens(usage) || batch.count <= 1 { break }
                     batch.removeLast(max(1, batch.count / 4))
                 } while true
-                progress = "L’agent classe \(batch.count) groupe\(batch.count > 1 ? "s" : "") de contextes…"
+                progress = "Classement automatique de \(batch.count) groupe\(batch.count > 1 ? "s" : "") de contextes…"
                 let privacyRevision = filter.policy.revision
                 guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                 let sentPrompt = prompt
+                // Counted when sent, at its estimate: a call that fails (timeout, refused answer, server error)
+                // still counts in the cap and in the calls of the day, so a failing call is never sent again and again.
+                let estimate = GoalongWorkClassification.estimatedTokens(prompt: sentPrompt, contexts: request.contexts.count)
+                store.recordUsage(day: today, at: Date(), tokens: estimate, estimated: true,
+                                  background: !userInitiated, weeklyBefore: before?.weeklyPercent, weeklyAfter: nil)
                 let result = try await Task.detached(priority: .userInitiated) {
                     let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                     defer { try? FileManager.default.removeItem(at: directory) }
@@ -351,11 +403,9 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                                                                   selectionRevision: selectionRevision, workingDirectory: directory)
                 }.value
                 let after = await Task.detached(priority: .utility) { session.readAccountLimits() }.value
-                // Counted even if the answer is refused below: the tokens were spent.
-                let estimate = GoalongWorkClassification.estimatedTokens(prompt: sentPrompt, contexts: request.contexts.count)
-                store.recordUsage(day: today, at: Date(), tokens: result.tokens ?? estimate, estimated: result.tokens == nil,
-                                  background: !userInitiated, weeklyBefore: before?.weeklyPercent, weeklyAfter: after?.weeklyPercent)
-                if let after { lastLimits = after }
+                // The real tokens replace the estimate when Codex reports them.
+                store.settleUsage(day: today, estimate: estimate, tokens: result.tokens, weeklyAfter: after?.weeklyPercent)
+                lastLimits = after
                 guard operation == id else { return }
                 let assignments = try GoalongWorkClassification.apply(result.response, to: request)
                 guard store.revision == revision else {
@@ -370,12 +420,12 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 store.mergeGroups(groups, revision: revision)
                 let classified = applied.count + resolvedLocally
                 let work = applied.values.filter { $0.verdict == .work }.count
-                let rest = pending.keys.count - batch.count
+                let rest = totalGroups - batch.count
                 finish(id, outcome: "\(classified) contexte\(classified > 1 ? "s" : "") classé\(classified > 1 ? "s" : "") le \(GoalongUIFormat.day(start)), dont \(work) de travail."
                     + (rest > 0 ? " \(rest) autre\(rest > 1 ? "s" : "") groupe\(rest > 1 ? "s" : "") au prochain passage." : ""))
             } catch {
                 guard operation == id else { return }
-                runningDay = nil; progress = nil
+                runningDay = nil; progress = nil; busyNotice = nil
                 if !userInitiated, Self.isHomeBusy(error) { waiting = .codexBusy; return }
                 SupportDiagnostics.shared.failure(error, component: .analysis)
                 lastError = (error as? LocalizedError)?.errorDescription ?? "Le classement n’a pas abouti. Réessayez."
@@ -403,12 +453,12 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
 
     func cancel() {
         operation = UUID(); task?.cancel(); session?.close(); session = nil
-        runningDay = nil; progress = nil; rerunRequested = false
+        runningDay = nil; progress = nil; rerunRequested = false; busyNotice = nil
     }
 
     private func finish(_ id: UUID, outcome: String) {
         guard operation == id else { return }
-        lastOutcome = outcome; lastRun = Date(); runningDay = nil; progress = nil
+        lastOutcome = outcome; lastRun = Date(); runningDay = nil; progress = nil; busyNotice = nil
         runPendingRerun()
     }
 

@@ -39,7 +39,6 @@ import SwiftUI
     @StateObject private var review = GoalongWorkReviewModel()
     @State private var confirmingConsent = false
     @State private var confirmingForget = false
-    @State private var classifyWhenConnected = false
     #if DEBUG
     /// Test gallery only: the review opens already loaded, this task unfolded (the page shows it closed).
     static var galleryReviewFocusTask: String?
@@ -87,11 +86,6 @@ import SwiftUI
             // is open only the sheet answers, so the check runs once, not twice.
             if work.backgroundConsent, inSheet || Self.openSheet == nil { agent.backgroundTick() }
         }
-        .onChange(of: runtime.connectionState) { state in
-            guard classifyWhenConnected, case .connected = state else { return }
-            classifyWhenConnected = false
-            agent.classify(day: GoalongToday.now)
-        }
         .onChange(of: agent.isRunning) { running in
             if !running, let day = review.loadedDay { review.load(day: day) }
         }
@@ -99,19 +93,19 @@ import SwiftUI
             Button("Annuler", role: .cancel) {}
             Button("Autoriser") {
                 // The background pass has its own consent, off by default: this one allows the manual pass.
+                // Nothing is sent on its own after this: the owner starts a pass, or allows the background one.
                 if consents.set(.chatGPTAnalysis, enabled: true, surface: .settings) {
                     // The account state was not checked while analysis was off.
-                    classifyWhenConnected = true
                     runtime.refreshAccount(userInitiated: true)
                 }
             }
         } message: {
-            Text("Pour chaque contexte nouveau, Goalong envoie à votre compte ChatGPT le nom de l’app, le site et le titre de la fenêtre, avec sa durée, ainsi que votre définition du travail. Jamais ce que vous tapez, ni de capture d’écran. Vos exclusions et vos choix « Données pour ChatGPT » s’appliquent. Cela active aussi l’autorisation générale Analyse ChatGPT, réglable dans Réglages.")
+            Text(GoalongWorkPage.manualConsentText)
         }
         .confirmationDialog("Tout reclasser avec votre définition actuelle ?", isPresented: $confirmingForget) {
-            Button("Tout reclasser") { work.forgetAgentVerdicts(); agent.classify(day: GoalongToday.now) }
+            Button("Tout reclasser") { agent.startManualPass(now: GoalongToday.now, prepare: { work.forgetAgentVerdicts() }) }
         } message: {
-            Text(["Les verdicts du classement automatique sont effacés et les contextes seront renvoyés au fil de vos consultations d’Activité. Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours.",
+            Text([GoalongWorkPage.reclassifyText,
                   FocusCommitmentRules.reclassifyWarning(GoalongWorkStore.openCommitments(controller: ConcentrationRuntime.shared.controller, store: .standard),
                                                          at: GoalongToday.now)].compactMap { $0 }.joined(separator: "\n\n"))
         }
@@ -157,7 +151,11 @@ import SwiftUI
     }
 
     /// The background consent: rhythm, cap and data sent. The old « automatic » switch never counts.
-    static let backgroundConsentText = "Au plus \(GoalongWorkSchedule.backgroundCallsPerDay) envois par jour, vers 12 h 30 et 18 h 30 ou dès \(GoalongWorkSchedule.backlogTrigger) groupes de contextes en attente, dans la limite de \(GoalongWorkSchedule.dailyTokenCap.formatted(.number.locale(Locale(identifier: "fr_FR")))) jetons par jour, passage manuel compris. Pour chaque groupe nouveau : nom de l’app, site, titre de la fenêtre et durée, avec votre définition du travail et quelques-unes de vos réponses. Jamais ce que vous tapez, ni de capture d’écran. Vos exclusions s’appliquent ; rien ne part en pause, ni près de la limite du compte."
+    static let backgroundConsentText = "Au plus \(GoalongWorkSchedule.backgroundCallsPerDay) envois par jour, vers 12 h 30 et 18 h 30 ou dès \(GoalongWorkSchedule.backlogTrigger) groupes de contextes en attente, sur les \(GoalongWorkSchedule.passDays) derniers jours, dans la limite de \(GoalongWorkSchedule.dailyTokenCap.formatted(.number.locale(Locale(identifier: "fr_FR")))) jetons par jour, passage manuel compris. Un envoi qui échoue compte aussi. \(sentDataText) Vos exclusions s’appliquent ; rien ne part en pause, ni près de la limite du compte."
+    static let manualConsentText = "À chaque passage, Goalong envoie à votre compte ChatGPT les contextes nouveaux. \(sentDataText) Vos exclusions et vos choix « Données pour ChatGPT » s’appliquent. Rien ne part tant que vous ne lancez pas un passage ou n’autorisez pas le classement en arrière-plan. Cela active aussi l’autorisation générale Analyse ChatGPT, réglable dans Réglages."
+    /// Everything a call carries, named the same way in both consents (review of PR #320, finding 4).
+    static let sentDataText = "Pour chaque groupe : nom de l’app, site, titre de la fenêtre et durée, avec les titres de deux fenêtres voisines. Avec : votre définition du travail, quelques-unes de vos réponses, jusqu’à \(GoalongWorkClassification.maximumKnownTasks) noms de vos tâches et la note de la journée. Pour un contexte à redemander, un extrait du texte visible de \(GoalongWorkReassessment.maximumExcerptCharacters) caractères au plus, si « Données pour ChatGPT » le permet. Jamais vos frappes au clavier, ni de capture d’écran."
+    static let reclassifyText = "Les verdicts du classement automatique sont effacés. Les contextes seront renvoyés au prochain passage automatique (ou avec « Lancer un passage maintenant »). Vos corrections sont conservées, ainsi que les contextes d’une tâche suivie par un engagement Concentration en cours."
 
     /// Without consent nothing is classified: the switch reads off, whatever choice it will restore.
     /// Consent is read directly: `readiness` reports an empty definition or history off first.
@@ -205,7 +203,7 @@ import SwiftUI
         }
     }
     private var statusDetail: String? {
-        if agent.isRunning { return agent.progress }
+        if agent.isRunning { return [agent.busyNotice, agent.progress].compactMap { $0 }.joined(separator: "\n") }
         if let error = agent.lastError { return error }
         if agent.readiness != .ready { return agent.readiness.message }
         return agent.lastOutcome ?? "Les contextes nouveaux sont classés automatiquement, deux fois par jour au plus, si vous l’avez autorisé ci-dessus."
@@ -228,25 +226,22 @@ import SwiftUI
                     HStack(spacing: 10) {
                         ProgressView().controlSize(.small)
                         if runtime.isConnecting {
-                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                            Button("Annuler") { runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
                 } else {
                     HStack(spacing: 10) {
                         if runtime.isConnecting {
-                            Button("Annuler") { classifyWhenConnected = false; runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
+                            Button("Annuler") { runtime.cancelChatGPTConnection() }.buttonStyle(LHSecondaryButtonStyle())
                         }
-                        Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") {
-                            classifyWhenConnected = true
-                            runtime.connectChatGPT()
-                        }
+                        Button(runtime.isConnecting ? "Connexion…" : "Connecter ChatGPT") { runtime.connectChatGPT() }
                             .buttonStyle(LHPrimaryButtonStyle()).disabled(runtime.isConnecting)
                     }
                 }
             case .historyOff:
                 Button("Ouvrir les réglages") { model.openRecordingSettings() }.buttonStyle(LHSecondaryButtonStyle())
             case .ready:
-                Button("Lancer un passage maintenant") { agent.classify(day: GoalongToday.now) }.buttonStyle(LHSecondaryButtonStyle())
+                Button("Lancer un passage maintenant") { agent.startManualPass(now: GoalongToday.now) }.buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("work-classify-today")
             case .paused, .noDefinition:
                 EmptyView()

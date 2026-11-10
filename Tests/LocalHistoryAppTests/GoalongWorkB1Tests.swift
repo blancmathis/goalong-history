@@ -26,7 +26,7 @@
 
         func testBackgroundConsentTextStatesRhythmCapAndData() {
             let text = GoalongWorkPage.backgroundConsentText
-            for part in ["2 envois par jour", "12 h 30", "18 h 30", "40 groupes", "24", "jetons", "titre de la fenêtre", "Jamais ce que vous tapez"] {
+            for part in ["2 envois par jour", "12 h 30", "18 h 30", "40 groupes", "24", "jetons", "titre de la fenêtre", "Jamais vos frappes au clavier"] {
                 XCTAssertTrue(text.contains(part), part)
             }
         }

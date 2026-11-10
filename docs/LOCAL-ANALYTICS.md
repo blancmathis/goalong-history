@@ -85,6 +85,7 @@ Les écritures de l’app passent par la même barrière que les autres données
 
 Ouvrir Activité ne déclenche plus de classement ; la carte d’Activité montre trois états (classé, en attente, à préciser) et une feuille « À préciser » pour répondre aux questions (voir `WORK_DEFINITION.md`). Le classement des contextes passe en
 arrière-plan (2 appels par jour au plus, 24 000 jetons par jour) seulement avec son propre
-consentement, ou à la main depuis Réglages (voir `WORK_DEFINITION.md`). La lecture des
+consentement, ou à la main depuis Réglages (voir `WORK_DEFINITION.md`). Sur une journée, le chiffre « À classer »
+vient des mêmes états que la carte (en attente, à préciser, trop court). La lecture des
 mesures ne lance aucun agent ni envoi au site et n’ajoute aucun consentement. Les rapports déjà conservés
 restent des interprétations ; ils ne changent pas les intervalles observés.

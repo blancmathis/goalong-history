@@ -221,10 +221,11 @@ public enum GoalongWorkSchedule {
         case skip(GoalongWorkState.Waiting?)
     }
 
+    /// `margin`: the tokens one call is expected to use (`callMargin`), so the real count stays under the cap.
     public static func decide(now: Date, pendingGroups: Int, usage: GoalongWorkUsage.Day, manual: Bool,
-                              calendar: Calendar = .current) -> Decision {
+                              margin: Int = minimumCallTokens, calendar: Calendar = .current) -> Decision {
         guard pendingGroups > 0 else { return .skip(nil) }
-        guard usage.tokens + minimumCallTokens <= dailyTokenCap else { return .skip(.dailyCapReached) }
+        guard !capReached(usage, margin: margin) else { return .skip(.dailyCapReached) }
         if manual { return .call(.manual) }
         guard usage.backgroundCalls < backgroundCallsPerDay else { return .skip(.dailyCapReached) }
         if pendingGroups >= backlogTrigger { return .call(.backlog) }
@@ -237,6 +238,30 @@ public enum GoalongWorkSchedule {
 
     /// Tokens left today for one call.
     public static func remainingTokens(_ usage: GoalongWorkUsage.Day) -> Int { max(0, dailyTokenCap - usage.tokens) }
+
+    /// True when no further call fits today: the real (or estimated) tokens plus one call's margin pass the cap.
+    public static func capReached(_ usage: GoalongWorkUsage.Day, margin: Int = minimumCallTokens) -> Bool {
+        usage.tokens + max(minimumCallTokens, margin) > dailyTokenCap
+    }
+
+    /// Room kept for one call: the mean of the calls Codex measured (the week given), never below `minimumCallTokens`.
+    public static func callMargin(_ week: GoalongWorkUsage.Day) -> Int {
+        guard week.measuredCalls > 0 else { return minimumCallTokens }
+        return max(minimumCallTokens, (week.measuredTokens + week.measuredCalls - 1) / week.measuredCalls)
+    }
+
+    /// Days a pass looks at: the last `passDays` days ending on `now`, oldest first, so contexts left
+    /// waiting on a past day are classified before today's.
+    public static let passDays = 7
+    public static func days(endingOn now: Date, calendar: Calendar = .current) -> [Date] {
+        let start = calendar.startOfDay(for: now)
+        return (0..<passDays).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: start) }
+    }
+
+    /// The day the one call of a pass goes to: the oldest with pending groups. `pending` is oldest first.
+    public static func target<Day>(_ pending: [(day: Day, groups: Int)]) -> Day? {
+        pending.first { $0.groups > 0 }?.day
+    }
 }
 
 /// Calls and tokens of the classification, kept on the Mac (14 days).
@@ -251,8 +276,29 @@ public struct GoalongWorkUsage: Codable, Equatable, Sendable {
         /// Weekly share of the account used, in percent, before and after the last call.
         public var weeklyPercentBefore: Int?
         public var weeklyPercentAfter: Int?
+        /// Calls whose tokens Codex reported, and those tokens: the mean sets the margin of the cap.
+        public var measuredCalls = 0
+        public var measuredTokens = 0
         public init() {}
         public var isEstimate: Bool { estimatedCalls > 0 }
+
+        private enum CodingKeys: String, CodingKey {
+            case calls, backgroundCalls, tokens, estimatedCalls, lastCallAt, weeklyPercentBefore, weeklyPercentAfter
+            case measuredCalls, measuredTokens
+        }
+        /// A file written before a field existed still loads, with its counts kept.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            calls = try c.decodeIfPresent(Int.self, forKey: .calls) ?? 0
+            backgroundCalls = try c.decodeIfPresent(Int.self, forKey: .backgroundCalls) ?? 0
+            tokens = try c.decodeIfPresent(Int.self, forKey: .tokens) ?? 0
+            estimatedCalls = try c.decodeIfPresent(Int.self, forKey: .estimatedCalls) ?? 0
+            lastCallAt = try c.decodeIfPresent(Date.self, forKey: .lastCallAt)
+            weeklyPercentBefore = try c.decodeIfPresent(Int.self, forKey: .weeklyPercentBefore)
+            weeklyPercentAfter = try c.decodeIfPresent(Int.self, forKey: .weeklyPercentAfter)
+            measuredCalls = try c.decodeIfPresent(Int.self, forKey: .measuredCalls) ?? 0
+            measuredTokens = try c.decodeIfPresent(Int.self, forKey: .measuredTokens) ?? 0
+        }
     }
     public static let keptDays = 14
     public var days: [String: Day] = [:]
@@ -266,13 +312,27 @@ public struct GoalongWorkUsage: Codable, Equatable, Sendable {
         value.calls += 1
         if background { value.backgroundCalls += 1 }
         value.tokens += max(0, tokens)
-        if estimated { value.estimatedCalls += 1 }
+        if estimated { value.estimatedCalls += 1 } else { value.measuredCalls += 1; value.measuredTokens += max(0, tokens) }
         value.lastCallAt = date
-        value.weeklyPercentBefore = weeklyBefore ?? value.weeklyPercentBefore
-        value.weeklyPercentAfter = weeklyAfter ?? value.weeklyPercentAfter
+        // The pair describes the last call only: an older « after » must not stand beside a new « before ».
+        value.weeklyPercentBefore = weeklyBefore
+        value.weeklyPercentAfter = weeklyAfter
         days[key] = value
         let kept = Set(days.keys.sorted().suffix(Self.keptDays))
         days = days.filter { kept.contains($0.key) }
+    }
+
+    /// Replaces the estimate counted when a call was sent by the tokens Codex reported, once the answer came.
+    /// A call that failed keeps its estimate: it still counts.
+    public mutating func settle(day key: String, estimate: Int, tokens: Int?, weeklyAfter: Int?) {
+        guard var value = days[key] else { return }
+        if let tokens {
+            value.tokens = max(0, value.tokens - max(0, estimate) + max(0, tokens))
+            value.estimatedCalls = max(0, value.estimatedCalls - 1)
+            value.measuredCalls += 1; value.measuredTokens += max(0, tokens)
+        }
+        value.weeklyPercentAfter = weeklyAfter ?? value.weeklyPercentAfter
+        days[key] = value
     }
 
     /// The seven days ending on `key` (yyyy-MM-dd).
@@ -287,6 +347,7 @@ public struct GoalongWorkUsage: Codable, Equatable, Sendable {
             let value = day(formatter.string(from: date))
             total.calls += value.calls; total.backgroundCalls += value.backgroundCalls
             total.tokens += value.tokens; total.estimatedCalls += value.estimatedCalls
+            total.measuredCalls += value.measuredCalls; total.measuredTokens += value.measuredTokens
             if let last = value.lastCallAt, (total.lastCallAt ?? .distantPast) < last { total.lastCallAt = last }
         }
         return total

@@ -172,7 +172,8 @@ final class GoalongWorkRulesTests: XCTestCase {
         let today = usage.day("2026-09-10")
         XCTAssertEqual(today.tokens, 11_000); XCTAssertEqual(today.calls, 2); XCTAssertEqual(today.backgroundCalls, 1)
         XCTAssertTrue(today.isEstimate)
-        XCTAssertEqual(today.weeklyPercentBefore, 10); XCTAssertEqual(today.weeklyPercentAfter, 11)
+        // The weekly pair describes the last call only (review of PR #320): the second call read no share.
+        XCTAssertNil(today.weeklyPercentBefore); XCTAssertNil(today.weeklyPercentAfter)
         XCTAssertEqual(usage.week(endingOn: "2026-09-10", calendar: calendar).tokens, 15_000)
         for offset in 0..<20 { usage.record(day: String(format: "2026-10-%02d", offset + 1), at: day, tokens: 1, estimated: false, background: true) }
         XCTAssertEqual(usage.days.count, GoalongWorkUsage.keptDays)

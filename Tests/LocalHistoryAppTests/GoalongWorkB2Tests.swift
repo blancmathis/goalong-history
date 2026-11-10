@@ -32,7 +32,7 @@
 
         func testWaitingReasonComesWithTheLinkThatLiftsIt() {
             let cases: [(GoalongWorkState.Waiting, String?)] = [
-                (.noDefinition, "Écrire ma définition"), (.noConsent, "Autoriser l’envoi"), (.notConnected, "Connecter ChatGPT"),
+                (.noDefinition, nil), (.noConsent, "Autoriser l’envoi"), (.notConnected, "Connecter ChatGPT"),
                 (.historyOff, "Voir les réglages"), (.backgroundConsentMissing, "Autoriser le classement automatique"),
                 (.dailyCapReached, nil), (.paused, nil), (.accountLimitNear, nil), (.codexBusy, nil), (.sharingBlocked, nil)]
             for (waiting, link) in cases {
@@ -135,7 +135,7 @@
             XCTAssertTrue(GoalongWorkUsageText.total(day).hasSuffix("2 passages"))
             XCTAssertEqual(GoalongWorkUsageText.total(none), "Aucun passage")
             day.weeklyPercentBefore = 10; day.weeklyPercentAfter = 12
-            XCTAssertEqual(GoalongWorkUsageText.quota(day: day, limits: nil), "Dernier passage : 10 % puis 12 % du quota de la semaine")
+            XCTAssertEqual(GoalongWorkUsageText.quota(day: day, limits: nil), "Quota de la semaine : 10 % avant le dernier passage, 12 % après")
             XCTAssertEqual(GoalongWorkUsageText.quota(day: none, limits: nil), "Part du quota de la semaine : pas encore connue")
             XCTAssertTrue(GoalongWorkUsageText.cap.contains("24"))
         }

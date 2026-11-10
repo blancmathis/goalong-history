@@ -78,8 +78,17 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   12 h 30 et 18 h 30 s’il reste quelque chose. Plafond **24 000 jetons par jour**, passage
   manuel compris. Rien en pause, pendant un bilan, quand Codex est occupé, ni quand le
   compte approche de sa limite (≥ 90 % d’une fenêtre, lue par `account/rateLimits/read`,
-  sans inférence). Le passage manuel « Classer aujourd’hui » vit dans Réglages → Définition
-  du travail ; Activité n’envoie plus rien à l’ouverture.
+  sans inférence ; une lecture qui échoue efface l’état affiché). Le passage manuel
+  « Lancer un passage maintenant » vit dans Réglages → Définition du travail ; Activité
+  n’envoie plus rien à l’ouverture, ni la connexion ChatGPT. Un clic pendant un passage
+  n’est pas lancé et la page le dit.
+- Jours couverts : les 7 derniers jours, les plus anciens d’abord. Les réponses connues
+  (règles, groupes) s’appliquent à chaque jour ; le seul appel va au jour le plus ancien
+  qui a des groupes en attente, dans le même budget.
+- Comptage : un appel est compté **dès l’envoi**, à son estimation ; un échec compte donc
+  dans le plafond et dans les 2 appels du jour. Les jetons réels de Codex remplacent
+  l’estimation à la réponse. La marge gardée pour un appel est la moyenne réelle de la
+  semaine (5 000 au moins).
 - Conditions : définition non vide, historique activé, consentement « Analyse ChatGPT »,
   compte ChatGPT connecté, pas de pause globale.
 - Envoi : **un appel par passage**, 60 groupes au plus, les plus longs d’abord, réduit
@@ -87,6 +96,10 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
   app, site, titre (secrets masqués), minutes du groupe, 2 voisins (précédent, suivant) ;
   plus la définition, 20 tâches connues au plus et les **10 réponses de l’utilisateur les
   plus proches** (même site, puis même app).
+  Avec aussi la note de la journée (si elle est incluse) et, pour un contexte à redemander,
+  un extrait du texte visible (240 caractères au plus, si « Données pour ChatGPT » le
+  permet). Les deux textes d’accord nomment toutes ces données ; l’accord d’arrière-plan
+  est en version 2 (à redonner).
 - Filtre de confidentialité (`GoalongWorkSharingFilter`) : exclusions globales, puis
   sélection « Données pour ChatGPT » si elle est confirmée (apps autorisées, sites exclus,
   titres et sites autorisés, remplacements de noms). Un contexte filtré reste à classer.

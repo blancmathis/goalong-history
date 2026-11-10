@@ -90,7 +90,7 @@ extension Notification.Name {
         }
     }
     /// Raise when the background consent text changes meaning: an older consent no longer counts.
-    static let backgroundConsentVersion = 1
+    static let backgroundConsentVersion = 2
     nonisolated static let usageFileName = "work-classification-usage.json"
 
     @Published private(set) var verdicts = GoalongWorkVerdicts()
@@ -250,6 +250,16 @@ extension Notification.Name {
                      weeklyBefore: Int?, weeklyAfter: Int?) {
         usage.record(day: day, at: date, tokens: tokens, estimated: estimated, background: background,
                      weeklyBefore: weeklyBefore, weeklyAfter: weeklyAfter)
+        saveUsage()
+    }
+
+    /// The real tokens of a call already counted at its estimate when it was sent.
+    func settleUsage(day: String, estimate: Int, tokens: Int?, weeklyAfter: Int?) {
+        usage.settle(day: day, estimate: estimate, tokens: tokens, weeklyAfter: weeklyAfter)
+        saveUsage()
+    }
+
+    private func saveUsage() {
         do {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; encoder.dateEncodingStrategy = .iso8601
             try encoder.encode(usage).write(to: usageURL, options: [.atomic])
