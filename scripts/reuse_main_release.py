@@ -75,6 +75,16 @@ def publisher_tag(manifest):
     return f"main-{int(publisher['runId'])}-{int(publisher['runAttempt'])}"
 
 
+def capture(sha, tag):
+    # The DMG, its digest and the feed live only in the rolling release, which the next main
+    # push replaces. Copy them now; release.yml hands this copy to verify(), which checks it all.
+    DIST.mkdir(parents=True, exist_ok=True)
+    run('gh', 'release', 'download', ROLLING, '--repo', REPO, '--dir', DIST, '--clobber',
+        *sum((['--pattern', name] for name in [*PUBLISHED, FEED]), []))
+    manifest = json.loads((DIST / 'release-manifest.json').read_text())
+    return manifest.get('sourceCommit') == sha and publisher_tag(manifest) == tag
+
+
 def locate(sha, version):
     deadline = time.monotonic() + WAIT_SECONDS
     while True:
@@ -85,6 +95,9 @@ def locate(sha, version):
                 summary(f'main published {sha} as {got}, not {version}: full build fallback.')
                 return output(found='false')
             tag = publisher_tag(manifest)
+            if not capture(sha, tag):
+                summary(f'{ROLLING} moved past {sha} while it was being copied: full build fallback.')
+                return output(found='false')
             summary(f'Reusing the {version} generation main published for {sha} ({tag}).')
             return output(found='true', tag=tag)
         runs = api(f'actions/workflows/{WORKFLOW}/runs?head_sha={sha}&event=push&per_page=20')['workflow_runs']
@@ -126,8 +139,9 @@ def verify(sha, version, tag):
     require(re.fullmatch(r'[0-9a-f]{40}', sha), 'full source SHA required')
     tree = local_deploy_policy.tree_for(sha)
 
-    run('gh', 'release', 'download', ROLLING, '--repo', REPO, '--dir', DIST, '--clobber',
-        *sum((['--pattern', name] for name in [*PUBLISHED, FEED]), []))
+    # DIST holds the copy locate() took from the rolling release; every check below applies to it.
+    for name in [*PUBLISHED, FEED]:
+        require((DIST / name).is_file(), f'{name} was not captured by locate')
     run('gh', 'release', 'download', tag, '--repo', REPO, '--dir', immutable, '--clobber',
         '--pattern', f'{ARCHIVE}.sha256', '--pattern', 'public-verification.json',
         '--pattern', 'Goalong-History-macOS-universal-from-*.delta')

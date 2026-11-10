@@ -116,6 +116,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/reuse_main_release.py locate "${{ steps.source.outputs.sha }}" "${{ steps.source.outputs.version }}"
 
+      - name: Hand the captured main generation to reuse
+        if: steps.locate.outputs.found == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: main-generation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/Goalong-History-macOS-universal.dmg
+            dist/Goalong-History-macOS-universal.dmg.sha256
+            dist/Goalong-History-macOS-universal.zip
+            dist/Goalong-History-macOS-universal.zip.sha256
+            dist/security-capabilities.json
+            dist/sbom.spdx.json
+            dist/release-manifest.json
+            dist/community-appcast.xml
+          if-no-files-found: error
+          retention-days: 1
+
   reuse:
     needs: locate
     if: needs.locate.outputs.found == 'true'
@@ -129,6 +146,12 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+
+      - name: Receive the main generation captured by locate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: main-generation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist
 
       - name: Verify the published main generation before reuse
         run: python3 scripts/reuse_main_release.py verify "${{ needs.locate.outputs.sha }}" "$VERSION" "${{ needs.locate.outputs.tag }}"
