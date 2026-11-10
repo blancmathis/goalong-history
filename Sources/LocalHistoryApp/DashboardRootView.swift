@@ -120,10 +120,8 @@
                 GoalongWorkPage(model: model)
             case .history:
                 UnifiedHistoryPage(model: model)
-            case .concentration, .distractions:
-                ConcentrationHubPage(model: model)
-            case .blocking, .braise:
-                SafeguardsPage(model: model)
+            case .concentration, .distractions, .blocking, .braise:
+                BlocagesPage(model: model)
             case .activity:
                 ActivityPage(
                     model: model,
@@ -439,7 +437,7 @@
     }
 
     extension DashboardSection {
-        static let primarySections: [DashboardSection] = [.overview, .work, .history, .concentration, .blocking, .settings]
+        static let primarySections: [DashboardSection] = [.overview, .work, .history, .blocking, .settings]
 
         /// R-80: « 1 modification en attente : clics » or « 3 modifications en attente : clics, défilement… ».
         /// R-73 (R4d-9): the one global sign of a sound download, on Ambiance's row; the page keeps its own text.
@@ -469,7 +467,7 @@
         }
 
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.
-        /// Garde-fous (Blocages, Écran rouge) has its own entry; Distractions lives in Concentration's tabs.
+        /// « Blocages » is one entry: Concentration, Distractions, Garde-fous and Écran rouge are parts of its page.
         /// R-73 (R9A-33): a disabled module's page that is open keeps its entry, selected, until the user leaves it.
         static func sidebarSections(modules: Set<GoalongModule>, showing: DashboardSection? = nil) -> [DashboardSection] {
             var sections = primarySections
@@ -483,7 +481,7 @@
             case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Garde-fous"
+            case .blocking: return "Blocages"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"
@@ -503,9 +501,7 @@
             switch self {
             case .overview, .analytics, .chatGPTRecap, .share:
                 return .overview
-            case .concentration, .distractions:
-                return .concentration
-            case .blocking, .braise: return .blocking
+            case .concentration, .distractions, .blocking, .braise: return .blocking
             case .ambiance:
                 return .ambiance
             case .work:

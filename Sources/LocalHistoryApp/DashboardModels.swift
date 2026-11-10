@@ -28,9 +28,8 @@
         var keptPage: String {
             switch self {
             case .overview, .analytics: return "activity"
-            case .concentration, .distractions: return "concentration"
-            // T-048 B2: Garde-fous = Blocages + Écran rouge, one page.
-            case .blocking, .braise: return "safeguards"
+            // One page « Blocages » draws Concentration, Distractions, Garde-fous and Écran rouge (spec-blocages-20261110).
+            case .concentration, .distractions, .blocking, .braise: return "blocages"
             case .settings, .monitoring: return "settings"
             default: return rawValue
             }
@@ -45,7 +44,7 @@
         }
 
         /// R14a: the main pages built at rest after launch (DashboardKeptPages `preheat`), in this order.
-        static let preheated: [DashboardSection] = [.overview, .history, .work, .concentration, .settings]
+        static let preheated: [DashboardSection] = [.overview, .history, .work, .blocking, .settings]
 
         var title: String {
             switch self {
@@ -54,7 +53,7 @@
             case .work: return "Mon travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Garde-fous"
+            case .blocking: return "Blocages"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"

@@ -134,16 +134,17 @@ final class ViewSwitchBudgetTests: XCTestCase {
     /// reference timed just before and after that pass.
     /// Warm ratios (R14a) = highest seen / 0.7 over 5 Mac runs, 1 `make check` and PR CI 35251da. Highest warm seen
     /// again at R14c (4 Mac runs, debug, test alone): 1 j 2.37 · 7 j 2.16 · 28 j 4.57 · overview 1.25 · settings 1.10 ·
-    /// history 1.39 · work 0.71 · concentration 0.39.
+    /// history 1.39 · work 0.71 · concentration 0.39 (the hub; the page « Blocages » took its place on 2026-11-10:
+    /// blocking 0.73).
     /// Cold ratios (R14c) = highest seen / 0.7 over those 4 runs and 2 more (load 17-22): 1 j 2.53 · 7 j 3.30 ·
     /// 28 j 7.43 · overview 1.19. The sidebar pages other than the overview are not Activité's: their cold stays the
     /// block at the click (R14a; their own later reads are two-moded, history 20 or 37 ms), highest seen settings 0.89 ·
-    /// history 0.60 · work 0.91 · concentration 0.55 (work and concentration widened to keep 30 %). Before R14c the first Activité click waited on
+    /// history 0.60 · work 0.91 · blocking 0.58 (the page « Blocages »; work and blocking widened to keep 30 %). Before R14c the first Activité click waited on
     /// EventKit's permission answer (×2-3 in cold): its budgets were 9.7-20 × ref and let that wait through.
     static let switchBudgetRatios: [String: (warm: Double, cold: Double)] = [
         "activite-1j": (warm: 3.6, cold: 3.6), "activite-7j": (warm: 3.3, cold: 4.7), "activite-28j": (warm: 6.8, cold: 10.6),
         "overview": (warm: 1.9, cold: 1.7), "settings": (warm: 1.7, cold: 1.5), "history": (warm: 2.1, cold: 0.9),
-        "work": (warm: 1.15, cold: 1.3), "concentration": (warm: 0.75, cold: 0.8),
+        "work": (warm: 1.15, cold: 1.3), "blocking": (warm: 1.1, cold: 0.85),
     ]
 
     /// R14c: the reference is timed 6 times in a run (before the first pass, then after each). When the slowest of the
@@ -191,7 +192,7 @@ final class ViewSwitchBudgetTests: XCTestCase {
 
             var samples: [ViewSwitchTimingTests.Sample] = []
             var references: [Double] = [Self.referenceMs()]
-            let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .overview]
+            let sections: [DashboardSection] = [.settings, .history, .work, .blocking, .overview]
             for pass in 0..<5 {
                 for period in ["7", "28", "1"] {
                     let button = try XCTUnwrap(ViewSwitchTimingTests.periodButton(period, in: host), "no period \(period)")
