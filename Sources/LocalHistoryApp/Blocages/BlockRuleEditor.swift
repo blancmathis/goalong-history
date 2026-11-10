@@ -641,7 +641,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 }
             }
             if let reason {
-                greyed(reason, id: "red")
+                // Jev: « Bloquer » already says it, once for the three blocks.
+                if reason != blockUnavailable { greyed(reason, id: "red") }
                 if braise == nil, trigger != .jev, trigger != .session || !usesFocus {
                     Button("Préparer l’écran rouge", action: onPrepareRed).buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("block-rule-prepare-red")
@@ -694,6 +695,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 BlockingLockExplainer(lock: stopLevel)
             }
             let reasons = BlockLock.ordered.compactMap { lock in lockUnavailable(lock).map { (lock, $0) } }
+                .filter { _ in trigger != .jev } // Jev: the explainer above already says it
             ForEach(Array(Set(reasons.map(\.1))).sorted(), id: \.self) { reason in
                 greyed(reason, id: "stop")
             }
