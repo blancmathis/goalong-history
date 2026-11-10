@@ -184,21 +184,21 @@ usage. Read [the exact privacy, token and observation limits](docs/JEV-MONITORIN
 
 ## Native dashboard
 
-The SwiftUI dashboard sidebar has five fixed destinations (⌘1 to ⌘4 and ⌘, in the Présentation menu):
+The SwiftUI dashboard sidebar has four fixed destinations (⌘1 to ⌘3 and ⌘, in the Présentation menu):
 
 - **Activité** (⌘1) — runtime state, daily metrics, top applications, coverage, local focus
   proxies, hourly/daily charts, 1/7/28-day trends and usage breakdowns, without opening the
   website. See [definitions and coverage limits](docs/LOCAL-ANALYTICS.md);
-- **Mon travail** (⌘2) — your own definition of work and the per-context classification you can
-  correct. See [WORK_DEFINITION.md](docs/WORK_DEFINITION.md);
-- **Historique** (⌘3) — one selected-day view with an all-sources timeline and filters for causal
+- **Historique** (⌘2) — one selected-day view with an all-sources timeline and filters for causal
   [Computer History](docs/COMPUTER_HISTORY_PARITY.md), Apple Screen Time and
   [AI conversations](Features/AgentActivity/README.md);
-- **Concentration** (⌘4) — tabs **Maintenant** (focus sessions, Pomodoro, plan and review),
-  **Distractions** (your site and app lists) and **Programme** (the optional Blocage module's
-  weekly program);
-- **Réglages** (⌘,) — ChatGPT connection, Jev monitoring and a short progressive-disclosure list
-  for recording, sources, privacy, permissions and expert controls.
+- **Blocages** (⌘3) — one page for every block rule: a trigger (now, a weekly range, Jev), what it
+  does (site and app lists, red screen, locked brightness) and how hard it is to stop. It also holds
+  the lists, the focus sessions and the Jev rule. See [the spec](docs/spec-blocages-20261110.md);
+- **Réglages** (⌘,) — ChatGPT connection, **Définition du travail** (your own definition of work and
+  the per-context classification you can correct, see [WORK_DEFINITION.md](docs/WORK_DEFINITION.md))
+  and a short progressive-disclosure list for recording, sources, privacy, permissions and expert
+  controls.
 
 The optional **Ambiance** and **Braise** modules add their own sidebar entry before Réglages only
 while they are enabled; they have no numbered shortcut.

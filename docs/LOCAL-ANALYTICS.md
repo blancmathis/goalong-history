@@ -14,7 +14,7 @@ Aucune ne rajoute de secondes au temps actif.
 - Travail, Hors travail et À classer partitionnent ce temps. La définition de travail
   de l’utilisateur, appliquée aux contextes par l’agent, fournit les verdicts ; aucune
   application n’est jugée productive. Les corrections s’appliquent à la lecture et les
-  journaux ne sont pas réécrits. Voir [Mon travail](WORK_DEFINITION.md).
+  journaux ne sont pas réécrits. Voir [Définition du travail](WORK_DEFINITION.md).
 - La politique de présence enregistrée dans chaque événement moderne garde une fenêtre
   visible active jusqu’à l’expiration du délai de lecture choisi. Zéro correspond au
   mode écran allumé choisi explicitement. Une observation invisible ou une politique

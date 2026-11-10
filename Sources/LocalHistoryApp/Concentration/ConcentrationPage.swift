@@ -897,7 +897,7 @@ struct FocusThreadModel: Equatable {
                         .frame(width: 120)
                         .accessibilityLabel("Projet")
                         .onSubmit(add)
-                        .help("Facultatif. Relié par son nom à une tâche de « Mon travail » pour mesurer le temps.")
+                        .help("Facultatif. Relié par son nom à une tâche de « Définition du travail » pour mesurer le temps.")
                 }
                 addField("Durée estimée (min)") {
                     TextField("", text: $newEstimate)
@@ -1114,7 +1114,7 @@ struct FocusThreadModel: Equatable {
                     if let limitError {
                         Text(limitError).font(.system(size: 12)).foregroundStyle(LHTheme.warning)
                     }
-                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail compté suit votre définition dans Mon travail ; sans définition, Goalong compte tout le temps actif.")
+                    Text("Sans valeur, pas de limite. Goalong prévient une fois, sans jamais bloquer le travail. Le travail compté suit votre définition du travail ; sans définition, Goalong compte tout le temps actif.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

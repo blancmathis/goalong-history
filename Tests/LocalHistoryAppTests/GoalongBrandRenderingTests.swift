@@ -417,42 +417,41 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let controller = NSHostingController(rootView: LocalHistoryDashboardView(model: model))
         window.contentViewController = controller
         window.makeKeyAndOrderFront(nil); pump()
-        // Jev lives in Réglages › Jev, reached from the Settings home.
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("sidebar-settings", within: window)).accessibilityPerformPress()); pump()
-        let entry = try XCTUnwrap(accessibleElement("settings-jev", within: window))
+        // Jev is a rule of the page « Blocages »: its row opens the rule's editor, a sheet over the page.
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("sidebar-blocking", within: window)).accessibilityPerformPress()); pump()
+        let entry = try XCTUnwrap(accessibleElement("blocages-rule-jev", within: window))
         XCTAssertGreaterThanOrEqual(entry.accessibilityFrame().height, 44)
-        XCTAssertTrue(entry.accessibilityPerformPress()); pump()
-        XCTAssertEqual(model.navigationStore.selectedSection, .settings)
-        XCTAssertEqual(model.navigationStore.settingsPane, .jev)
+        XCTAssertTrue(entry.accessibilityPerformPress()); pump(); pump()
+        XCTAssertEqual(model.navigationStore.selectedSection, .blocking)
+        var editor = try XCTUnwrap(window.attachedSheet)
         let offState = consents.document
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            window.appearance = app.appearance
-            for size in [NSSize(width: 900, height: 620), NSSize(width: 1240, height: 790)] {
-                window.setContentSize(size); pump()
-                let connect = try XCTUnwrap(accessibleElement("jev-open-connection", within: window))
-                XCTAssertGreaterThan(connect.accessibilityFrame().width, 70)
-                XCTAssertNotNil(accessibleElement("jev-enabled", within: window))
-                XCTAssertNil(accessibleElement("jev-break-10", within: window), "No break is offered while monitoring is off")
-                try snapshot(controller.view, to: output.appendingPathComponent("monitoring-setup-\(dark ? "dark" : "light")-\(Int(size.width)).png"))
-            }
+            window.appearance = app.appearance; editor.appearance = app.appearance; pump()
+            let connect = try XCTUnwrap(accessibleElement("jev-open-connection", within: editor))
+            XCTAssertGreaterThan(connect.accessibilityFrame().width, 70)
+            XCTAssertNotNil(accessibleElement("jev-enabled", within: editor))
+            XCTAssertNil(accessibleElement("jev-break-10", within: editor), "No break is offered while monitoring is off")
+            try snapshot(try XCTUnwrap(editor.contentView), to: output.appendingPathComponent("monitoring-setup-\(dark ? "dark" : "light").png"))
         }
-        XCTAssertEqual(consents.document, offState, "Opening or rendering the page must not grant consent")
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-recording", within: window)).accessibilityPerformPress())
-        pump()
+        XCTAssertEqual(consents.document, offState, "Opening or rendering the rule must not grant consent")
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-recording", within: editor)).accessibilityPerformPress())
+        pump(); pump()
+        XCTAssertNil(window.attachedSheet, "The link closes the rule before it changes page")
         XCTAssertEqual(model.navigationStore.selectedSection, .settings)
         XCTAssertEqual(model.navigationStore.settingsPane, .recording)
-        // The old destination (menu bar, notifications) opens the same pane.
-        model.selectSection(.monitoring); pump()
-        XCTAssertEqual(model.navigationStore.settingsPane, .jev)
-        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-connection", within: window)).accessibilityPerformPress())
+        // The old destination (menu bar, notifications) opens the same rule.
+        model.selectSection(.monitoring); pump(); pump()
+        XCTAssertEqual(model.navigationStore.selectedSection, .monitoring)
+        editor = try XCTUnwrap(window.attachedSheet)
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-open-connection", within: editor)).accessibilityPerformPress())
         pump(); pump()
-        let sheet = try XCTUnwrap(window.attachedSheet)
+        let sheet = try XCTUnwrap(editor.attachedSheet)
         XCTAssertNotNil(accessibleElement("jev-api-key", within: sheet))
         try snapshot(try XCTUnwrap(sheet.contentView), to: output.appendingPathComponent("monitoring-connection-sheet.png"))
         XCTAssertTrue(try XCTUnwrap(accessibleElement("jev-connection-close", within: sheet)).accessibilityPerformPress())
         pump(); pump()
-        XCTAssertNil(window.attachedSheet)
+        XCTAssertNil(editor.attachedSheet)
         XCTAssertEqual(consents.document, offState)
         XCTAssertFalse(monitor.hasKey)
 
@@ -465,14 +464,14 @@ final class GoalongBrandRenderingTests: XCTestCase {
         window.setContentSize(NSSize(width: 900, height: 620))
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            window.appearance = app.appearance; pump()
-            try snapshot(controller.view, to: output.appendingPathComponent("monitoring-ready-\(dark ? "dark" : "light")-900.png"))
+            window.appearance = app.appearance; editor.appearance = app.appearance; pump()
+            try snapshot(try XCTUnwrap(editor.contentView), to: output.appendingPathComponent("monitoring-ready-\(dark ? "dark" : "light").png"))
         }
         // With monitoring off there is nothing to pause: no button, and the model refuses.
-        XCTAssertNil(accessibleElement("jev-break-10", within: window))
+        XCTAssertNil(accessibleElement("jev-break-10", within: editor))
         monitor.startBreak(minutes: 10); pump()
         XCTAssertNil(monitor.timedBreak)
-        XCTAssertNil(accessibleElement("jev-break-countdown", within: window))
+        XCTAssertNil(accessibleElement("jev-break-countdown", within: editor))
         XCTAssertFalse(monitor.enabled)
         XCTAssertEqual(consents.document, readyState, "A refused break must not activate Jev or a source")
         let preferences = JevInterventionPreferences.shared
@@ -481,6 +480,14 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let interventionHost = NSHostingController(rootView: ScrollView {
             JevInterventionControls().padding(28)
         }.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent))
+        // « Fermer » uses the link up: the page is the plain « Blocages » again and does not reopen the rule.
+        XCTAssertEqual(model.navigationStore.selectedSection, .monitoring)
+        XCTAssertTrue(try XCTUnwrap(accessibleElement("block-rule-close", within: editor)).accessibilityPerformPress())
+        pump(); pump()
+        XCTAssertNil(window.attachedSheet)
+        XCTAssertEqual(model.navigationStore.selectedSection, .blocking)
+        pump(); pump()
+        XCTAssertNil(window.attachedSheet, "The closed rule must not open again by itself")
         window.contentViewController = interventionHost
         window.setContentSize(NSSize(width: 700, height: 800)); pump()
         XCTAssertFalse(preferences.settings.effectsEnabled)

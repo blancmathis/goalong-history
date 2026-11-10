@@ -267,7 +267,7 @@ struct GoalongActivitySummary {
             result.append(Insight(id: "work", symbol: "briefcase", text: text + ".", tone: .positive))
         } else if unclassifiedShare >= 0.3 {
             result.append(Insight(id: "classify", symbol: "tag",
-                text: "\(GoalongUIFormat.percent(unclassifiedShare * 100)) de votre temps n’est pas encore classé. Décrivez votre travail dans Mon travail pour le mesurer.",
+                text: "\(GoalongUIFormat.percent(unclassifiedShare * 100)) de votre temps n’est pas encore classé. Décrivez votre travail dans « Définition du travail » pour le mesurer.",
                 tone: .attention))
         }
         return result

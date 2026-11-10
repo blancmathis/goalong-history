@@ -5,11 +5,14 @@ import Foundation
 import LocalHistoryCore
 import SwiftUI
 
-/// "Mon travail": the user's own definition of work, the agent that applies it, and the
+/// « Définition du travail »: the user's own definition of work, the agent that applies it, and the
 /// review where every verdict can be corrected. Goalong never rates an app or a site.
+/// It is no page of its own (spec-blocages-20261110 § 6): it is a pane of Réglages, and Activité opens it in a sheet.
 @MainActor struct GoalongWorkPage: View {
+    /// Where the content is drawn. Its host brings the title, the scrolling and the insets.
+    enum Placement { case settings, sheet }
     /// R14b: counts this body's evaluations in DashboardRestTests (off in the app).
-    /// The copy in Activité's sheet counts under its own name: it is not the page.
+    /// The copy in Activité's sheet counts under its own name: it is not the pane.
     var bodyProbe: DashboardBodyProbe
     /// R-45 (R4d-25): two sentences, the cause then what it changes.
     static let withheldTitlesNotice = "Vos choix « Données pour ChatGPT » excluent les titres de fenêtre. Le classement ne distingue alors deux usages d’une même app que par le site."
@@ -18,14 +21,14 @@ import SwiftUI
     /// `onDisappear` still frees it.
     static weak var openSheet: GoalongWorkSheetToken?
     let model: DashboardViewModel
-    /// True inside `GoalongWorkSheet`: the sheet draws the title, so the page header and the page insets go.
-    private let inSheet: Bool
+    private let placement: Placement
+    private var inSheet: Bool { placement == .sheet }
     @ObservedObject var snapshotStore: DashboardSnapshotStore
 
-    init(model: DashboardViewModel, inSheet: Bool = false) {
+    init(model: DashboardViewModel, placement: Placement) {
         self.model = model
-        self.inSheet = inSheet
-        bodyProbe = DashboardBodyProbe(inSheet ? "travail-feuille" : "travail")
+        self.placement = placement
+        bodyProbe = DashboardBodyProbe(placement == .sheet ? "travail-feuille" : "travail")
         _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
     }
     @ObservedObject private var work = GoalongWorkStore.shared
@@ -45,33 +48,41 @@ import SwiftUI
     private static var reviewFocusTask: String? { nil }
     #endif
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if !inSheet { PageHeader(title: "Mon travail", subtitle: Self.subtitle) }
-                JevWorkContextControls(purpose: .workDefinition)
-                if !work.definition.isEmpty {
-                    agentCard
-                    GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
-                                          loadsOnAppear: Self.reviewFocusTask != nil,
-                                          earliestDay: snapshotStore.snapshot.availableDays.min())
-                }
-                GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
-                    .font(.system(size: 13))
+    /// The definition, the agent, the review, then how the classification works.
+    private var parts: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            JevWorkContextControls(purpose: .workDefinition)
+            if !work.definition.isEmpty {
+                agentCard
+                GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
+                                      loadsOnAppear: Self.reviewFocusTask != nil,
+                                      earliestDay: snapshotStore.snapshot.availableDays.min())
             }
-            .font(.system(size: 13))
-            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
-            .padding(.horizontal, inSheet ? 24 : LHTheme.pageInset).padding(.top, inSheet ? 24 : 28)
-            .padding(.bottom, inSheet ? 24 : LHTheme.pageBottomInset)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
+                .font(.system(size: 13))
         }
-        .background(LHTheme.pageBackground)
-        .accessibilityIdentifier(inSheet ? "work-sheet-content" : "work-page")
+        .font(.system(size: 13))
+    }
+
+    var body: some View {
+        Group {
+            switch placement {
+            // Réglages draws the title, scrolls and sets the insets, as for every pane.
+            case .settings: parts
+            case .sheet:
+                ScrollView {
+                    parts.frame(maxWidth: LHTheme.readableWidth, alignment: .leading).padding(24)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .background(LHTheme.pageBackground)
+                .accessibilityIdentifier("work-sheet-content")
+            }
+        }
         .onAppearWhenShown { runtime.refreshAccount() }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
-            // A new definition re-classifies today straight away when the user allowed it. The kept page and
-            // Activité's sheet both hear the change: while the sheet is open only the sheet answers, so the
-            // agent runs once, not twice.
+            // A new definition re-classifies today straight away when the user allowed it. The pane of Réglages
+            // (drawn only while it is the open pane) and Activité's sheet can both hear the change: while the
+            // sheet is open only the sheet answers, so the agent runs once, not twice.
             if work.automatic, inSheet || Self.openSheet == nil { agent.classify(day: GoalongToday.now, userInitiated: false) }
         }
         .onChange(of: runtime.connectionState) { state in
@@ -540,8 +551,8 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
     func updateNSView(_ view: Probe, context: Context) { view.token = token }
 }
 
-/// Activité's « Mon travail… »: the whole page in a sheet (definition, agent, review, how it works), so the
-/// definition changes where its effect shows, and closing returns to the same day, period and scroll position.
+/// Activité's « Définition du travail… »: the whole content in a sheet (definition, agent, review, how it works),
+/// so the definition changes where its effect shows, and closing returns to the same day, period and scroll position.
 @MainActor struct GoalongWorkSheet: View {
     let model: DashboardViewModel
     @ObservedObject private var navigation: DashboardNavigation
@@ -557,7 +568,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Mon travail").font(LHTheme.sheetTitleFont).accessibilityAddTraits(.isHeader)
+                    Text("Définition du travail").font(LHTheme.sheetTitleFont).accessibilityAddTraits(.isHeader)
                     Text(GoalongWorkPage.subtitle).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -567,7 +578,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
                     .accessibilityIdentifier("work-sheet-done")
             }.padding(24)
             Divider()
-            GoalongWorkPage(model: model, inSheet: true)
+            GoalongWorkPage(model: model, placement: .sheet)
         }
         .frame(width: 720, height: 640).background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .background(GoalongWorkSheetWindow(token: token).frame(width: 0, height: 0).accessibilityHidden(true))
@@ -575,7 +586,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
         .onChange(of: navigation.selectedSection) { _ in
             // Any other section leaves the page under this sheet (menu, link). Activité is a kept page: once left
             // it is out of the window and frozen, and the change of state of its `onDisappear` is applied only at
-            // its return. So the sheet ends itself, in AppKit too: « Mon travail » never stays over another page.
+            // its return. So the sheet ends itself, in AppKit too: the definition never stays over another page.
             dismiss(); token.end()
         }
         .onDisappear { if GoalongWorkPage.openSheet === token { GoalongWorkPage.openSheet = nil } }
@@ -584,7 +595,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
 }
 
 /// Activité's « Corriger »: the review in a sheet, so closing it returns to the same day,
-/// period and scroll position in Activité instead of switching to Mon travail.
+/// period and scroll position in Activité instead of switching to another page.
 @MainActor struct GoalongWorkReviewSheet: View {
     let request: GoalongWorkReviewRequest
     @StateObject private var review = GoalongWorkReviewModel()
@@ -618,7 +629,7 @@ private struct GoalongWorkSheetWindow: NSViewRepresentable {
     }
 }
 
-/// The definition lives in Mon travail; other pages only summarise it.
+/// The definition lives in Réglages › Définition du travail; other pages only summarise it.
 @MainActor struct GoalongWorkDefinitionSummary: View {
     var onOpen: () -> Void
     @ObservedObject private var store = JevWorkContextStore.shared

@@ -538,9 +538,10 @@ import AppleScreenTime
         }
 
         func selectSection(_ section: DashboardSection) {
-            // Jev has no page of its own any more: its key and settings live in Réglages › Jev.
-            if section == .monitoring {
-                openSettingsPane(.jev)
+            // « Mon travail » is no page any more: the definition is the pane « Définition du travail » of Réglages.
+            // Jev (`.monitoring`) is a rule of the page « Blocages », which opens its editor.
+            if section == .work {
+                openSettingsPane(.work)
                 return
             }
             let previousSection = selectedSection
@@ -566,6 +567,13 @@ import AppleScreenTime
                     analyzeSelectedDay: true
                 )
             }
+        }
+
+        /// The editor of a rule closed. Jev's destination opened its rule once: the page is the plain « Blocages »
+        /// again, so showing it again (window reopened, another rule closed) does not open the Jev rule a second time.
+        /// Same kept page: no switch to time, no request to send.
+        func blockRuleEditorClosed() {
+            if selectedSection == .monitoring { selectedSection = .blocking }
         }
 
         func openRecordingSettings() {

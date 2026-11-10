@@ -10,7 +10,7 @@ extension GalleryCatalog {
     static var settingsEntries: [GalleryEntry] {
         let panes: [(String, SettingsPane)] = [
             ("enregistrement", .recording), ("applications", .applications), ("connexions", .connections),
-            ("site", .website), ("chatgpt", .chatGPT), ("jev", .jev), ("modules", .modules), ("permissions", .permissions),
+            ("site", .website), ("chatgpt", .chatGPT), ("modules", .modules), ("permissions", .permissions),
             ("stockage", .storage), ("avance", .advanced), ("outils", .tools),
         ]
         var entries: [GalleryEntry] = [

@@ -43,7 +43,7 @@ struct GoalongAnalyticsPage: View {
     @State private var forceNextRead = false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
-    /// « Mon travail » over Activité (`GoalongWorkSheet`).
+    /// « Définition du travail » over Activité (`GoalongWorkSheet`).
     @State private var showingWork = false
     /// The named view of Activité on screen (nil = summary); kept when the day or period changes.
     @State private var detail: GoalongActivityDetail? = GoalongAnalyticsPage.initialDetail

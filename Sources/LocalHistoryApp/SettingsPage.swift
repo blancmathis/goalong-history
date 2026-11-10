@@ -17,6 +17,7 @@ import AppKit
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var updates = SoftwareUpdateManager.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
+    @ObservedObject private var workContext = JevWorkContextStore.shared
     @State private var search = ""
     @State private var showingDeveloperProjects = false
     @StateObject private var system = GoalongSystemSourcesModel()
@@ -55,8 +56,10 @@ import AppKit
                     }
                 }
                 GoalongConfigStatusBanner(model: model)
-                // While config.json is unreadable, nothing may be saved over it.
-                content.disabled(settingsStore.configLocked && pane != .home)
+                // While config.json is unreadable, nothing may be saved over it. « Définition du travail » stays
+                // usable, as its former page was: it never writes config.json (the definition has its own file,
+                // the agreements are in the consent store).
+                content.disabled(settingsStore.configLocked && pane != .home && pane != .work)
             }
             .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
@@ -94,7 +97,12 @@ import AppKit
                             .accessibilityIdentifier("settings-\(item.identifier)")
                         if item != visiblePanes.last { GoalongRowDivider() }
                     }
-                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) {
+                    // Jev is a rule of the page « Blocages » (spec-blocages-20261110 § 6): a search still finds it.
+                    if SettingsPane.matchesJev(search) {
+                        if !visiblePanes.isEmpty { GoalongRowDivider() }
+                        jevLink.accessibilityIdentifier("settings-jev")
+                    }
+                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) && !SettingsPane.matchesJev(search) {
                         Text("Aucun réglage ne correspond à cette recherche.").font(.system(size: 13))
                             .foregroundStyle(LHTheme.secondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(LHTheme.cardInset)
@@ -114,7 +122,7 @@ import AppKit
                     GoalongRowDivider()
                     GoalongDisclosureGroup("Tout suspendre, pour une activité sensible") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Réglages › Jev : l’historique continue.")
+                            Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Blocages › Jev : l’historique continue.")
                                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                             GoalongGlobalPauseControl(model: model)
@@ -235,16 +243,15 @@ import AppKit
                     GoalongRowDivider()
                     GoalongSettingsLink(title: "Analyse ChatGPT", value: "", symbol: "sparkles", detail: detail(.chatGPT)) { pane = .chatGPT }
                     GoalongRowDivider()
-                    GoalongSettingsLink(title: "Jev", value: summary(.jev), symbol: "eye.circle", detail: detail(.jev)) { pane = .jev }
+                    jevLink.accessibilityIdentifier("settings-connections-jev")
                 }
             }
         case .website:
             GoalongWebsiteSettings(model: model)
         case .chatGPT:
             GoalongChatGPTSettings(model: model)
-        case .jev:
-            JevMonitoringPage(onOpenRecording: { model.openRecordingSettings() },
-                              onOpenWork: { model.selectSection(.work) }, embedded: true)
+        case .work:
+            GoalongWorkPage(model: model, placement: .settings)
         case .modules:
             GoalongModulesSettings(onOpen: { model.selectSection($0) }, onChange: { module, on in
                 if module == .ambiance { model.ambianceModule.setEnabled(on) }
@@ -306,11 +313,16 @@ import AppKit
     private var visiblePanes: [SettingsPane] {
         SettingsPane.matches(search)
     }
+    /// Jev's settings are in its rule, on the page « Blocages »: this row opens that rule.
+    private var jevLink: some View {
+        GoalongSettingsLink(title: "Jev", value: consents.isEnabled(.jevMonitoring) ? "Activé" : "Désactivé",
+                            symbol: "eye.circle", detail: "Une règle de la page Blocages") { model.selectSection(.monitoring) }
+    }
     /// The value column holds a state only (UI-12B, 20); descriptions go under the title (`detail`).
     private func summary(_ item: SettingsPane) -> String {
         switch item {
         case .recording: return consents.isEnabled(.localComputerHistory) ? "Activé" : "Désactivé"
-        case .jev: return consents.isEnabled(.jevMonitoring) ? "Activé" : "Désactivé"
+        case .work: return workContext.context.isEmpty ? "À définir" : "Définie"
         case .modules: return modules.enabled.isEmpty ? "Aucun activé" : modules.enabled.map(\.title).sorted().joined(separator: ", ")
         default: return ""
         }
@@ -321,7 +333,7 @@ import AppKit
         case .connections: return "Choisir une connexion"
         case .website: return "Compte, données et fréquence"
         case .chatGPT: return "Données et personnalisation"
-        case .jev: return "Repère les distractions pendant vos séances"
+        case .work: return "Ce qui compte comme travail, classement et corrections"
         case .permissions: return "Accès accordés à Goalong"
         case .storage: return "Conservation et effacement"
         case .advanced: return "Outils et diagnostics"
@@ -331,8 +343,8 @@ import AppKit
 }
 
 enum SettingsPane: Hashable {
-    case home, recording, applications, connections, website, chatGPT, jev, modules, permissions, storage, advanced, tools
-    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .jev, .modules, .permissions, .storage]
+    case home, recording, applications, connections, website, chatGPT, work, modules, permissions, storage, advanced, tools
+    static let primary: [Self] = [.recording, .applications, .website, .chatGPT, .work, .modules, .permissions, .storage]
     /// Start at login and background running live on the Settings home, not in a pane.
     static func matchesStartup(_ raw: String) -> Bool {
         let keywords = "démarrage démarrer ouverture session connexion login arrière-plan fermer quitter"
@@ -342,9 +354,15 @@ enum SettingsPane: Hashable {
         // "ouverture de session": any meaningful word of the query is enough.
         return query.split(whereSeparator: \.isWhitespace).contains { $0.count >= 4 && keywords.localizedStandardContains(String($0)) }
     }
+    /// Jev has no pane: it is a rule of the page « Blocages ». The Settings home links to it for these words.
+    static func matchesJev(_ raw: String) -> Bool {
+        let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !query.isEmpty
+            && "jev surveillance temps réel clé api typesafe rappel rappels distraction pause".localizedStandardContains(query)
+    }
     static func matches(_ raw: String) -> [Self] {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if query.isEmpty { return [.applications, .jev, .modules, .permissions, .storage, .advanced] }
+        if query.isEmpty { return [.work, .applications, .modules, .permissions, .storage, .advanced] }
         return (primary + [.advanced, .tools]).filter { ($0.title + " " + $0.keywords).localizedStandardContains(query) }
     }
     var title: String {
@@ -355,7 +373,7 @@ enum SettingsPane: Hashable {
         case .connections: return "Connexions"
         case .website: return "Envoyer au site Goalong"
         case .chatGPT: return "Analyse ChatGPT"
-        case .jev: return "Jev" // UI-10 (M3): one name with the sidebar and the card; the row's value and the card say what it does.
+        case .work: return "Définition du travail"
         case .modules: return "Modules"
         case .permissions: return "Autorisations macOS"
         case .storage: return "Stockage"
@@ -371,8 +389,8 @@ enum SettingsPane: Hashable {
         case .recording: return "Choisissez ce que Goalong enregistre sur ce Mac. Rien n’est envoyé sans un autre choix."
         case .chatGPT: return "Avec votre compte ChatGPT, Goalong rédige le bilan d’une journée à partir des seules données que vous choisissez."
         case .modules: return "Activez seulement les fonctions dont vous avez besoin."
-        // R-76 (T-043 R2c): Jev's sentence sat inside the page, 29 pt under the title; it is the pane's lead like the others.
-        case .jev: return "Des rappels pour rester sur vos projets de travail."
+        // The former page « Mon travail » (spec-blocages-20261110 § 6): its sentence is the pane's lead like the others.
+        case .work: return GoalongWorkPage.subtitle
         // UI-13C (27, 40): the page's sentence sits under its title, as on ChatGPT and Modules.
         case .applications: return "Désactivez une app ou un site pour l’exclure du suivi détaillé et des prochains envois."
         case .storage: return "Votre historique reste sur ce Mac. Choisissez combien de temps le garder et ce qu’il faut effacer."
@@ -388,7 +406,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connections"
         case .website: return "website"
         case .chatGPT: return "chatGPT"
-        case .jev: return "jev"
+        case .work: return "work"
         case .modules: return "modules"
         case .permissions: return "permissions"
         case .storage: return "storage"
@@ -405,7 +423,7 @@ enum SettingsPane: Hashable {
         case .connections: return "link"
         case .website: return "arrow.up.circle"
         case .chatGPT: return "sparkles"
-        case .jev: return "eye.circle"
+        case .work: return "briefcase"
         case .modules: return "square.stack.3d.up"
         case .permissions: return "hand.raised"
         case .storage: return "internaldrive"
@@ -420,7 +438,7 @@ enum SettingsPane: Hashable {
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
         case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente blocage bloquer site sites app apps verrouiller cold turkey geler activer"
-        case .jev: return "jev surveillance temps réel clé api typesafe rappel rappels distraction pause"
+        case .work: return "travail définition définir projet projets objectif objectifs tâche tâches classement classer agent verdict verdicts corriger productif procrastination mon travail"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"
         case .storage: return "supprimer effacer historique conserver durée espace mémoire"

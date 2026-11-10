@@ -5,10 +5,11 @@ import SwiftUI
 /// Where a link lands in the page « Blocages ». The old pages (Concentration, Distractions, Garde-fous,
 /// Écran rouge) are aliases of this one page.
 enum BlocagesTarget: Hashable {
-    case top, lists, sessions, redScreen
+    case top, lists, sessions, redScreen, jev
 
     init(_ section: DashboardSection) {
         switch section {
+        case .monitoring: self = .jev
         case .distractions: self = .lists
         case .concentration: self = .sessions
         case .braise: self = .redScreen
@@ -50,7 +51,8 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                             focus: modules.isEnabled(.concentration) ? focus.controller : nil,
                             target: BlocagesTarget(navigationStore.selectedSection), request: requests,
                             onOpenRecording: { model.openRecordingSettings() },
-                            onOpenWork: { model.selectSection(.work) })
+                            onOpenWork: { model.selectSection(.work) },
+                            onRuleClosed: { model.blockRuleEditorClosed() })
             .onReceive(navigationStore.sectionRequests) { section in
                 if BlocagesTarget(section) != .top { requests += 1 }
             }
@@ -72,6 +74,8 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     var sessionDraft: FocusComposerDraft?
     var onOpenRecording: () -> Void
     var onOpenWork: () -> Void
+    /// The editor of a rule closed, by any way (button, Échap, a link that leaves the page).
+    var onRuleClosed: () -> Void
     @State private var open: Set<BlocagesFold>
     @State private var editing: BlockRuleEditor.Subject?
     @State private var editingList: UUID?
@@ -79,7 +83,8 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     init(blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
          now: Date? = nil, measures: [FocusItemMeasure]? = nil, target: BlocagesTarget = .top, request: Int = 0,
          sessionDraft: FocusComposerDraft? = nil, open: Set<BlocagesFold> = [], editing: BlockRuleEditor.Subject? = nil,
-         onOpenRecording: @escaping () -> Void = {}, onOpenWork: @escaping () -> Void = {}) {
+         onOpenRecording: @escaping () -> Void = {}, onOpenWork: @escaping () -> Void = {},
+         onRuleClosed: @escaping () -> Void = {}) {
         self.blocking = blocking
         self.braise = braise
         self.focus = focus
@@ -90,6 +95,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         self.sessionDraft = sessionDraft
         self.onOpenRecording = onOpenRecording
         self.onOpenWork = onOpenWork
+        self.onRuleClosed = onRuleClosed
         _open = State(initialValue: open)
         _editing = State(initialValue: editing)
     }
@@ -127,6 +133,8 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                             onClose: { editing = nil })
                 .goalongControls()
         }
+        // A link that opened a rule (Jev) is used up when the rule closes: the page does not open it again by itself.
+        .onChange(of: editing?.id) { id in if id == nil { onRuleClosed() } }
         .sheet(isPresented: Binding(get: { editingList != nil }, set: { if !$0 { editingList = nil } })) {
             if let id = editingList, let blocking {
                 BlockListSheet(controller: blocking, listID: id, now: now ?? GoalongToday.now) { editingList = nil }
@@ -138,6 +146,8 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     /// A link to an old page lands on its part of this page. The plain entry keeps the scroll where it was.
     private func go(_ target: BlocagesTarget, proxy: ScrollViewProxy) {
         guard target != .top else { return }
+        // Jev is a rule: its link (menu bar, notification, Réglages) opens the rule, where its settings are.
+        if target == .jev { editing = .jev; return }
         if target == .redScreen { open.insert(.redManual) }
         DispatchQueue.main.async { proxy.scrollTo(target, anchor: .top) }
     }

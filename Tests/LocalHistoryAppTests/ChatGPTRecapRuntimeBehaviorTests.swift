@@ -44,7 +44,7 @@
             )
         }
 
-        /// R14a (review, point 5): the click that opens Mon travail checks the account; Codex is looked for on disk off
+        /// R14a (review, point 5): the click that opens « Définition du travail » checks the account; Codex is looked for on disk off
         /// the main thread.
         func testTheAccountCheckLooksForCodexOffTheMainThread() throws {
             let container = try makeContainer()

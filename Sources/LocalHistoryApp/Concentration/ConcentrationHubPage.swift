@@ -355,7 +355,7 @@ enum FocusDistractionFormat {
 private struct OpenJevSettingsKey: EnvironmentKey { static let defaultValue: () -> Void = {} }
 
 extension EnvironmentValues {
-    /// Opens Réglages › Jev, where the key and the monitoring settings live.
+    /// Opens the Jev rule of « Blocages », where the key and the monitoring settings live.
     var openJevSettings: () -> Void {
         get { self[OpenJevSettingsKey.self] }
         set { self[OpenJevSettingsKey.self] = newValue }

@@ -345,18 +345,18 @@
                     lines.count == ChatGPTDailyAssessment.requiredSummaryLineCount
                 {
                     HStack(alignment: .top, spacing: 28) {
-                        // The score is the share of the day spent on « Mon travail », as ChatGPT estimates it
+                        // The score is the share of the day spent on the user's work, as ChatGPT estimates it
                         // from the user's own definition (PRODUCT.md). Same value and attestation as before;
                         // shown at a secondary size so the report stays the focus (UI-9 C).
                         VStack(alignment: .leading, spacing: 9) {
-                            Text("Part de la journée sur Mon travail")
+                            Text("Part de la journée sur votre travail")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(GoalongUIFormat.percent(score))
                                 .font(.system(size: 26, weight: .bold))
                                 .foregroundStyle(LHTheme.text)
-                            Text("Estimé par ChatGPT d’après votre définition de Mon travail.")
+                            Text("Estimé par ChatGPT d’après votre définition du travail.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -367,7 +367,7 @@
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(LHTheme.secondaryText)
                         }
-                        // Wide enough for « Part de la journée sur Mon travail » and the confidence on one line.
+                        // Wide enough for « Part de la journée sur votre travail » and the confidence on one line.
                         .frame(width: 220, alignment: .leading)
 
                         Divider()
@@ -421,7 +421,7 @@
                         Text("Ancien bilan quotidien")
                             .font(.system(size: 13, weight: .semibold))
                         Text(
-                            "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir la part de la journée sur Mon travail, un niveau de confiance et un résumé structuré."
+                            "Ce rapport est antérieur au format en cinq lignes. Régénérez-le pour obtenir la part de la journée sur votre travail, un niveau de confiance et un résumé structuré."
                         )
                         .font(.system(size: 12))
                         .foregroundStyle(LHTheme.secondaryText)
@@ -466,7 +466,7 @@
                         metric(
                             title: "Classé comme travail",
                             value: duration(overview.workSeconds),
-                            detail: "D’après Mon travail"
+                            detail: "D’après votre définition du travail"
                         )
                         bandDivider
                         metric(title: "Temps d’écran", value: screen.value, detail: screen.detail)

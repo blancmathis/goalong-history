@@ -100,6 +100,15 @@ extension GalleryCatalog {
                 return BlockRuleEditor(subject: .rule(rule), blocking: blocking, braise: nil, focus: nil, now: now, maxHeight: 4_000,
                                        sessionDraft: FocusComposerDraft(), onClose: {})
             },
+            // The Jev rule to set up: no key, history on and a work definition (the former « surveillance/a-configurer »).
+            sheet("blocages/editeur-jev") { _ in
+                try GalleryFixtureHome.install(.recordingOn)
+                try JevWorkContextStore.shared.save("Atlas : préparer le lancement de l’app mobile.",
+                    applications: "Xcode, Terminal et GitHub pour Atlas.", content: "Documentation Swift.",
+                    procrastination: "youtube.com, Messages")
+                return BlockRuleEditor(subject: .jev, blocking: F.blockingIdle(), braise: nil, focus: nil, now: F.sunday,
+                                       maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
+            },
         ]
     }
 }

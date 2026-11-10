@@ -65,7 +65,9 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.appearance = app.appearance
             let suffix = dark ? "dark" : "light"
-            let sections: [DashboardSection] = [.overview, .work, .history, .monitoring, .activity, .screenTime,
+            // `.work` and `.monitoring` are no pages: the pane « Définition du travail » is drawn with the panes below,
+            // and the Jev rule is a sheet of « Blocages ».
+            let sections: [DashboardSection] = [.overview, .history, .blocking, .activity, .screenTime,
                                                 .agentActivity, .chatGPTRecap, .share, .privacy, .cli]
             for section in sections {
                 model.navigationStore.selectedSection = section
@@ -77,13 +79,14 @@ final class GoalongDesignAuditRenderingTests: XCTestCase {
                 try render("settings-\(pane)-\(suffix)", dashboard())
             }
             model.navigationStore.settingsPane = .home
-            // Saved definition state of Mon travail.
+            // Saved definition state of Réglages › Définition du travail.
             try JevWorkContextStore.shared.save("Goalong : app macOS et site. Atlas : préparer le lancement.",
                 applications: "Xcode et GitHub pour Goalong. T3 Code pour coder avec les agents.",
                 content: "Documentation Swift, e-mails clients, rédaction de posts Goalong.",
                 procrastination: "rekordbox, x.com, youtube.com")
-            model.navigationStore.selectedSection = .work
+            model.navigationStore.settingsPane = .work
             try render("page-work-saved-\(suffix)", dashboard())
+            model.navigationStore.settingsPane = .home
             try JevWorkContextStore.shared.save("")
             try render("sheet-jev-connection-\(suffix)", sheet(JevConnectionSheet()), size: NSSize(width: 560, height: 420))
             try render("sheet-retention-\(suffix)", sheet(HistoryRetentionSettingsSheet()), size: NSSize(width: 700, height: 670))

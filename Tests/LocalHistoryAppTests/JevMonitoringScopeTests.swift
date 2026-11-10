@@ -83,7 +83,7 @@ final class JevMonitoringScopeTests: XCTestCase {
         XCTAssertTrue(corrupt.breakStorageInvalid); XCTAssertTrue(corrupt.hasKey); XCTAssertFalse(corrupt.keyStorageInvalid)
     }
     func testRejectedKeyPointsToTheSettingsPaneThatExists() {
-        XCTAssertTrue(JevError.authentication.errorDescription?.contains("Réglages › Jev → Gérer la connexion") == true)
+        XCTAssertTrue(JevError.authentication.errorDescription?.contains("Blocages › Jev → Gérer la connexion") == true)
     }
 }
 #endif

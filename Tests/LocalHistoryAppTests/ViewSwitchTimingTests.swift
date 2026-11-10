@@ -68,7 +68,7 @@ final class ViewSwitchTimingTests: XCTestCase {
             }
             var samples: [Sample] = []
             // Sidebar destinations present for this member, then the periods of Activité.
-            let sections: [DashboardSection] = [.settings, .history, .work, .concentration, .blocking, .ambiance, .overview]
+            let sections: [DashboardSection] = [.settings, .history, .concentration, .blocking, .ambiance, .overview]
             for pass in 0..<passes {
                 for period in ["7", "28", "1"] {
                     guard let button = Self.periodButton(period, in: host) else {

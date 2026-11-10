@@ -13,7 +13,7 @@ struct JevActivationAvailability: Equatable {
 @MainActor struct JevMonitoringPage: View {
     var onOpenRecording: () -> Void
     var onOpenWork: () -> Void = {}
-    /// Inside Réglages › Jev: the settings page brings the title and the scrolling.
+    /// Inside the Jev rule of « Blocages »: the editor brings the title and the scrolling.
     var embedded = false
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared

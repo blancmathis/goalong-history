@@ -862,7 +862,7 @@ import AppleScreenTime
             // The work agent shares this Codex home; keep the last known state until it is done.
             guard !(Thread.isMainThread && MainActor.assumeIsolated { GoalongWorkAgent.shared.isRunning }) else { return }
             isCheckingAccount = true
-            // R14a: Codex is looked for on disk off the main thread (this runs in the click that opens Mon travail).
+            // R14a: Codex is looked for on disk off the main thread (this runs in the click that opens « Définition du travail »).
             let locate = executableLocator
             workQueue.async { [weak self] in
                 guard let self else { return }

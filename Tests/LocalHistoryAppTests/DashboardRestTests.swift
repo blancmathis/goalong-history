@@ -11,7 +11,7 @@ import XCTest
 /// 60 s) run one minute on a virtual clock, on the busy member's real window content (never on screen): no store
 /// publishes, and neither the page shown nor the pages kept hidden evaluate their body. Then, per page, one real change
 /// of a store the page shown observes publishes exactly once, updates that page exactly once and leaves the hidden pages
-/// still. Pages shown: Activité, Concentration, Blocage, Réglages; Historique and Travail are kept hidden (preheated).
+/// still. Pages shown: Activité, Concentration, Blocage, Réglages; Historique is kept hidden (preheated).
 /// Every one has its own probe.
 final class DashboardRestTests: XCTestCase {
     /// The two wakeups of `DashboardRefreshScheduler`, fired by hand.
@@ -89,7 +89,7 @@ final class DashboardRestTests: XCTestCase {
             for variant in variants { show(variant.section) }
             DashboardBodyProbe.counting = false
             XCTAssertNotNil(ViewSwitchTimingTests.keptPages(in: host), "the pages are not kept")
-            for probe in ["activite", "blocages", "reglages", "historique", "travail"] {
+            for probe in ["activite", "blocages", "reglages", "historique"] {
                 XCTAssertGreaterThan(DashboardBodyProbe.counts[probe] ?? 0, 0, "the page \(probe) was never built")
             }
 
