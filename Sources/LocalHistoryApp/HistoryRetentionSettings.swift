@@ -178,6 +178,7 @@ extension HistoryRetentionPolicy {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!model.hasChanges || (model.automaticCleanup && model.draft.includesProofExpiry && !proofDeletionConfirmed))
                     .accessibilityIdentifier("retention-apply")
             }.padding(20)

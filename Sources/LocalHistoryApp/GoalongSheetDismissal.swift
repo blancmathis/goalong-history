@@ -22,6 +22,23 @@ enum GoalongSheetDismissal {
         return sheet.childWindows?.contains(where: { $0.isVisible }) ?? false
     }
 
+    /// Gives the first editable text field of a sheet (top-most, then left-most) the keyboard focus. A sheet without a
+    /// text field is left alone. Never activates the app or raises a window: it only picks the sheet's first responder.
+    @MainActor static func focusFirstField(in window: NSWindow) {
+        guard let root = window.contentView, !(window.firstResponder is NSTextView && (window.firstResponder as? NSTextView)?.isEditable == true) else { return }
+        var found: [(NSView, NSRect)] = []
+        func walk(_ view: NSView) {
+            if !view.isHiddenOrHasHiddenAncestor {
+                if let text = view as? NSTextView, text.isEditable, text.isFieldEditor == false { found.append((text, view.convert(view.bounds, to: nil))) }
+                else if let field = view as? NSTextField, field.isEditable, field.acceptsFirstResponder { found.append((field, view.convert(view.bounds, to: nil))) }
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(root)
+        let first = found.min { a, b in a.1.maxY != b.1.maxY ? a.1.maxY > b.1.maxY : a.1.minX < b.1.minX }
+        if let view = first?.0 { window.makeFirstResponder(view) }
+    }
+
     /// Watches one sheet window. Installed when the probe joins the sheet window, removed when it leaves.
     @MainActor final class Watcher {
         weak var window: NSWindow?
@@ -30,12 +47,18 @@ enum GoalongSheetDismissal {
         var cancel: () -> Void = {}
         var askToDiscard: () -> Void = {}
         private var monitor: Any?
+        static let escapeKeyCode: UInt16 = 53
 
         func start(in window: NSWindow) {
             stop()
             self.window = window
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
                 MainActor.assumeIsolated { self?.handle(event) ?? event }
+            }
+            // First field gets the focus once the sheet's views exist.
+            DispatchQueue.main.async { [weak window] in
+                guard let window else { return }
+                GoalongSheetDismissal.focusFirstField(in: window)
             }
         }
 
@@ -53,9 +76,11 @@ enum GoalongSheetDismissal {
                 // Only a click in the window the sheet hangs from, and not in the sheet itself.
                 guard let parent = sheet.sheetParent, event.window === parent, parent.attachedSheet === sheet else { return event }
             case .keyDown:
-                // ⌘W while the sheet is the key window.
+                // ⌘W or Escape while the sheet is the key window: both do what « Annuler » does.
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                guard event.window === sheet, flags == .command, event.charactersIgnoringModifiers == "w" else { return event }
+                let isCommandW = flags == .command && event.charactersIgnoringModifiers == "w"
+                let isEscape = flags.isEmpty && event.keyCode == Self.escapeKeyCode
+                guard event.window === sheet, isCommandW || isEscape else { return event }
             default:
                 return event
             }
@@ -85,6 +110,7 @@ enum GoalongSheetDismissal {
 
 private struct GoalongDismissOnOutsideClick: ViewModifier {
     let isDirty: () -> Bool
+    let isEnabled: () -> Bool
     let onCancel: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var watcher = GoalongSheetDismissal.Watcher()
@@ -104,6 +130,7 @@ private struct GoalongDismissOnOutsideClick: ViewModifier {
 
     private func configure() {
         watcher.isDirty = isDirty
+        watcher.isEnabled = isEnabled
         watcher.cancel = cancel
         watcher.askToDiscard = { confirming = true }
     }
@@ -114,8 +141,10 @@ extension View {
     /// once when `isDirty` is false, otherwise it stays and asks « Abandonner les modifications ? ». Never closes while an
     /// alert, a file panel or a popover is above the sheet. Use `onCancel` when « Annuler » does more than dismiss.
     /// Place it next to `goalongControls()`, on the sheet's root. Never on a password, stop-phrase or busy sheet.
-    func goalongDismissOnOutsideClick(isDirty: @escaping () -> Bool = { false }, onCancel: (() -> Void)? = nil) -> some View {
-        modifier(GoalongDismissOnOutsideClick(isDirty: isDirty, onCancel: onCancel))
+    /// `isEnabled` turns it off while the sheet is busy (a restart in progress, for instance).
+    func goalongDismissOnOutsideClick(isDirty: @escaping () -> Bool = { false }, isEnabled: @escaping () -> Bool = { true },
+                                      onCancel: (() -> Void)? = nil) -> some View {
+        modifier(GoalongDismissOnOutsideClick(isDirty: isDirty, isEnabled: isEnabled, onCancel: onCancel))
     }
 }
 #endif

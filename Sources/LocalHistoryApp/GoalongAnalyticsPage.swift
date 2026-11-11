@@ -228,8 +228,10 @@ struct GoalongAnalyticsPage: View {
             }
         }
         .background(LHTheme.pageBackground)
-        .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
-        .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls() }
+        .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls().goalongDismissOnOutsideClick() }
+        .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls()
+            .goalongDismissOnOutsideClick(isDirty: { JevWorkContextControls.hasUnsavedDefinition },
+                                          onCancel: { JevWorkContextControls.discardUnsaved(); showingWork = false }) }
         .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls().goalongDismissOnOutsideClick() }
         .taskWhenShown(id: "\(selectionID)|\(revision)|\(agent.isRunning)|\(work.backgroundConsent)|\(work.revision)|\(work.definition.revision)") {
             if !previewActive { workStates.load(day: selection.day, period: selection.period) }

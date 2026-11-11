@@ -75,6 +75,47 @@ import XCTest
         XCTAssertEqual(rig.cancelled(), 1)
     }
 
+    func testEscapeOnTheSheetActsLikeCancelAndAnotherKeyDoesNot() {
+        let rig = rig(dirty: false)
+        defer { close(rig) }
+        func key(_ chars: String, code: UInt16) {
+            let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                         windowNumber: rig.sheet.windowNumber, context: nil, characters: chars, charactersIgnoringModifiers: chars,
+                                         isARepeat: false, keyCode: code)!
+            NSApp.sendEvent(event)
+        }
+        key("a", code: 0)
+        XCTAssertEqual(rig.cancelled(), 0)
+        key("\u{1B}", code: 53)
+        XCTAssertEqual(rig.cancelled(), 1)
+    }
+
+    func testTheFirstTextFieldOfTheSheetTakesTheInitialFocus() {
+        let parent = NSWindow(contentRect: NSRect(x: 20000, y: 20000, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        parent.orderFrontRegardless()
+        struct Form: View {
+            @State var first = ""; @State var second = ""
+            var body: some View {
+                VStack { TextField("Premier", text: $first); TextField("Second", text: $second) }.frame(width: 300, height: 200)
+                    .goalongDismissOnOutsideClick()
+            }
+        }
+        let sheet = NSWindow(contentViewController: NSHostingController(rootView: Form()))
+        sheet.isReleasedWhenClosed = false
+        parent.beginSheet(sheet)
+        spin({ (sheet.firstResponder as? NSTextView)?.isFieldEditor == true }, for: 1.0)
+        let editor = sheet.firstResponder as? NSTextView
+        XCTAssertEqual(editor?.isFieldEditor, true)
+        let field = editor?.delegate as? NSTextField
+        XCTAssertEqual(field?.placeholderString ?? field?.accessibilityLabel(), field?.placeholderString ?? field?.accessibilityLabel())
+        // The first field in reading order, not the second.
+        let fields = sheet.contentView!.allDescendants.compactMap { $0 as? NSTextField }.filter { $0.isEditable }
+        let top = fields.max { $0.convert($0.bounds, to: nil).maxY < $1.convert($1.bounds, to: nil).maxY }
+        XCTAssertTrue(field === top)
+        parent.endSheet(sheet); sheet.close(); parent.close()
+    }
+
     func testDecisionKeepsEveryExclusion() {
         typealias D = GoalongSheetDismissal
         XCTAssertEqual(D.decision(isEnabled: true, isDirty: false, otherLayerAbove: false), .cancel)
@@ -113,5 +154,9 @@ import XCTest
         XCTAssertEqual(rig.cancelled(), 0, "a nested alert or file panel blocks the outside click")
         rig.sheet.endSheet(alertWindow); alertWindow.close()
     }
+}
+
+private extension NSView {
+    var allDescendants: [NSView] { subviews + subviews.flatMap { $0.allDescendants } }
 }
 #endif

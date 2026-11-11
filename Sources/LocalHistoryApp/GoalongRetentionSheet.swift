@@ -22,6 +22,7 @@ import LocalHistoryCore
                 Button("Annuler", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("Effacer…", role: .destructive) { confirming = true }.buttonStyle(LHSecondaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }.padding(26).frame(width: 520).background(LHTheme.pageBackground)
         .alert("Confirmer la suppression ?", isPresented: $confirming) {
