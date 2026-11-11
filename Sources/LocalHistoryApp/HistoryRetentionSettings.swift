@@ -178,6 +178,7 @@ extension HistoryRetentionPolicy {
                     if model.automaticCleanup { showingConfirmation = true }
                     else if model.apply(proofDeletionConfirmed: false) { dismiss() }
                 }.buttonStyle(LHPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!model.hasChanges || (model.automaticCleanup && model.draft.includesProofExpiry && !proofDeletionConfirmed))
                     .accessibilityIdentifier("retention-apply")
             }.padding(20)
@@ -187,6 +188,7 @@ extension HistoryRetentionPolicy {
         .frame(width: 700).frame(minHeight: 560, idealHeight: Self.idealHeight, maxHeight: 860)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onChange(of: model.draft) { _ in proofDeletionConfirmed = false }
+        .goalongDismissOnOutsideClick(isDirty: { model.hasChanges })
         .alert("Appliquer la suppression automatique ?", isPresented: $showingConfirmation) {
             Button("Annuler", role: .cancel) {}
             Button("Appliquer ces règles", role: .destructive) {

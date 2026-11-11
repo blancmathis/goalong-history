@@ -60,7 +60,7 @@ import Foundation
                 Button("Ouvrir le dossier des données") { model.openDataFolder() }.buttonStyle(LHSecondaryButtonStyle())
             }
         }
-        .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls() }
+        .sheet(isPresented: $deletion) { GoalongDeletionSheet(model: model).goalongControls().goalongDismissOnOutsideClick() }
         .onAppearWhenShown(perform: refresh)
         .sheet(isPresented: $retention, onDismiss: refresh) {
             HistoryRetentionSettingsSheet(legacyRetentionDays: settingsStore.appliedSettings.retentionDays).goalongControls()

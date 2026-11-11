@@ -480,11 +480,13 @@ private struct RedScreenChallenge: Identifiable {
     var onClose: () -> Void
     @State private var password = ""
     @State private var message: String?
+    @FocusState private var passwordFocused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4)
             Text("Entrez le mot de passe de blocage. La commande demandée s’applique ensuite.").foregroundStyle(LHTheme.secondaryText)
             SecureField("Mot de passe", text: $password).textFieldStyle(.roundedBorder).onSubmit(submit)
+                .focused($passwordFocused)
                 .accessibilityIdentifier("braise-stop-password")
             if let message { Text(message).foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true) }
             HStack {
@@ -494,6 +496,7 @@ private struct RedScreenChallenge: Identifiable {
             }
         }.font(.system(size: 13)).padding(28).frame(width: 460)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
+            .onAppear { passwordFocused = true } // own layout
     }
     private func submit() {
         let result = stop?(password) ?? controller.stopActiveRanges(password: password)

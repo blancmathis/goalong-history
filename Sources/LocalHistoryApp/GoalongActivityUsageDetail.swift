@@ -32,7 +32,7 @@ struct GoalongActivityUsageDetail: View {
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 Spacer()
-                Button("Fermer") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Fermer") { dismiss() }.keyboardShortcut(.defaultAction)
             }
             statistics
             if !item.mainTasks.isEmpty { tasks }

@@ -1066,6 +1066,7 @@
 
     private struct AgentFolderEditorSheet: View {
         @State private var draft: AgentWatchedFolder
+        private let initialFolder: AgentWatchedFolder
         let onSave: (AgentWatchedFolder) -> Void
         let onCancel: () -> Void
 
@@ -1075,6 +1076,7 @@
             onCancel: @escaping () -> Void
         ) {
             _draft = State(initialValue: folder)
+            initialFolder = folder
             self.onSave = onSave
             self.onCancel = onCancel
         }
@@ -1131,6 +1133,7 @@
             }
             .padding(24)
             .frame(width: 560, height: 410)
+            .goalongDismissOnOutsideClick(isDirty: { draft != initialFolder }, onCancel: onCancel)
         }
     }
 #endif

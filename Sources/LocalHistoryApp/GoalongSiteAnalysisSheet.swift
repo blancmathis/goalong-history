@@ -303,6 +303,7 @@ struct GoalongSiteAnalysisSheet: View {
         }
         .frame(width: 700)
         .frame(height: compact ? nil : 780)
+        .goalongDismissOnOutsideClick(isDirty: { model.hasDraft }, onCancel: { model.cancel(); dismiss() })
         .background(GoalongWebsiteWindowReader(host: windowHost).frame(width: 0, height: 0))
         .onDisappear { model.cancel() }
         .onChange(of: consents.document) { _ in

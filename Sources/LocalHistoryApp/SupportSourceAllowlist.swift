@@ -171,6 +171,7 @@ enum SupportSourceAllowlist {
         "GoalongScreenTimePage.swift",
         "GoalongScreenTimeRepositoryProvider.swift",
         "GoalongScreenTimeSourceNotice.swift",
+        "GoalongSheetDismissal.swift",
         "GoalongSignature.swift",
         "GoalongSiteAnalysisSheet.swift",
         "GoalongStorageSettings.swift",
