@@ -51,6 +51,10 @@ import LocalHistoryQueryCLI
             do {
                 let store = storeFactory()
                 let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, audio: audio, runsTimers: true)
+                value.surveillanceLock = { id in
+                    GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring)
+                        ? JevSurveillanceStore.shared.sessionLock(kind: .focus, ids: [id]) : .free
+                }
                 controller = value; error = nil
                 refreshHasData()
                 NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
@@ -132,6 +136,8 @@ import LocalHistoryQueryCLI
         error = nil
         controller?.refresh()
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
+        // The running session carries a protected « Surveillance »: stop it first, through its stop (T-050 B1).
+        if controller?.surveillanceProtected == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
         // The commitments are gone (or partly): tell the kept task verdicts now, not at the next launch (T-045 D-156a).

@@ -526,7 +526,8 @@
         @objc private func retryKeychain() { onRetryKeychain() }
 
         @objc private func togglePause() {
-            if state.isCapturing, !MainActor.assumeIsolated({ JevStopGate.confirm(action: "Mettre en pause") }) || !confirmRecordingStop(allSources: false) { return }
+            // The surveillance stop is asked by `toggleManualPause`, once for every place that pauses.
+            if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
             onTogglePause()
             updateStatus()
         }

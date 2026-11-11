@@ -103,15 +103,15 @@ import LocalHistoryCore
                                                   calendar: paris)
         XCTAssertEqual(running.map(\.lock), [.password, .typing, .free], "rule, block session, own session; the focus mark is off")
         XCTAssertEqual(JevSurveillanceStore.strongest(running.map(\.settings)), strong)
-        // A Continu session of the Blocage engine (no intention) is seen through its block id.
-        XCTAssertTrue(JevSurveillanceStore.active(document, sessions: JevRunningSessions(), now: now.addingTimeInterval(3 * 3_600),
-                                                  calendar: paris).isEmpty)
+        // A block mark runs only while its block runs: same instant, block not running.
+        XCTAssertEqual(JevSurveillanceStore.active(document, sessions: JevRunningSessions(focus: focus), now: now, calendar: paris)
+                        .map(\.lock), [.password, .free])
         XCTAssertNil(JevSurveillanceStore.strongest([]))
     }
 
     func testMonitorSeesABlockSessionWithoutIntention() {
         let d = defaults(), store = JevSurveillanceStore(defaults: d), block = UUID()
-        store.mark(JevSessionMark(id: block, kind: .block, on: true, lock: .free, settings: strong), now: now)
+        store.mark(JevSessionMark(id: block, kind: .block, on: true, lock: .free, settings: strong), now: now, alive: JevRunningSessions(blocks: [block]))
         var blocks: Set<UUID> = []
         let monitor = JevMonitor(scopePreferences: JevMonitoringPreferences(defaults: d), surveillance: store,
                                  sessionProvider: { nil }, blocksProvider: { blocks },
@@ -122,33 +122,106 @@ import LocalHistoryCore
         XCTAssertEqual(monitor.currentActivity(now: now).map(\.settings), [strong])
     }
 
-    func testAMarkBecomesTheNextSessionDefaultAndOnlyEightAreKept() {
-        let store = JevSurveillanceStore(defaults: defaults())
-        for _ in 0..<10 { store.mark(JevSessionMark(id: UUID(), kind: .block, on: true, lock: .free, settings: strong), now: now) }
-        XCTAssertEqual(store.document.marks.count, 8)
+    /// Correction 8: only a Concentration session changes the default of the next sessions.
+    func testOnlyAFocusMarkBecomesTheNextSessionDefault() {
+        let store = JevSurveillanceStore(defaults: defaults()), focus = UUID(), block = UUID()
+        store.mark(JevSessionMark(id: block, kind: .block, on: true, lock: .free, settings: strong), now: now,
+                   alive: JevRunningSessions(blocks: [block]))
+        XCTAssertFalse(store.document.sessionDefault, "a Blocage session keeps its choice for itself")
+        store.mark(JevSessionMark(id: focus, kind: .focus, on: true, lock: .free, settings: strong), now: now,
+                   alive: JevRunningSessions(focus: focus, blocks: [block]))
         XCTAssertTrue(store.document.sessionDefault); XCTAssertEqual(store.document.sessionSettings, strong)
-        store.mark(JevSessionMark(id: UUID(), kind: .focus, on: false, lock: .free, settings: strong), now: now)
+        store.mark(JevSessionMark(id: UUID(), kind: .block, on: false, lock: .free, settings: strong), now: now,
+                   alive: JevRunningSessions(focus: focus, blocks: [block]))
+        XCTAssertTrue(store.document.sessionDefault, "a Blocage session off does not turn the default off")
+        store.mark(JevSessionMark(id: UUID(), kind: .focus, on: false, lock: .free, settings: strong), now: now, alive: JevRunningSessions())
         XCTAssertFalse(store.document.sessionDefault)
     }
 
+    /// Correction 4: a mark of a running session is never dropped; finished marks are.
+    func testARunningLockedMarkSurvivesLaterSessionsAndFinishedMarksArePruned() {
+        let store = JevSurveillanceStore(defaults: defaults()), locked = UUID(), gone = UUID()
+        store.mark(JevSessionMark(id: gone, kind: .block, on: true, lock: .free, settings: strong), now: now,
+                   alive: JevRunningSessions(blocks: [gone]))
+        store.mark(JevSessionMark(id: locked, kind: .block, on: true, lock: .locked, settings: strong), now: now,
+                   alive: JevRunningSessions(blocks: [locked, gone]))
+        var alive: Set<UUID> = [locked]
+        for _ in 0..<10 {
+            let id = UUID(); alive.insert(id)
+            store.mark(JevSessionMark(id: id, kind: .block, on: true, lock: .free, settings: strong), now: now,
+                       alive: JevRunningSessions(blocks: alive))
+        }
+        XCTAssertEqual(store.document.marks.count, 11, "the 10 later sessions and the locked one, all running")
+        XCTAssertFalse(store.document.marks.contains { $0.id == gone }, "a finished block's mark is removed")
+        XCTAssertEqual(store.sessionLock(kind: .block, ids: [locked]), .locked)
+        XCTAssertEqual(JevSurveillanceStore.active(store.document, sessions: JevRunningSessions(blocks: [locked]), now: now,
+                                                   calendar: paris).map(\.lock), [.locked])
+        let own = JevSessionMark(id: UUID(), kind: .own, on: true, start: now, end: now.addingTimeInterval(60), lock: .free,
+                                 settings: strong)
+        XCTAssertEqual(JevSurveillanceStore.pruned([own], now: now, alive: JevRunningSessions()).count, 1)
+        XCTAssertTrue(JevSurveillanceStore.pruned([own], now: now.addingTimeInterval(61), alive: JevRunningSessions()).isEmpty)
+    }
+
+    /// Corrections 5-6: weakening or removing a running protected rule goes through its stop; « Verrouillé » refuses.
     func testARunningProtectedRuleKeepsItsHoursAndStop() {
         let store = JevSurveillanceStore(defaults: defaults())
         let range = JevSurveillanceRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440, lock: .typing,
-                                         settings: JevInterventionSettings())
+                                         settings: strong)
         store.apply(.save(range))
-        XCTAssertEqual(store.refusal(.delete(range.id), now: now), JevSurveillanceStore.protectedText)
+        XCTAssertEqual(store.check(.delete(range.id), now: now), .stop(.typing))
         var weaker = range; weaker.lock = .free
-        XCTAssertEqual(store.refusal(.save(weaker), now: now), JevSurveillanceStore.protectedText)
-        var stronger = range; stronger.settings = strong; stronger.lock = .password
-        XCTAssertNil(store.refusal(.save(stronger), now: now), "a stronger rule is always allowed")
-        var free = range; free.lock = .free; store.apply(.save(free))
-        XCTAssertNil(store.refusal(.delete(range.id), now: now))
+        XCTAssertEqual(store.check(.save(weaker), now: now), .stop(.typing))
+        var softer = range; softer.settings = JevInterventionSettings()
+        XCTAssertEqual(store.check(.save(softer), now: now), .stop(.typing), "weaker settings")
+        var shorter = range; shorter.endMinute = 600
+        XCTAssertEqual(store.check(.save(shorter), now: now), .stop(.typing), "other hours")
+        var stronger = range; stronger.lock = .password
+        XCTAssertEqual(store.check(.save(stronger), now: now), .allow, "a stronger rule is immediate")
+        var locked = range; locked.lock = .locked; store.apply(.save(locked))
+        XCTAssertEqual(store.check(.delete(range.id), now: now), .refused(JevSurveillanceStore.protectedText))
+        XCTAssertFalse(JevSurveillanceStore.protectedText.contains("avant sa fin"), "a « Toujours » rule has no end")
+        XCTAssertEqual(store.check(.save(stronger), now: now), .refused(JevSurveillanceStore.protectedText))
+    }
+
+    func testWeakeningThroughTheEditorAsksTheStopOnceAndAPassedStopDeletes() {
+        let store = JevSurveillanceStore(defaults: defaults())
+        let range = JevSurveillanceRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440, lock: .password, settings: strong)
+        store.apply(.save(range))
+        var asked: [BlockLock] = []
+        var writes = BlockRulePlan.Writes(); writes.jev = [.delete(range.id)]
+        XCTAssertEqual(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now,
+                                           confirmStop: { asked.append($0); return false }), JevStopGate.keptText)
+        XCTAssertEqual(store.document.ranges, [range], "stop not passed: nothing changes")
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now,
+                                         confirmStop: { asked.append($0); return true }))
+        XCTAssertTrue(store.document.ranges.isEmpty, "stop passed: the rule is removed")
+        XCTAssertEqual(asked, [.password, .password])
+        var stronger = range; stronger.lock = .locked; store.apply(.save(range))
+        writes.jev = [.save(stronger)]
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now,
+                                         confirmStop: { _ in XCTFail("stronger asks nothing"); return false }))
+    }
+
+    /// Correction 7: the store built at launch is already migrated, so a first write cannot drop the « Toujours » rule.
+    func testTheLaunchedStoreIsMigratedBeforeAnyWrite() {
+        let d = defaults()
+        let store = JevSurveillanceStore.launched(defaults: d, consent: true, scope: scope(.always, in: d), settings: strong)
+        XCTAssertEqual(store.document.ranges.count, 1)
+        store.mark(JevSessionMark(id: UUID(), kind: .focus, on: false, lock: .free, settings: strong), now: now, alive: JevRunningSessions())
+        XCTAssertEqual(JevSurveillanceStore(defaults: d).document.ranges.map(\.settings), [strong])
+    }
+
+    func testOnlyStartedBlocksRunTheirSurveillance() {
+        let started = BlockingActiveBlock(id: UUID(), listIDs: [], start: now.addingTimeInterval(-60), end: now.addingTimeInterval(60),
+                                          lock: .free, origin: .manual)
+        var later = started; later.id = UUID(); later.start = now.addingTimeInterval(600); later.end = now.addingTimeInterval(900)
+        XCTAssertEqual(JevMonitor.runningBlockIDs([started, later], now: now), [started.id])
     }
 
     func testOwnSessionEndsWhenStopped() {
         let store = JevSurveillanceStore(defaults: defaults()), id = UUID()
         store.mark(JevSessionMark(id: id, kind: .own, on: true, start: now, end: now.addingTimeInterval(3_600), lock: .free,
-                                  settings: strong), now: now)
+                                  settings: strong), now: now, alive: JevRunningSessions())
         XCTAssertEqual(store.runningOwn(now: now.addingTimeInterval(60))?.id, id)
         store.endOwn(id, now: now.addingTimeInterval(120))
         XCTAssertNil(store.runningOwn(now: now.addingTimeInterval(180)))

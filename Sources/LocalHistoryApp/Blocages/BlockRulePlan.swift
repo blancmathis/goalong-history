@@ -119,10 +119,22 @@ enum BlockRulePlan {
     /// of either engine comes back as its own words and nothing is written. Nil = saved.
     /// The « Surveillance » block is checked with the others and written last.
     @MainActor static func apply(_ writes: Writes, blocking: BlockingController?, braise: BraiseController?,
-                                 surveillance: JevSurveillanceStore? = nil, now: Date = Date()) -> String? {
+                                 surveillance: JevSurveillanceStore? = nil, now: Date = Date(),
+                                 confirmStop: ((BlockLock) -> Bool)? = nil) -> String? {
+        let confirmStop = confirmStop ?? { lock in
+            JevStopGate.confirm(action: "Modifier la surveillance", step: JevStopGate.step(lock: lock, jevEnabled: JevMonitor.shared.enabled))
+        }
+        // Weakening a running protected « Surveillance » goes through its stop, asked once all engines agree (correction 5-6).
+        var stop = BlockLock.free
         if !writes.jev.isEmpty {
             guard let surveillance else { return "La surveillance n’a pas pu être enregistrée." }
-            for write in writes.jev { if let refusal = surveillance.refusal(write, now: now) { return refusal } }
+            for write in writes.jev {
+                switch surveillance.check(write, now: now) {
+                case .allow: continue
+                case .refused(let reason): return reason
+                case .stop(let lock): if lock.strength > stop.strength { stop = lock }
+                }
+            }
         }
         if !writes.lists.isEmpty {
             guard let blocking else { return "Le blocage est désactivé. Activez-le dans Réglages › Modules." }
@@ -134,6 +146,7 @@ enum BlockRulePlan {
             guard let braise else { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
             do { try braise.checkRanges(writes.red, deleting: writes.deleting) } catch { return words(error) }
         }
+        if stop != .free, !confirmStop(stop) { return JevStopGate.keptText }
         if !writes.lists.isEmpty, let refusal = blocking?.saveAll(writes.lists) { return refusal }
         if writes.touchesRed, let braise {
             do { try braise.saveRanges(writes.red, deleting: writes.deleting) } catch {

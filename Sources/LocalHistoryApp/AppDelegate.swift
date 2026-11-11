@@ -831,6 +831,8 @@ import AppleScreenTime
                 // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
                 checkPermissionsAndStartTap()
             } else {
+                // T-050 B1 correction 1: the menu, the menu bar panel, the dashboard and ⌘P all land here.
+                guard MainActor.assumeIsolated({ JevStopGate.confirm(action: "Mettre en pause") }) else { return }
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
                 continuityPreferences.manuallyPaused = true

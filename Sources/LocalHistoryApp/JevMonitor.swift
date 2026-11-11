@@ -79,9 +79,7 @@ struct JevRecentCheck: Identifiable {
         self.consents = consents ?? .shared
         self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
         self.blocksProvider = blocksProvider ?? {
-            // A block programmed later is not running yet.
-            let now = Date() // wall: compared with the controller's block dates
-            return Set(BlockingRuntime.shared.controller?.activeBlocks.filter { $0.start <= now }.map(\.id) ?? [])
+            Self.runningBlockIDs(BlockingRuntime.shared.controller?.activeBlocks ?? [], now: Date()) // wall: the controller's block dates
         }
         self.legacySettings = legacySettings ?? { JevInterventionPreferences.shared.settings }
         self.inbox = inbox ?? .shared
@@ -167,6 +165,15 @@ struct JevRecentCheck: Identifiable {
         "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)"
     }
     private var focusSessionID: UUID? { sessionProvider() }
+    /// A block programmed later is not running yet. Pure.
+    static func runningBlockIDs(_ blocks: [BlockingActiveBlock], now: Date) -> Set<UUID> {
+        Set(blocks.filter { $0.start <= now }.map(\.id))
+    }
+    /// The sessions that still exist, a later block included: their « Surveillance » marks are kept (correction 4).
+    static func aliveSessions() -> JevRunningSessions {
+        JevRunningSessions(focus: ConcentrationRuntime.shared.controller?.currentSession?.id,
+                           blocks: Set(BlockingRuntime.shared.controller?.activeBlocks.map(\.id) ?? []))
+    }
     static let waitingText = "En attente : aucune règle ni séance avec Surveillance en cours"
     /// Once per Mac, before the first gate: the old scope becomes a rule or the session default. Nothing starts or stops.
     @discardableResult func migrateSurveillance() -> JevSurveillanceStore.Migration {

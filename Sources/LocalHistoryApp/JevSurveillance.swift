@@ -61,6 +61,14 @@ struct JevSurveillanceActivity: Equatable {
     var lock: BlockLock
 }
 
+/// What a change of a « Surveillance » block needs (T-050 B1 corrections, P3): strengthening is immediate, weakening a
+/// running protected block goes through its stop (« Mot de passe », « Taper un texte »), « Verrouillé » refuses.
+enum JevWriteCheck: Equatable {
+    case allow
+    case stop(BlockLock)
+    case refused(String)
+}
+
 /// A change of the « Surveillance » block of a rule.
 enum JevRangeWrite: Equatable {
     case save(JevSurveillanceRange)
@@ -70,10 +78,20 @@ enum JevRangeWrite: Equatable {
 /// Where the « Surveillance » blocks live. One document in the app's defaults. Unreadable = no surveillance (closed),
 /// kept as it is until the next save.
 @MainActor final class JevSurveillanceStore: ObservableObject {
-    static let shared = JevSurveillanceStore()
+    /// The migration runs at the first access, before any write can create the document (T-050 B1 correction 7).
+    static let shared = launched(consent: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring),
+                                 scope: .shared, settings: JevInterventionPreferences.shared.settings)
+
+    /// The store as the app opens it: migrated before anyone can read or write it.
+    static func launched(defaults: UserDefaults = GoalongDefaults.standard, consent: Bool, scope: JevMonitoringPreferences,
+                         settings: JevInterventionSettings) -> JevSurveillanceStore {
+        let store = JevSurveillanceStore(defaults: defaults)
+        store.migrateIfNeeded(consent: consent, scope: scope, settings: settings)
+        return store
+    }
     static let storageKey = "goalong.jev.surveillance.v1"
     static let unreadableText = "Réglages de surveillance illisibles : aucune surveillance jusqu’au prochain enregistrement."
-    static let protectedText = "La surveillance de cette règle est en cours et protégée : elle reste jusqu’à sa fin."
+    static let protectedText = "La surveillance de cette règle est en cours et « Verrouillé » : elle ne peut pas être retirée ni affaiblie tant qu’elle tourne."
     @Published private(set) var document = JevSurveillanceDocument()
     @Published private(set) var error: String?
     private let defaults: UserDefaults
@@ -174,34 +192,62 @@ enum JevRangeWrite: Equatable {
         return (mark.start ?? .distantPast) <= now && now < end
     }
 
+    /// The strongest stop of the « Surveillance » carried by these sessions; Libre without one (a focus session without a
+    /// mark follows the default, which is Libre). Pure.
+    static func sessionLock(_ document: JevSurveillanceDocument, kind: JevSessionMark.Kind, ids: Set<UUID>) -> BlockLock {
+        var locks: [BlockLock] = []
+        for id in ids {
+            let mark = kind == .focus ? document.marks.last { $0.kind == .focus && $0.id == id }
+                                      : document.marks.last { $0.kind == kind && $0.id == id }
+            if let mark, mark.on { locks.append(mark.lock) }
+        }
+        return locks.max { $0.strength < $1.strength } ?? .free
+    }
+
+    func sessionLock(kind: JevSessionMark.Kind, ids: Set<UUID>) -> BlockLock {
+        error == nil ? Self.sessionLock(document, kind: kind, ids: ids) : .free
+    }
+
     /// Several carry it: the strongest settings win, whole (effects on, then the stronger veils, then the earlier first
     /// stage). Never a mix that no rule asked for.
     static func strongest(_ list: [JevInterventionSettings]) -> JevInterventionSettings? {
-        func score(_ value: JevInterventionSettings) -> (Int, Int, Int) {
-            let stages = value.stages.filter(\.enabled)
-            return (value.effectsEnabled ? 1 : 0, stages.map(\.intensity).reduce(0, +), -(stages.first?.afterMinutes ?? 61))
-        }
-        return list.max { score($0) < score($1) }
+        // Equal scores: the first of the list wins (the document order), so the choice stays the same from one tick to the next.
+        list.max { score($0) < score($1) }
+    }
+
+    static func score(_ value: JevInterventionSettings) -> (Int, Int, Int) {
+        let stages = value.stages.filter(\.enabled)
+        return (value.effectsEnabled ? 1 : 0, stages.map(\.intensity).reduce(0, +), -(stages.first?.afterMinutes ?? 61))
     }
 
     // MARK: Writes
 
-    /// Nil = the write may be saved. A running protected block keeps its days, hours and stop until its end.
-    func refusal(_ write: JevRangeWrite, now: Date, calendar: Calendar = .current) -> String? {
-        if error != nil { return nil } // the next save replaces an unreadable document
+    /// A running protected block: removing it, or changing its days, hours, stop or settings for weaker ones, goes through
+    /// its stop; « Verrouillé » refuses. Stronger settings or stop are immediate.
+    func check(_ write: JevRangeWrite, now: Date, calendar: Calendar = .current) -> JevWriteCheck {
+        if error != nil { return .allow } // the next save replaces an unreadable document
         let id: UUID
         switch write {
         case .save(let range): id = range.id
         case .delete(let value): id = value
         }
         guard let old = document.ranges.first(where: { $0.id == id }), old.lock != .free,
-              Self.isRunning(old, now: now, calendar: calendar) else { return nil }
+              Self.isRunning(old, now: now, calendar: calendar) else { return .allow }
         switch write {
-        case .delete: return Self.protectedText
+        case .delete: break
         case .save(let range):
-            if range.lock.strength < old.lock.strength || range.weekdays != old.weekdays
-                || range.startMinute != old.startMinute || range.endMinute != old.endMinute { return Self.protectedText }
-            return nil
+            if range.lock.strength >= old.lock.strength, range.weekdays == old.weekdays, range.startMinute == old.startMinute,
+               range.endMinute == old.endMinute, Self.score(range.settings) >= Self.score(old.settings) { return .allow }
+        }
+        return old.lock == .locked ? .refused(Self.protectedText) : .stop(old.lock)
+    }
+
+    /// Nil = the write may be saved without asking. Otherwise the reason it needs the stop or is refused.
+    func refusal(_ write: JevRangeWrite, now: Date, calendar: Calendar = .current) -> String? {
+        switch check(write, now: now, calendar: calendar) {
+        case .allow: return nil
+        case .refused(let reason): return reason
+        case .stop(let lock): return "La surveillance de cette règle est en cours et protégée : l’arrêt « \(lock.title) » est demandé."
         }
     }
 
@@ -216,15 +262,30 @@ enum JevRangeWrite: Equatable {
         save(next)
     }
 
-    /// The editor started a session: its choice, kept for this session, becomes the default of the next one.
-    func mark(_ mark: JevSessionMark, now: Date) {
+    /// The editor started a session: its choice is kept for this session. A Concentration session's choice becomes the
+    /// default of the next ones (correction 8: a Blocage session never changes it).
+    /// `alive` = the sessions that still exist (the Concentration one, every block, a later one included). Only finished
+    /// marks are removed: a mark of a running session is never dropped, however many sessions start (correction 4).
+    func mark(_ mark: JevSessionMark, now: Date, alive: JevRunningSessions) {
         var next = error == nil ? document : JevSurveillanceDocument()
-        next.marks.removeAll { $0.id == mark.id || ($0.kind == .own && ($0.end ?? .distantPast) <= now) }
+        next.marks = Self.pruned(next.marks.filter { $0.id != mark.id }, now: now, alive: alive)
         next.marks.append(mark)
-        next.marks = Array(next.marks.suffix(8))
-        next.sessionDefault = mark.on
-        if mark.on { next.sessionSettings = mark.settings }
+        if mark.kind == .focus {
+            next.sessionDefault = mark.on
+            if mark.on { next.sessionSettings = mark.settings }
+        }
         save(next)
+    }
+
+    /// The marks of sessions that still run. Pure.
+    static func pruned(_ marks: [JevSessionMark], now: Date, alive: JevRunningSessions) -> [JevSessionMark] {
+        marks.filter { mark in
+            switch mark.kind {
+            case .focus: return mark.id == alive.focus
+            case .block: return alive.blocks.contains(mark.id)
+            case .own: return (mark.end ?? .distantPast) > now
+            }
+        }
     }
 
     /// A session with « Surveillance » and no engine session, running now.

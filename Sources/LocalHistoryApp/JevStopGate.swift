@@ -3,7 +3,9 @@ import AppKit
 import LocalHistoryCore
 
 /// T-050 B1 point 7: while a rule or session carries « Surveillance » with a stop other than « Libre », everything that
-/// cuts Jev (the consent switch, « Tout suspendre », ⌘P) goes through that same stop. « Libre »: nothing changes.
+/// cuts Jev goes through that same stop: the consent switches (Jev, recording), « Tout suspendre », the recording pause
+/// (menu, panel, dashboard, ⌘P), the key, stopping a session that carries it, turning its module off, weakening its rule.
+/// « Verrouillé » refuses with its reason. « Libre »: nothing changes. A command without a dialog (the CLI) refuses.
 @MainActor enum JevStopGate {
     enum Step: Equatable {
         case allow
@@ -12,11 +14,13 @@ import LocalHistoryCore
         case refused(String)
     }
 
-    static let lockedText = "Une surveillance « Verrouillé » est en cours : Jev ne peut pas être coupé avant sa fin."
-    static let noBlockingText = "Une surveillance « Mot de passe » est en cours et le blocage est désactivé : Jev ne peut pas être coupé avant sa fin."
-    static let wrongText = "Texte différent. Jev continue."
+    static let lockedText = "Une surveillance « Verrouillé » est en cours : elle ne peut pas être coupée tant qu’elle tourne."
+    static let noBlockingText = "Une surveillance « Mot de passe » est en cours et le blocage est désactivé. Réactivez le blocage dans Réglages › Modules pour entrer le mot de passe."
+    /// Returned to the editor when the stop was not passed: nothing is saved.
+    static let keptText = "La surveillance en cours reste inchangée."
+    static let wrongText = "Texte différent. La surveillance continue."
     /// The editor's sentence, under « Arrêt », when « Surveillance » is checked with a stop other than « Libre ».
-    static let editorText = "Tant que la surveillance tourne, couper Jev (consentement, « Tout suspendre », ⌘P) demande ce même arrêt."
+    static let editorText = "Tant que la surveillance tourne, couper Jev (consentement, pause, « Tout suspendre », clé, arrêt de la séance) ou l’affaiblir demande ce même arrêt."
 
     /// The strongest stop among what runs now. Jev off = nothing to cut. Pure.
     static func step(_ activity: [JevSurveillanceActivity], jevEnabled: Bool,
@@ -45,10 +49,37 @@ import LocalHistoryCore
 
     static func needsAsking(_ step: Step) -> Bool { step != .allow }
 
-    /// Asks for the stop in a modal alert. True = Jev may be cut.
+    /// The step of one stop (a session's, a rule's). Jev off = nothing to cut.
+    static func step(lock: BlockLock, jevEnabled: Bool) -> Step {
+        step([JevSurveillanceActivity(settings: JevInterventionSettings(), lock: lock)], jevEnabled: jevEnabled)
+    }
+
+    /// The stop of what runs now: everything that cuts Jev as a whole.
+    static func currentStep(monitor: JevMonitor = .shared) -> Step {
+        step(monitor.currentActivity(), jevEnabled: monitor.enabled)
+    }
+
+    /// The stop of the surveillance the current Concentration session carries.
+    static func focusStep(monitor: JevMonitor? = nil) -> Step {
+        guard let id = ConcentrationRuntime.shared.controller?.currentSession?.id else { return .allow }
+        let lock = JevSurveillanceStore.shared.sessionLock(kind: .focus, ids: [id])
+        return lock == .free ? .allow : step(lock: lock, jevEnabled: (monitor ?? .shared).enabled)
+    }
+
+    /// The stop of the surveillance the Blocage sessions carry.
+    static func blockStep(monitor: JevMonitor? = nil) -> Step {
+        let lock = JevSurveillanceStore.shared.sessionLock(kind: .block, ids: JevMonitor.aliveSessions().blocks)
+        return lock == .free ? .allow : step(lock: lock, jevEnabled: (monitor ?? .shared).enabled)
+    }
+
+    /// Asks for the stop of what runs now in a modal alert. True = Jev may be cut.
     @MainActor static func confirm(action: String, monitor: JevMonitor = .shared,
                                    verify: ((String) -> BlockingPasswordResult)? = nil) -> Bool {
-        let step = step(monitor.currentActivity(), jevEnabled: monitor.enabled)
+        confirm(action: action, step: currentStep(monitor: monitor), verify: verify)
+    }
+
+    /// Asks for this stop in a modal alert. True = the action may go on.
+    @MainActor static func confirm(action: String, step: Step, verify: ((String) -> BlockingPasswordResult)? = nil) -> Bool {
         guard needsAsking(step) else { return true }
         NSApplication.shared.activate(ignoringOtherApps: true)
         let alert = NSAlert()
@@ -62,10 +93,10 @@ import LocalHistoryCore
             alert.runModal()
             return false
         case .typing(let text):
-            alert.informativeText = "Une surveillance « \(BlockLock.typing.title) » est en cours. Recopiez ce texte pour couper Jev :\n\n\(text)"
+            alert.informativeText = "Une surveillance « \(BlockLock.typing.title) » est en cours. Recopiez ce texte pour continuer :\n\n\(text)"
             field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         case .password:
-            alert.informativeText = "Une surveillance « \(BlockLock.password.title) » est en cours. Entrez le mot de passe de blocage pour couper Jev."
+            alert.informativeText = "Une surveillance « \(BlockLock.password.title) » est en cours. Entrez le mot de passe de blocage pour continuer."
             field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         }
         alert.accessoryView = field

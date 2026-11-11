@@ -138,6 +138,8 @@ import LocalHistoryCore
     private let loadDay: ((Date) async throws -> GoalongLocalAnalytics.Day)?
     private let playAmbiance: @MainActor (AmbianceController, AmbianceSource) -> Void
     private let onTogglePause: () -> Void
+    /// T-050 B1 correction 2: the stop of the « Surveillance » the Concentration session carries. Tests replace it.
+    var confirmSurveillanceStop: @MainActor () -> Bool = { JevStopGate.confirm(action: "Arrêter la séance", step: JevStopGate.focusStep()) }
     private let onOpenSection: (DashboardSection) -> Void
     private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
@@ -342,7 +344,9 @@ import LocalHistoryCore
 
     func stopFocus() {
         guard modules.isEnabled(.concentration), let controller = concentration() else { return }
-        do { try controller.stopSession() }
+        // T-050 B1 correction 2: a session that carries a protected « Surveillance » asks its stop.
+        guard confirmSurveillanceStop() else { return }
+        do { try controller.stopSession(surveillanceConfirmed: true) }
         catch { controller.error = String(describing: error); onOpenSection(.concentration) }
         refreshFocus(); refreshBlocking()
     }
