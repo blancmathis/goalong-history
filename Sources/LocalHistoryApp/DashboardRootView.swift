@@ -77,6 +77,10 @@
             .environment(\.goalongRecordingModel, model)
             .sheet(isPresented: $navigationStore.showingWebsiteShare) { GoalongWebsiteSharingSheet(initialDay: navigationStore.selectedDay).goalongControls() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongOpenRecordingSettings)) { _ in model.openRecordingSettings() }
+            // T-052 (1): one day for Activité and Historique. Activité writes the model's day itself when it commits.
+            .onChange(of: navigationStore.selectedDay) { day in
+                activityNavigation.followShared(day: day, now: model.now())
+            }
             .background(GoalongProfileShareHost(host: model.profileStudio))
             .background(LHTheme.pageBackground)
             .foregroundStyle(LHTheme.text)
@@ -163,6 +167,7 @@
         let model: DashboardViewModel
         @ObservedObject var navigationStore: DashboardNavigation
         @ObservedObject var settingsStore: DashboardSettingsState
+        @State private var confirmingDiscard = false
 
         init(model: DashboardViewModel) {
             self.model = model
@@ -180,13 +185,25 @@
                     Spacer()
                     Button("Voir dans Réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHQuietButtonStyle())
-                    Button("Abandonner") { model.discardSettingsChanges() }
+                    Button("Abandonner") {
+                        if DashboardSection.discardNeedsConfirmation(saved: settingsStore.savedSettingsDraft, draft: settingsStore.settingsDraft) {
+                            confirmingDiscard = true
+                        } else {
+                            model.discardSettingsChanges()
+                        }
+                    }
                     Button("Appliquer") { model.saveSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 }
                 .padding(.horizontal, LHTheme.pageInset).padding(.vertical, 12)
                 .background(LHTheme.cardBackground)
                 .overlay(alignment: .top) { Rectangle().fill(LHTheme.separator).frame(height: 1) }
+                .alert("Abandonner les modifications ?", isPresented: $confirmingDiscard) {
+                    Button("Abandonner", role: .destructive) { model.discardSettingsChanges() }
+                    Button("Continuer", role: .cancel) {}
+                } message: {
+                    Text(DashboardSection.pendingChangeSummary(saved: settingsStore.savedSettingsDraft, draft: settingsStore.settingsDraft))
+                }
             }
         }
     }
@@ -427,6 +444,18 @@
         }
 
         static func pendingChangeSummary(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> String {
+            let names = pendingChangeNames(saved: saved, draft: draft)
+            guard !names.isEmpty else { return "Modifications en attente" }
+            let count = names.count == 1 ? "1 modification en attente" : "\(names.count) modifications en attente"
+            return count + " : " + names.joined(separator: ", ")
+        }
+
+        /// T-052 (22): « Abandonner » asks first when more than one change would be lost.
+        static func discardNeedsConfirmation(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> Bool {
+            pendingChangeNames(saved: saved, draft: draft).count > 1
+        }
+
+        private static func pendingChangeNames(saved: DashboardSettingsDraft, draft: DashboardSettingsDraft) -> [String] {
             var names: [String] = []
             func check<T: Equatable>(_ path: KeyPath<DashboardSettingsDraft, T>, _ name: String) {
                 if saved[keyPath: path] != draft[keyPath: path], !names.contains(name) { names.append(name) }
@@ -441,9 +470,7 @@
             check(\.enableAppAttest, "vérification")
             check(\.excludedDomainsText, "exclusions"); check(\.excludedApplicationsText, "exclusions")
             check(\.includedDomainsText, "inclusions"); check(\.includedApplicationsText, "inclusions")
-            guard !names.isEmpty else { return "Modifications en attente" }
-            let count = names.count == 1 ? "1 modification en attente" : "\(names.count) modifications en attente"
-            return count + " : " + names.joined(separator: ", ")
+            return names
         }
 
         /// An enabled module's page joins the sidebar before Réglages; a disabled one has no entry.

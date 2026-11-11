@@ -210,7 +210,7 @@ struct GoalongAnalyticsPage: View {
                             }
                         }
                     }
-                    .frame(maxWidth: 1080, alignment: .leading)
+                    .frame(maxWidth: LHTheme.pageWidth, alignment: .leading)
                     // UI-9 (8): a named view starts 28 pt under the header, like other pages, not 56 pt: the
                     // top anchor above already adds one spacing of 24 pt. The summary starts 40 pt under the rule, not 48 (UI-14, écran 13/17).
                     .padding(.horizontal, LHTheme.pageInset).padding(.top, detail == nil ? 16 : 4).padding(.bottom, LHTheme.pageBottomInset)

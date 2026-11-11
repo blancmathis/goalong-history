@@ -38,9 +38,11 @@
         }
 
         /// R14a: only the main pages stay alive once left; the secondary ones are released (memory kept bounded).
+        /// T-052 (6): Ambiance and Temps d’écran Apple are the two exceptions: scroll, filter and search survive a visit elsewhere.
         var keepsPage: Bool {
             switch self {
-            case .overview, .analytics, .work, .history, .concentration, .distractions, .blocking, .braise, .settings, .monitoring: return true
+            case .overview, .analytics, .work, .history, .concentration, .distractions, .blocking, .braise, .settings, .monitoring,
+                 .ambiance, .screenTime: return true
             default: return false
             }
         }

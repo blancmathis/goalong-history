@@ -24,12 +24,14 @@ import SwiftUI
     private let placement: Placement
     private var inSheet: Bool { placement == .sheet }
     @ObservedObject var snapshotStore: DashboardSnapshotStore
+    @ObservedObject var navigationStore: DashboardNavigation
 
     init(model: DashboardViewModel, placement: Placement) {
         self.model = model
         self.placement = placement
         bodyProbe = DashboardBodyProbe(placement == .sheet ? "travail-feuille" : "travail")
         _snapshotStore = ObservedObject(wrappedValue: model.snapshotStore)
+        _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
     }
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
@@ -55,9 +57,10 @@ import SwiftUI
                 agentCard
                 GoalongWorkAnswersCard()
                 GoalongWorkUsageCard()
-                GoalongWorkReviewCard(review: review, focusTask: Self.reviewFocusTask,
+                GoalongWorkReviewCard(review: review, day: navigationStore.selectedDay, focusTask: Self.reviewFocusTask,
                                       loadsOnAppear: Self.reviewFocusTask != nil,
-                                      earliestDay: snapshotStore.snapshot.availableDays.min())
+                                      earliestDay: snapshotStore.snapshot.availableDays.min(),
+                                      sharedDay: navigationStore.selectedDay, onShareDay: { model.selectDay($0) })
             }
             GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
                 .font(.system(size: 13))
@@ -323,6 +326,9 @@ import SwiftUI
     private let loadsOnAppear: Bool
     /// First day with history: the day selector stops there (M3, UI-17A).
     private let earliestDay: Date?
+    /// T-052: the day shared with Activité and Historique (nil in Activité's sheet, which starts on its own day).
+    private let sharedDay: Date?
+    private let onShareDay: ((Date) -> Void)?
     @State private var naming: GoalongWorkReviewModel.Row?
     @State private var renaming: String?
     @State private var renameRefusal: String?
@@ -339,13 +345,20 @@ import SwiftUI
     /// Opened from Activité, the review starts on the day shown there, already loaded,
     /// with the task the user clicked first and unfolded.
     init(review: GoalongWorkReviewModel, day: Date = GoalongToday.now, focusTask: String? = nil, loadsOnAppear: Bool = false,
-         earliestDay: Date? = nil) {
+         earliestDay: Date? = nil, sharedDay: Date? = nil, onShareDay: ((Date) -> Void)? = nil) {
+        self.sharedDay = sharedDay
+        self.onShareDay = onShareDay
         _review = ObservedObject(wrappedValue: review)
         _day = State(initialValue: day)
         _expanded = State(initialValue: focusTask.map { ["task|" + $0] } ?? [])
         self.focusTask = focusTask
         self.loadsOnAppear = loadsOnAppear
         self.earliestDay = earliestDay
+    }
+
+    /// The day to show when the shared day becomes `shared`; nil when the card already shows that day.
+    nonisolated static func dayFollowing(shared: Date, current: Date, calendar: Calendar = .current) -> Date? {
+        calendar.isDate(current, inSameDayAs: shared) ? nil : shared
     }
 
     private var groups: [ReviewGroup] {
@@ -373,7 +386,7 @@ import SwiftUI
     var body: some View {
         GoalongSettingsGroup(title: "Vérifier et corriger") {
             HStack(spacing: 12) {
-                DateSelectionControl(date: day, onChange: { day = $0 }, showsToday: false, earliest: earliestDay)
+                DateSelectionControl(date: day, onChange: { day = $0; onShareDay?($0) }, showsToday: false, earliest: earliestDay)
                 Button(review.loadedDay == nil ? "Afficher le classement" : "Actualiser") { review.load(day: day) }
                     .buttonStyle(LHSecondaryButtonStyle()).disabled(!canLoad).accessibilityIdentifier("work-review-load")
                     .help(canLoad || review.loading ? "" : Self.historyOffReason)
@@ -398,6 +411,10 @@ import SwiftUI
             }
         }
         .onChange(of: day) { value in if review.loadedDay != nil { review.load(day: value) } }
+        // The page's own state follows the shared day; it writes nothing in the model (only a user's choice does).
+        .onChange(of: sharedDay) { value in
+            if let value, let next = Self.dayFollowing(shared: value, current: day) { day = next }
+        }
         .onAppearWhenShown { if loadsOnAppear && review.loadedDay == nil && !review.loading { review.load(day: day) } }
         .alert("Nouvelle tâche", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
             TextField("Nom de la tâche", text: $name)
