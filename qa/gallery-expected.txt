@@ -2998,3 +2998,7 @@ braise/page-fenetre--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la p
 ambiance/barre-telechargement--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
 distractions/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
 programme/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+blocages/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer la dernière séance », son raccourci et les séances préparées
+blocages/editeur-seance-preparee   # Blocages lot B2a (T-050) : nouvelle image, une séance préparée rouverte (nom, « Quand » seul, Enregistrer)
+menubar/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer » et « Lancer » dans le panneau
+blocages/editeur-   # Blocages lot B2a (T-050) : « Enregistrer pour plus tard… » sous « Séance » ; « Quand » d’une règle existante réduit à son choix ; niveaux d’arrêt impossibles d’une séance masqués

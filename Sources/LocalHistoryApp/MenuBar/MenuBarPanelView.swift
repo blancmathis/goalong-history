@@ -20,6 +20,7 @@
                 TodaySection(model: model)
                 PanelDivider()
                 FocusSection(model: model)
+                PreparedSection(model: model, store: model.prepared)
                 PanelDivider()
                 AmbianceSection(model: model)
                 PanelDivider()
@@ -639,6 +640,45 @@
     }
 
     // MARK: - Blocage
+
+    /// « Relancer la dernière séance » and the prepared sessions in one click (T-050 B2 point 4). Absent while
+    /// there is nothing to launch.
+    private struct PreparedSection: View {
+        @ObservedObject var model: MenuBarPanelModel
+        @ObservedObject var store: PreparedSessionStore
+
+        var body: some View {
+            if store.document.last != nil || !store.document.sessions.isEmpty {
+                PanelDivider()
+                PanelSection(title: "Séances", trailing: {
+                    if store.document.shortcut != .none {
+                        Text(store.document.shortcut.title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityLabel("Raccourci de Relancer")
+                    }
+                }, content: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let last = store.document.last {
+                            Button { model.launchPrepared(last) } label: {
+                                Label("Relancer la dernière séance", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(LHSecondaryButtonStyle())
+                            .accessibilityIdentifier("menubar-relaunch")
+                        }
+                        ForEach(store.document.sessions.prefix(4)) { session in
+                            HStack(spacing: 10) {
+                                Text(session.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Button("Lancer") { model.launchPrepared(session) }
+                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                                    .accessibilityLabel("Lancer \(session.name)")
+                            }
+                            .frame(minHeight: 28)
+                        }
+                    }
+                })
+            }
+        }
+    }
 
     private struct BlockingSection: View {
         @ObservedObject var model: MenuBarPanelModel

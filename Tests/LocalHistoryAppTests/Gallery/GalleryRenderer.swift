@@ -118,6 +118,8 @@ struct GalleryImage {
         // Built by `BlocagesPageContent.init` (Distractions, Programme, Activité…): `launched(defaults:)` reads
         // `GoalongDefaults.standard` once (T-050 B1).
         _ = JevSurveillanceStore.shared
+        // Read by `BlocagesPageContent.init` and the menu bar panel: reads `GoalongDefaults.standard` once (T-050 B2).
+        _ = PreparedSessionStore.shared
         _ = EnvironmentValues().goalongDefaults
     }
 
