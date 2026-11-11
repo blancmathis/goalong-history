@@ -116,7 +116,7 @@ import Combine
         /// True when the key was ours and was carried out.
         func handle(_ event: NSEvent) -> Bool {
             guard let window, let model else { return false }
-            let navigation = model.navigationStore
+            let navigation = model.keyboardNavigation
             let context = DashboardKeyboard.dashboardKeyContext(
                 window: window, section: navigation.selectedSection, welcomeShown: navigation.showWelcome)
             guard let command = DashboardKeyboard.dashboardKeyCommand(
@@ -127,7 +127,7 @@ import Combine
         }
 
         func perform(_ command: DashboardKeyCommand, model: DashboardViewModel) {
-            let navigation = model.navigationStore
+            let navigation = model.keyboardNavigation
             switch command {
             case .back:
                 model.returnFromSecondaryPage()

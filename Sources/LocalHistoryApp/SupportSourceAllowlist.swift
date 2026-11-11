@@ -97,6 +97,7 @@ enum SupportSourceAllowlist {
         "DashboardModels.swift",
         "DashboardRootView.swift",
         "DashboardStores.swift",
+        "DashboardViewModel+Keyboard.swift",
         "DashboardViewModel.swift",
         "DashboardViewModelWebsiteRules.swift",
         "DashboardWindowController.swift",
