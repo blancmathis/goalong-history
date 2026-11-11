@@ -8,7 +8,6 @@ import AppleScreenTime
 
     enum SoftwareUpdatePresentationAction: Equatable {
         case present
-        case prepare
         case wait
         case check
     }
@@ -28,8 +27,11 @@ import AppleScreenTime
             pendingRequest != nil
         }
 
+        /// A quiet probe found `version`. The badge shows it at once; a later probe that finds a
+        /// newer release replaces it. A click never installs this item: it starts a fresh user check.
         mutating func recordDetected(version: String) {
             detectedVersion = version
+            availableVersion = version
         }
 
         @discardableResult
@@ -47,8 +49,10 @@ import AppleScreenTime
                 return .present
             }
 
+            // No Sparkle alert is open: read the feed again so the click reaches the newest
+            // release, not the one a quiet probe saw earlier (T-053).
             isReady = false
-            return hasActiveSession ? .wait : .prepare
+            return hasActiveSession ? .wait : .check
         }
 
         mutating func requestUpdateCheck(hasActiveSession: Bool) -> SoftwareUpdatePresentationAction {
@@ -206,10 +210,9 @@ import AppleScreenTime
                 : "Vérification automatique désactivée."
 
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
-            // build. Start one quiet update session now so the dashboard button reflects the
-            // current Git release without waiting for the hourly interval. Keeping Sparkle's scheduled session
-            // alive also lets a click on that button reveal the already-found update immediately,
-            // instead of performing a second user-visible feed check.
+            // build. Start one quiet probe now so the dashboard button reflects the current Git
+            // release without waiting for the hourly interval. A click on that button always runs
+            // a fresh user-initiated check, so it installs the newest release, never a stale one.
             DispatchQueue.main.async { [weak self] in
                 self?.refreshAvailableUpdate()
             }
@@ -269,7 +272,23 @@ import AppleScreenTime
                 ? "Recherche de mises à jour…"
                 : "Préparation de la mise à jour…"
             SupportDiagnostics.shared.record(.updateCheckStarted, component: .updates, values: [.userChoice: .flag(false)])
-            updater.checkForUpdatesInBackground()
+            // A probe ends its session at once. A background *update* session would stay open with
+            // the item it found, block every later check, and make the next click install that
+            // older item even after newer releases were published (T-053).
+            updater.checkForUpdateInformation()
+        }
+
+        /// Error used to refuse Sparkle's scheduled background update sessions; a probe replaces them.
+        nonisolated static let heldSessionRefusalDomain = "ai.goalong.updates.probe-instead"
+
+        /// Sparkle may run user-initiated checks and probes. Its scheduled background update check
+        /// would hold a quiet session open (gentle reminders) and freeze the found version: refused.
+        nonisolated static func sparkleMayRun(_ check: SPUUpdateCheck) -> Bool {
+            check != .updatesInBackground
+        }
+
+        nonisolated static func isHeldSessionRefusal(_ error: (any Error)?) -> Bool {
+            (error as NSError?)?.domain == heldSessionRefusalDomain
         }
 
         func checkForUpdates() {
@@ -294,8 +313,6 @@ import AppleScreenTime
                 statusMessage = "Fin de la vérification en cours…"
             case .check:
                 startUserInitiatedCheck()
-            case .prepare:
-                break
             }
         }
 
@@ -310,16 +327,12 @@ import AppleScreenTime
             switch presentationState.requestAvailableUpdate(hasActiveSession: updater.sessionInProgress) {
             case .present:
                 presentReadyUpdate()
-            case .prepare:
-                // A dismissed Sparkle alert ends its update session even though the release is
-                // still available. Rebuild that session quietly and remember this click. Once
-                // Sparkle reports that its alert is ready, the same click presents it automatically.
-                statusMessage = "Préparation de \(ProductIdentity.displayName) \(availableVersion)…"
-                resumePendingRequest()
             case .wait:
                 statusMessage = "Préparation de \(ProductIdentity.displayName) \(availableVersion)…"
             case .check:
-                break
+                // Fresh user-initiated check: Sparkle reads the feed now and offers its newest item.
+                statusMessage = "Préparation de \(ProductIdentity.displayName) \(availableVersion)…"
+                startUserInitiatedCheck()
             }
         }
 
@@ -383,20 +396,8 @@ import AppleScreenTime
             guard let pendingRequest = presentationState.pendingRequest else { return }
 
             switch pendingRequest {
-            case .presentAvailableUpdate:
-                guard let updater = updaterController?.updater else {
-                    presentationState.cancelPendingRequest()
-                    return
-                }
-                guard !updater.sessionInProgress else { return }
-                guard updater.canCheckForUpdates else {
-                    statusMessage = "La mise à jour détectée est momentanément indisponible. Réessayez plus tard."
-                    presentationState.cancelPendingRequest()
-                    return
-                }
-                // This is a user click, not an automatic check; honor it even when checks are off.
-                beginBackgroundCheck()
-            case .checkForUpdates:
+            case .presentAvailableUpdate, .checkForUpdates:
+                // Both clicks read the feed again, so they reach the newest published release.
                 startUserInitiatedCheck()
             }
         }
@@ -538,10 +539,16 @@ import AppleScreenTime
             GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
         }
 
+        func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+            guard Self.sparkleMayRun(updateCheck) else {
+                throw NSError(domain: Self.heldSessionRefusalDomain, code: 1)
+            }
+        }
+
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
             GoalongGuardFiles.standard.removeLease()
-            if !Self.isNoUpdateResult(error) {
+            if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }
         }
@@ -591,6 +598,14 @@ import AppleScreenTime
         ) {
             isChecking = false
             lastBackgroundCheck = Date()
+            if Self.isHeldSessionRefusal(error) {
+                // Sparkle's hourly schedule fired: run the same check as a probe once its refused
+                // session has closed. A queued click resumes when that probe finishes.
+                DispatchQueue.main.async { [weak self] in
+                    self?.beginBackgroundCheck()
+                }
+                return
+            }
             if let error, !Self.isNoUpdateResult(error) {
                 let hadPendingRequest = presentationState.hasPendingRequest
                 presentationState.cancelPendingRequest()
