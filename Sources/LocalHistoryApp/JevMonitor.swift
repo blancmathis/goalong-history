@@ -184,7 +184,7 @@ struct JevRecentCheck: Identifiable {
         surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider()), now: now)
     }
     private var gate: String? {
-        if timedBreak != nil || breakStorageInvalid { return "Jev en pause : aucun appel ni rappel" }
+        if timedBreak != nil || breakStorageInvalid { return "Jev suspendu : aucun appel ni rappel" }
         if !enabled { return "Jev désactivé" }
         if let issue = surveillance.error { return issue }
         if activeSettings == nil { return Self.waitingText }

@@ -82,7 +82,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             invalidate()
             // Browsing another sample day only changes the preview; it does not change what the plan sends.
             var samePlanOldValue = oldValue; samePlanOldValue.date = draft.date
-            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled && samePlanOldValue != draft { autoSender.stop(); status = "Synchronisation mise en pause pendant la modification. Relisez puis confirmez vos nouveaux choix." }
+            if !configuringPresentation && oldValue.delivery == .daily && autoSender.enabled && samePlanOldValue != draft { autoSender.stop(); status = "Synchronisation suspendue pendant la modification. Relisez puis confirmez vos nouveaux choix." }
         }
     }
     @Published private(set) var catalog: GoalongSiteSelectionCatalog?

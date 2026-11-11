@@ -47,10 +47,10 @@ import AppleScreenTime
     var savedConfiguration: Configuration? { configuration() }
     private static let globalPauseStatus = "Pause globale : envoi suspendu, programmation conservée."
     static let exclusionsChangedReason = "Exclusions modifiées : relisez la sélection avant de reprendre."
-    static let accessRefusedReason = "Synchronisation en pause : le site a refusé l’accès de ce Mac. Reliez-le avec « Relier mon Mac », puis relisez la sélection."
+    static let accessRefusedReason = "Synchronisation suspendue : le site a refusé l’accès de ce Mac. Reliez-le avec « Relier mon Mac », puis relisez la sélection."
     static let sharingRulesUnreadableReason = "Synchronisation arrêtée : les règles de partage sont illisibles. Vérifiez-les dans les réglages avant de reprendre."
     static let reboundReason = "Compte relié de nouveau : relisez la sélection, puis reprenez l’envoi quotidien."
-    static let unreachableReason = "Synchronisation en pause : le site reste injoignable depuis ce Mac. Vérifiez votre connexion, puis relisez l’aperçu pour reprendre."
+    static let unreachableReason = "Synchronisation suspendue : le site reste injoignable depuis ce Mac. Vérifiez votre connexion, puis relisez l’aperçu pour reprendre."
     /// Fingerprint of an access the site refused (HTTP 401/403). The account card then offers to pair again.
     static let refusedCredentialKey = "goalong.website.refusedCredentialFingerprint"
     /// Waits before each new try when the site could not be reached. One more failure pauses the plan.
@@ -105,7 +105,7 @@ import AppleScreenTime
                 status = Self.activeStatus(saved)
             } else if let reason = saved.pauseReason, saved.paused == true {
                 pauseReason = reason; status = reason
-            } else { status = "Synchronisation en pause, vos choix sont conservés sur ce Mac." }
+            } else { status = "Synchronisation suspendue, vos choix sont conservés sur ce Mac." }
         }
     }
     private func configuration() -> Configuration? {
@@ -193,7 +193,7 @@ import AppleScreenTime
         if var saved = configuration() { saved.paused = true; saved.pauseReason = reason; try? store(saved) }
         enabled = false
         pauseReason = reason
-        status = reason ?? (busy ? "En pause. Un envoi déjà commencé peut encore aboutir." : "Synchronisation en pause, vos choix sont conservés.")
+        status = reason ?? (busy ? "Suspendu. Un envoi déjà commencé peut encore aboutir." : "Synchronisation suspendue, vos choix sont conservés.")
     }
     private func stopAutomatically(_ message: String) { networkRetry = nil; stop(reason: message) }
     /// Records that the site refused this access, so the account card offers « Relier mon Mac ».
@@ -358,14 +358,14 @@ import AppleScreenTime
         } catch let failure as ReceiptUncertain {
             // The request may have reached the site: never resend by itself.
             SupportDiagnostics.shared.failure(failure.underlying, component: .sharing)
-            stopAutomatically("Synchronisation en pause : \(Self.sentence(failure.underlying)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
+            stopAutomatically("Synchronisation suspendue : \(Self.sentence(failure.underlying)). Vérifiez l’historique du site, puis relisez l’aperçu pour reprendre.")
         } catch {
             // A local step failed before the send: nothing left this Mac, the day stays to send.
             SupportDiagnostics.shared.failure(error, component: .sharing)
             restoreAttempt(previousAttempt, of: current)
             // Some local messages already say it: say it once.
             let reason = Self.sentence(error).replacingOccurrences(of: ". Aucun envoi n’a été effectué", with: "")
-            stopAutomatically("Synchronisation en pause : \(reason). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
+            stopAutomatically("Synchronisation suspendue : \(reason). Rien n’a été envoyé. Corrigez ce point, puis relisez l’aperçu pour reprendre.")
         }
     }
     private static func activeStatus(_ saved: Configuration) -> String {

@@ -65,6 +65,21 @@ final class GoalongModuleStore: ObservableObject {
 
     func isEnabled(_ module: GoalongModule) -> Bool { enabled.contains(module) }
 
+    /// True when the module's own check would refuse turning it off. Changes nothing.
+    func refusesDisabling(_ module: GoalongModule) -> Bool {
+        switch module {
+        case .blocking: return blockingDisableCheck?() == false
+        case .concentration: return concentrationDisableCheck?() == false
+        default: return false
+        }
+    }
+
+    /// T-050 lot C2: once at launch. Only one part of « Garde-fous » on (an old mixed state): turn the missing part on.
+    /// Nothing is ever turned off here.
+    func alignGuardrailParts() {
+        for module in GuardrailSwitchPlan.partsToTurnOn(enabled: enabled) { setEnabled(module, true) }
+    }
+
     func setEnabled(_ module: GoalongModule, _ value: Bool) {
         guard value != isEnabled(module) else { return }
         if module == .blocking, !value, blockingDisableCheck?() == false { return }
@@ -75,6 +90,42 @@ final class GoalongModuleStore: ObservableObject {
         if module == .blocking { onBlockingEnabledChange?(value) }
         if module == .concentration { onConcentrationEnabledChange?(value) }
         NotificationCenter.default.post(name: .goalongModulesDidChange, object: self)
+    }
+}
+
+/// T-050 lot C2: the decisions behind the « Garde-fous » switch, pure so a test can pin them.
+enum GuardrailSwitchPlan: Equatable {
+    /// `stops`: every distinct stop to ask, each once, before anything changes. `parts`: what to switch, in order.
+    case go(stops: [JevStopGate.Step], parts: [GoalongModule])
+    /// A part refuses turning off: nothing changes, no stop is asked.
+    case refused(by: GoalongModule)
+
+    /// Off: Concentration first (its session), then Blocage. On: Blocage, then Concentration.
+    /// A part already in the wanted state is left alone.
+    @MainActor static func plan(parts: [GoalongModule], turningOn value: Bool, isEnabled: (GoalongModule) -> Bool,
+                     refuses: (GoalongModule) -> Bool, step: (GoalongModule) -> JevStopGate.Step) -> GuardrailSwitchPlan {
+        let changing = (value ? parts : parts.reversed()).filter { isEnabled($0) != value }
+        if !value, let part = changing.first(where: refuses) { return .refused(by: part) }
+        var stops: [JevStopGate.Step] = []
+        if !value {
+            for part in changing {
+                let one = step(part)
+                if JevStopGate.needsAsking(one), !stops.contains(one) { stops.append(one) }
+            }
+        }
+        return .go(stops: stops, parts: changing)
+    }
+
+    /// What to switch once the stops were asked: any refusal changes nothing.
+    static func parts(_ plan: GuardrailSwitchPlan, stopAnswers: [Bool]) -> [GoalongModule] {
+        guard case .go(let stops, let parts) = plan, stopAnswers.count == stops.count, !stopAnswers.contains(false) else { return [] }
+        return parts
+    }
+
+    /// Mixed state: exactly one part of « Garde-fous » is on. Returns the missing part(s). Never an « off ».
+    static func partsToTurnOn(enabled: Set<GoalongModule>) -> [GoalongModule] {
+        let on = GoalongModule.guardrailParts.filter { enabled.contains($0) }
+        return on.isEmpty || on.count == GoalongModule.guardrailParts.count ? [] : GoalongModule.guardrailParts.filter { !enabled.contains($0) }
     }
 }
 

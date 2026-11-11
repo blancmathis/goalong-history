@@ -84,7 +84,7 @@ final class GoalongWebsiteAutoSenderR174Tests: XCTestCase {
         await scheduler.tick(now: now)
         XCTAssertFalse(scheduler.enabled)
         XCTAssertFalse(scheduler.status.contains("continue"), scheduler.status)
-        XCTAssertTrue(scheduler.status.contains("pause"), scheduler.status)
+        XCTAssertTrue(scheduler.status.contains("uspendu"), scheduler.status)
     }
 
     /// The user pauses while the site cannot be reached: no "new try in 5 min" on a paused plan.

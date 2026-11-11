@@ -101,13 +101,7 @@ import SwiftUI
                     .accessibilityLabel(Self.openAccessibilityLabel(module))
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
-            Toggle(module.title, isOn: Binding(get: { on }, set: { value in
-                // One switch for « Garde-fous »: each part keeps its own stop. Off: Concentration first (its session), then Blocage.
-                for part in (value ? parts : parts.reversed()) {
-                    guard modules.isEnabled(part) != value else { continue }
-                    if !turn(part, value) { return }
-                }
-            }))
+            Toggle(module.title, isOn: Binding(get: { on }, set: { value in switchRow(module, value) }))
                 .toggleStyle(.goalongSwitchOnly).fixedSize()
                 .disabled(locked)
                 .accessibilityIdentifier("settings-module-\(module.rawValue)")
@@ -118,12 +112,28 @@ import SwiftUI
     /// T-050 lot C: the parts one row switches. « Garde-fous » = Blocage + Concentration.
     static func parts(of module: GoalongModule) -> [GoalongModule] { module == .blocking ? GoalongModule.guardrailParts : [module] }
 
-    /// Returns false when the part's own stop refused: the next part is left alone.
+    /// One switch for « Garde-fous »: every stop is asked first (each distinct stop once), then everything is applied.
+    /// A refusal or a cancelled stop changes nothing.
+    private func switchRow(_ module: GoalongModule, _ value: Bool) {
+        let parts = Self.parts(of: module)
+        // The runtime's own check reads this flag; the stops come next, so the refusal test lets them through.
+        concentration.surveillanceOffConfirmed = !value
+        let plan = GuardrailSwitchPlan.plan(parts: parts, turningOn: value, isEnabled: { modules.isEnabled($0) },
+                                            refuses: { modules.refusesDisabling($0) }, step: { Self.surveillanceStep($0) ?? .allow })
+        concentration.surveillanceOffConfirmed = false
+        guard case .go(let stops, _) = plan else { return }
+        var answers: [Bool] = []
+        for stop in stops {
+            let accepted = JevStopGate.confirm(action: "Désactiver \(module.title)", step: stop)
+            answers.append(accepted)
+            if !accepted { return }
+        }
+        for part in GuardrailSwitchPlan.parts(plan, stopAnswers: answers) where !turn(part, value) { return }
+    }
+
+    /// Applies one part. The stops were already passed.
     private func turn(_ module: GoalongModule, _ value: Bool) -> Bool {
-        // T-050 B1: turning off the module of a session that carries a protected « Surveillance » ends it: its stop first.
-        if !value, let step = Self.surveillanceStep(module),
-           !JevStopGate.confirm(action: "Désactiver \(module.title)", step: step) { return false }
-        // The stop was passed (or nothing to ask): the runtime's own check lets this one off through.
+        // The stops were passed (or nothing to ask): the runtime's own check lets this one off through.
         concentration.surveillanceOffConfirmed = !value && module == .concentration
         modules.setEnabled(module, value)
         concentration.surveillanceOffConfirmed = false

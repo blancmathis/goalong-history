@@ -51,7 +51,7 @@ extension Notification.Name {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(sender.enabled ? "Envoi quotidien activé"
-                         : sender.savedConfiguration != nil || sender.pauseReason != nil ? "Envoi quotidien en pause" : "Envois automatiques désactivés")
+                         : sender.savedConfiguration != nil || sender.pauseReason != nil ? "Envoi quotidien suspendu" : "Envois automatiques désactivés")
                         .font(.system(size: 13, weight: .medium))
                     if !sender.enabled, let reason = sender.pauseReason { Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.warning) }
                     if let day = sender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
@@ -61,7 +61,7 @@ extension Notification.Name {
                     }
                 }
                 Spacer()
-                if sender.enabled { Button("Mettre en pause") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
+                if sender.enabled { Button("Suspendre") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
                 Button(!sender.enabled && sender.savedConfiguration != nil ? "Relire et reprendre…" : "Choisir les données…") { showsConnection = true }.buttonStyle(LHSecondaryButtonStyle()).disabled(!credentialAvailable)
             }
         }
@@ -333,7 +333,7 @@ struct GoalongWebsiteConnectionSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Partage ponctuel avancé").font(.headline)
                         Text("Les récaps et analyses sont envoyés uniquement après votre relecture. Configurez l’envoi quotidien dans Réglages › Envoyer au site Goalong › Configurer les envois.").font(.caption)
-                        if autoSender.enabled { Button("Mettre la synchronisation en pause") { autoSender.stop() } }
+                        if autoSender.enabled { Button("Suspendre la synchronisation") { autoSender.stop() } }
                     }
                     Divider()
                     }

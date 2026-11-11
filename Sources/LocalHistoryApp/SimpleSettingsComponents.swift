@@ -157,7 +157,7 @@ enum GoalongHomeRows {
     static func websiteStatus(enabled: Bool, hasPlan: Bool, pauseReason: String?) -> String {
         if enabled { return "Chaque jour" }
         if pauseReason != nil { return "À reprendre" }
-        return hasPlan ? "En pause" : "À la demande"
+        return hasPlan ? "Suspendu" : "À la demande"
     }
     private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane, tint: Color? = nil) -> some View {
         // A disabled or unconfigured service is not "suspended": the global pause changes nothing for it.

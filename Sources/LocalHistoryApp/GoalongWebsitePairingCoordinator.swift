@@ -62,7 +62,7 @@ final class GoalongWebsitePairingCoordinator {
         let keepable = keepsSchedule(savedOrigin: savedOrigin, savedAccountID: savedAccountID, newOrigin: newOrigin, newAccountID: savedAccountID)
             && planOrigin == newOrigin
         return keepable
-            ? " Avec le même compte, l’envoi quotidien reste programmé, en pause jusqu’à votre relecture. Avec un autre compte, il sera supprimé."
+            ? " Avec le même compte, l’envoi quotidien reste programmé, suspendu jusqu’à votre relecture. Avec un autre compte, il sera supprimé."
             : " L’envoi quotidien programmé sera supprimé."
     }
     /// Body of the « Relier ce Mac » confirmation.

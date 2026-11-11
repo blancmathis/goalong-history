@@ -14,7 +14,7 @@ L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait 
 Le menu **Jev** montre l’état, la fin anticipée d’une pause encore en cours, la désactivation
 de Jev et l’ouverture de Garde-fous › Surveillance. Depuis T-050 B1, aucune pause de Jev ne se lance :
 une règle ou une séance dit quand Jev surveille. Une pause lancée avant la mise à jour finit
-normalement à son terme ; **Réinitialiser la pause** répare une minuterie illisible.
+normalement à son terme ; **Reprendre** répare une minuterie illisible.
 
 Le bouton d’activation nécessite une clé et le consentement local Computer History.
 Une surveillance déjà activée reste toujours désactivable, même si un prérequis manque.

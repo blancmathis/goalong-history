@@ -23,7 +23,7 @@ import LocalHistoryCore
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
-            Text("Chaque envoi est limité à 1 600 octets. Jev se met en pause si le service signale un usage trop élevé.")
+            Text("Chaque envoi est limité à 1 600 octets. Jev se suspend si le service signale un usage trop élevé.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
                 Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
@@ -76,13 +76,13 @@ struct JevRecentChecksView: View {
     }
 
     private var group: some View {
-        GoalongSettingsGroup(title: "Pause en cours") {
+        GoalongSettingsGroup(title: "Suspension en cours") {
             if monitor.breakStorageInvalid {
                 Text(JevMonitor.unreadableBreakNotice).foregroundStyle(LHTheme.secondaryText)
-                Button("Réinitialiser la pause") { monitor.endBreak() }
+                Button("Reprendre") { monitor.endBreak() }
             } else if monitor.timedBreak != nil {
                 HStack {
-                    Label("Jev en pause · " + GoalongUIFormat.remaining(TimeInterval(monitor.remainingSeconds)), systemImage: "pause.circle.fill")
+                    Label("Jev suspendu · " + GoalongUIFormat.remaining(TimeInterval(monitor.remainingSeconds)), systemImage: "pause.circle.fill")
                         .monospacedDigit().accessibilityIdentifier("jev-break-countdown")
                     Spacer()
                     Button("Reprendre Jev") { monitor.endBreak() }
@@ -90,7 +90,7 @@ struct JevRecentChecksView: View {
                 }
             }
             if monitor.timedBreak != nil {
-                Text("Jev et ses rappels sont en pause. Reprise automatique à la fin.")
+                Text("Jev et ses rappels sont suspendus. Reprise automatique à la fin.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
         }
@@ -113,7 +113,7 @@ struct JevRecentChecksView: View {
         status.isEnabled = false; menu.addItem(status); menu.addItem(.separator())
         if monitor.timedBreak != nil {
             let seconds = monitor.timedBreak?.remaining(at: Date()) ?? 0
-            menu.addItem(NSMenuItem(title: "Jev en pause · " + GoalongUIFormat.remaining(TimeInterval(seconds)), action: nil, keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Jev suspendu · " + GoalongUIFormat.remaining(TimeInterval(seconds)), action: nil, keyEquivalent: ""))
             let item = NSMenuItem(title: "Reprendre Jev", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
             menu.addItem(.separator())

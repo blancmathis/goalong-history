@@ -158,7 +158,7 @@ import LocalHistoryCore
         let settings = try source("GoalongModulesSettings.swift")
         XCTAssertTrue(settings.contains("case .concentration: return JevStopGate.focusStep()"))
         XCTAssertTrue(settings.contains("case .blocking: return JevStopGate.blockStep()"))
-        XCTAssertTrue(settings.contains("!JevStopGate.confirm(action: \"Désactiver \\(module.title)\", step: step)"))
+        XCTAssertTrue(settings.contains("JevStopGate.confirm(action: \"Désactiver \\(module.title)\", step: stop)"))
     }
 
     func testTheMessagesSayTheWayOut() {

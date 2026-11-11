@@ -192,6 +192,9 @@ import AppleScreenTime
                 return
             }
 
+            // T-050 lot C2: an old state with only one part of « Garde-fous » on gets the missing part, once. Never an off.
+            GoalongModuleStore.shared.alignGuardrailParts()
+
             // Goalong Dev never runs on a LocalHistory-Dev cloned by the old make dev (real device key and tokens).
             if case .legacy(let found) = GoalongDevDataGuard.check(channel: .current, root: AppPaths.applicationSupportDirectory) {
                 NSApplication.shared.activate(ignoringOtherApps: true)

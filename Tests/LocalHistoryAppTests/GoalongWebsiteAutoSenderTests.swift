@@ -351,7 +351,7 @@ final class GoalongWebsiteAutoSenderTests: XCTestCase {
     @MainActor func testOverviewNeverShowsAPausedPlanAsOnDemand() {
         XCTAssertEqual(GoalongDataStatus.websiteStatus(enabled: true, hasPlan: true, pauseReason: nil), "Chaque jour")
         XCTAssertEqual(GoalongDataStatus.websiteStatus(enabled: false, hasPlan: true, pauseReason: "Réseau"), "À reprendre")
-        XCTAssertEqual(GoalongDataStatus.websiteStatus(enabled: false, hasPlan: true, pauseReason: nil), "En pause")
+        XCTAssertEqual(GoalongDataStatus.websiteStatus(enabled: false, hasPlan: true, pauseReason: nil), "Suspendu")
         XCTAssertEqual(GoalongDataStatus.websiteStatus(enabled: false, hasPlan: false, pauseReason: nil), "À la demande")
     }
 }
