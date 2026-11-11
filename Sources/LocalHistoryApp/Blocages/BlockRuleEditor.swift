@@ -642,6 +642,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     enum SurveillanceStep: Equatable { case off, on(JevInterventionSettings), askConsent }
 
     /// Checking « Surveillance » without consent opens the consent request of the Jev page (point 5).
+    /// Point 7: the sentence under « Arrêt » when « Surveillance » is checked with a stop other than « Libre ».
+    static func surveillanceStopNote(_ draft: BlockRuleDraft, stop: BlockLock) -> String? {
+        draft.surveillance != nil && stop != .free ? JevStopGate.editorText : nil
+    }
+
     static func surveillanceStep(_ on: Bool, consented: Bool, defaults: JevInterventionSettings) -> SurveillanceStep {
         guard on else { return .off }
         return consented ? .on(defaults) : .askConsent
@@ -843,6 +848,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                         .buttonStyle(LHQuietButtonStyle()).fixedSize()
                         .accessibilityIdentifier("blocking-password-set")
                 }
+            }
+            if let note = Self.surveillanceStopNote(draft, stop: stopLevel) {
+                help(note).accessibilityIdentifier("block-rule-surveillance-stop")
             }
             if showsConsent {
                 help(GuardConsent.text).accessibilityIdentifier("block-rule-guard-consent")

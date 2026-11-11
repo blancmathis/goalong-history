@@ -485,7 +485,7 @@
 
         @objc private func toggleGlobalPause() {
             if GoalongGlobalPause.load().invalid { repairGlobalPause(); return }
-            if !GoalongGlobalPause.isPaused(), !confirmRecordingStop(allSources: true) { return }
+            if !GoalongGlobalPause.isPaused(), !MainActor.assumeIsolated({ JevStopGate.confirm(action: "Tout suspendre") }) || !confirmRecordingStop(allSources: true) { return }
             do {
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
@@ -526,7 +526,7 @@
         @objc private func retryKeychain() { onRetryKeychain() }
 
         @objc private func togglePause() {
-            if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
+            if state.isCapturing, !MainActor.assumeIsolated({ JevStopGate.confirm(action: "Mettre en pause") }) || !confirmRecordingStop(allSources: false) { return }
             onTogglePause()
             updateStatus()
         }

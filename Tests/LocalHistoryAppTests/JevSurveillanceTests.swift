@@ -155,3 +155,51 @@ import LocalHistoryCore
     }
 }
 #endif
+
+#if os(macOS)
+/// T-050 lot B1 point 7: cutting Jev goes through the strongest stop that runs. Pure: no alert, no real controller.
+@MainActor final class JevStopGateTests: XCTestCase {
+    private func activity(_ locks: [BlockLock]) -> [JevSurveillanceActivity] {
+        locks.map { JevSurveillanceActivity(settings: JevInterventionSettings(), lock: $0) }
+    }
+
+    func testFreeOrNothingRunningChangesNothing() {
+        XCTAssertEqual(JevStopGate.step([], jevEnabled: true), .allow)
+        XCTAssertEqual(JevStopGate.step(activity([.free, .free]), jevEnabled: true), .allow)
+        XCTAssertEqual(JevStopGate.step(activity([.locked]), jevEnabled: false), .allow, "Jev off: nothing to cut")
+        XCTAssertNil(JevStopGate.refusal(.allow, typed: "", verify: nil))
+    }
+
+    func testTheStrongestStopWins() {
+        XCTAssertEqual(JevStopGate.step(activity([.free, .typing]), jevEnabled: true, challenge: { "abc" }), .typing("abc"))
+        XCTAssertEqual(JevStopGate.step(activity([.typing, .password, .free]), jevEnabled: true), .password)
+        XCTAssertEqual(JevStopGate.step(activity([.password, .locked]), jevEnabled: true), .refused(JevStopGate.lockedText))
+    }
+
+    func testTypingNeedsTheExactText() {
+        XCTAssertNil(JevStopGate.refusal(.typing("abc"), typed: "abc", verify: nil))
+        XCTAssertEqual(JevStopGate.refusal(.typing("abc"), typed: "ab", verify: nil), JevStopGate.wrongText)
+    }
+
+    func testPasswordUsesTheBlockingPasswordAndLockedRefusesWithItsReason() {
+        var tried: [String] = []
+        let verify: (String) -> BlockingPasswordResult = { tried.append($0); return $0 == "ok" ? .ok : .wrong(remaining: 3) }
+        XCTAssertNil(JevStopGate.refusal(.password, typed: "ok", verify: verify))
+        XCTAssertEqual(JevStopGate.refusal(.password, typed: "no", verify: verify), RedScreenPasswordSheet.text(.wrong(remaining: 3)))
+        XCTAssertEqual(tried, ["ok", "no"])
+        XCTAssertEqual(JevStopGate.refusal(.password, typed: "ok", verify: nil), JevStopGate.noBlockingText)
+        XCTAssertEqual(JevStopGate.refusal(.refused(JevStopGate.lockedText), typed: "", verify: verify), JevStopGate.lockedText)
+        XCTAssertEqual(tried.count, 2, "a locked stop asks for nothing")
+    }
+
+    func testTheEditorSaysItUnderTheStopOnlyWithSurveillanceAndAStop() {
+        var draft = BlockRuleDraft()
+        XCTAssertNil(BlockRuleEditor.surveillanceStopNote(draft, stop: .password))
+        draft.surveillance = JevInterventionSettings()
+        XCTAssertNil(BlockRuleEditor.surveillanceStopNote(draft, stop: .free))
+        for lock in [BlockLock.typing, .password, .locked] {
+            XCTAssertEqual(BlockRuleEditor.surveillanceStopNote(draft, stop: lock), JevStopGate.editorText)
+        }
+    }
+}
+#endif

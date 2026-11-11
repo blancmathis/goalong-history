@@ -35,7 +35,7 @@ struct GoalongGlobalPauseControl: View {
             Button {
                 if pause.invalid { confirmingRepair = true }
                 else if pause.blocksActivity { changePause(false) }
-                else { confirming = true }
+                else if JevStopGate.confirm(action: "Tout suspendre") { confirming = true }
             } label: {
                 Label(pause.invalid ? GoalongGlobalPauseText.repair + "…" : pause.blocksActivity ? GoalongGlobalPauseText.resume : "Tout suspendre…",
                       systemImage: pause.blocksActivity ? "play.circle" : "pause.circle")

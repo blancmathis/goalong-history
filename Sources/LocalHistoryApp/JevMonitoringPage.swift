@@ -125,7 +125,7 @@ struct JevActivationAvailability: Equatable {
     }
 
     private var enabledBinding: Binding<Bool> {
-        Binding(get: { enabled }, set: { if $0 { confirming = true } else { monitor.setEnabled(false) } })
+        Binding(get: { enabled }, set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } })
     }
 
     private var monitoringCard: some View {
@@ -142,7 +142,7 @@ struct JevActivationAvailability: Equatable {
                     VStack(alignment: .trailing, spacing: 4) {
                         Toggle("Activer", isOn: Binding(
                             get: { enabled },
-                            set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
+                            set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } }))
                             .toggleStyle(.goalongSwitchOnly).fixedSize()
                             .disabled(!availability.canToggle(isEnabled: enabled))
                             .accessibilityHint(availability.canToggle(isEnabled: enabled) || availability.hasKey ? "" : "Connectez d’abord Jev, plus bas.")
