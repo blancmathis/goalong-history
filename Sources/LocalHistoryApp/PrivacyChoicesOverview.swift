@@ -42,7 +42,7 @@ import LocalHistoryCore
                     }
                     Divider()
                     // With every source off, the recording summary would describe a capture that does not happen.
-                    Text(pause.blocksActivity ? "Tout le suivi en pause."
+                    Text(pause.blocksActivity ? "Tout l’enregistrement suspendu."
                          : Self.sources.contains { consents.isEnabled($0) } ? settingsStore.appliedSettings.recordingSummary : "Aucune source activée.")
                         .font(.system(size: 13))
                     Text(settingsStore.appliedSettings.capturePrivateBrowsing
@@ -50,7 +50,7 @@ import LocalHistoryCore
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 12) {
-                        // During the global pause, « Reprendre tout le suivi » is the one lime action of the screen.
+                        // During the global pause, « Reprendre tout l’enregistrement » is the one lime action of the screen.
                         Button("Modifier l’enregistrement") { model.openRecordingSettings() }
                             .modifier(GoalongMainActionStyle(primary: !pause.blocksActivity))
                         Button("Gérer les exclusions") { model.openApplicationsSettings() }.buttonStyle(LHSecondaryButtonStyle())
@@ -80,13 +80,13 @@ import LocalHistoryCore
                     HStack(spacing: 12) {
                         Button("Vérifier l’envoi au site…") { showingSharing = true }.buttonStyle(LHSecondaryButtonStyle())
                         if sender.enabled {
-                            Button("Mettre en pause l’envoi quotidien") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle())
+                            Button("Suspendre l’envoi quotidien") { sender.stop() }.buttonStyle(LHSecondaryButtonStyle())
                         }
                     }
                     GoalongDisclosureGroup("En savoir plus") {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Envoyer au site et partager avec d’autres personnes sont deux actions différentes : les règles de destinataires du site s’appliquent après l’envoi. Un export local crée un fichier ; toute personne qui le reçoit peut en garder une copie.")
-                            Text("Mettre en pause, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
+                            Text("Suspendre, déconnecter ou supprimer localement n’efface pas les données déjà reçues ; un transfert en cours peut se terminer. Gérez les destinataires et supprimez les données distantes sur le site ou chez le service. La recherche de mises à jour contacte le serveur des versions sans envoyer votre activité.")
                         }.font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
                     }
                 }.fixedSize(horizontal: false, vertical: true)
@@ -124,7 +124,7 @@ import LocalHistoryCore
     /// UI-54: the real state, never « désactivé ou en pause ».
     nonisolated static func dailySendingText(enabled: Bool, paused: Bool) -> String {
         enabled ? "L’envoi quotidien au site est activé."
-            : paused ? "L’envoi quotidien au site est en pause." : "L’envoi quotidien au site est désactivé."
+            : paused ? "L’envoi quotidien au site est suspendu." : "L’envoi quotidien au site est désactivé."
     }
     /// Same state as the « Autoriser les analyses » switch in Réglages › Analyse ChatGPT.
     nonisolated static func chatGPTAnalysisText(consented: Bool, selection: GoalongAnalysisSelection, policy: GoalongPrivacyPolicy) -> String {

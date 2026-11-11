@@ -57,7 +57,7 @@
             case .work: return "Définition du travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Blocages"
+            case .blocking: return "Garde-fous"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"

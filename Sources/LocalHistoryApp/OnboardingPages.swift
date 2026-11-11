@@ -159,7 +159,7 @@
                                          paused: pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity,
                                          permissionMissing: !GoalongAccessibilityTrust.isTrusted)).goalongPageTitle()
                     Text(pauseRevision >= 0 && GoalongGlobalPause.load().blocksActivity
-                         ? "Tout le suivi est suspendu : rien n’est enregistré pour l’instant. Reprenez le suivi pour que votre fil apparaisse dans Activité."
+                         ? "Tout l’enregistrement est suspendu : rien n’est enregistré pour l’instant. Reprenez l’enregistrement pour que votre fil apparaisse dans Activité."
                          : consents.isEnabled(.localComputerHistory)
                          ? "Votre fil apparaîtra dans Activité dès les premières minutes d’utilisation de ce Mac."
                          : "L’enregistrement local est désactivé : rien n’apparaîtra dans Activité. Vous pourrez l’activer dans Réglages › Enregistrement.")

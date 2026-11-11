@@ -205,7 +205,7 @@ final class GoalongGranularAnalysisTests: XCTestCase {
     /// UI-54: the daily sending names its real state, never « désactivé ou en pause ».
     func testPrivacyOverviewDailySendingNamesTheRealState() {
         XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: true, paused: false), "L’envoi quotidien au site est activé.")
-        XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: false, paused: true), "L’envoi quotidien au site est en pause.")
+        XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: false, paused: true), "L’envoi quotidien au site est suspendu.")
         XCTAssertEqual(PrivacyChoicesOverview.dailySendingText(enabled: false, paused: false), "L’envoi quotidien au site est désactivé.")
     }
     /// T-044 B2-06: an Apple app without a display name never leaves as its raw identifier.

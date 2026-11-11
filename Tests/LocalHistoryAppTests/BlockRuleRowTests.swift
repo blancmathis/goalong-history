@@ -150,7 +150,7 @@ import XCTest
         XCTAssertNil(BlockRuleSentence.text(trigger: .always, draft: BlockRuleDraft(), lists: [game], lock: .free, now: now),
                      "nothing chosen: no sentence")
         XCTAssertEqual(BlockRuleSentence.text(trigger: .session, draft: BlockRuleDraft(), lists: [], lock: .free,
-                                              session: .init(end: end, wholeMac: true), now: now)?.hasPrefix("Gèle tout le Mac"), true)
+                                              session: .init(end: end, wholeMac: true), now: now)?.hasPrefix("Bloque tout le Mac"), true)
     }
 
     // MARK: Alert of « Surveillance » alone (point 5)

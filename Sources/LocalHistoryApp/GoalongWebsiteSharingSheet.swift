@@ -44,11 +44,11 @@ import LocalHistoryQueryCLI
                     if autoSender.savedConfiguration != nil {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(autoSender.enabled ? "Envoi quotidien activé" : "Envoi quotidien en pause").font(.system(size: 13, weight: .medium))
+                                Text(autoSender.enabled ? "Envoi quotidien activé" : "Envoi quotidien suspendu").font(.system(size: 13, weight: .medium))
                                 if let day = autoSender.lastSuccess { Text("Dernière journée reçue : \(GoalongUIFormat.day(key: day))").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
                             }
                             Spacer()
-                            if autoSender.enabled { Button("Mettre en pause") { autoSender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
+                            if autoSender.enabled { Button("Suspendre") { autoSender.stop() }.buttonStyle(LHSecondaryButtonStyle()) }
                             GoalongHelpButton(text: autoSender.status)
                         }
                     }
@@ -282,7 +282,7 @@ import LocalHistoryQueryCLI
                         .textSelection(.enabled).padding(12)
                 }.frame(height: 180)
             }.font(.system(size: 13))
-            Text("Mettre en pause n’efface pas les données déjà reçues.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            Text("Suspendre n’efface pas les données déjà reçues.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
     private var footer: some View {

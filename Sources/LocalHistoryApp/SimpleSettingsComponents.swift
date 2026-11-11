@@ -125,7 +125,7 @@ enum GoalongHomeRows {
     var body: some View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
-                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : runtimeStore.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText),
+                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : runtimeStore.runtime.state == .paused ? "Suspendu" : GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoyer au site Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),
@@ -157,7 +157,7 @@ enum GoalongHomeRows {
     static func websiteStatus(enabled: Bool, hasPlan: Bool, pauseReason: String?) -> String {
         if enabled { return "Chaque jour" }
         if pauseReason != nil { return "À reprendre" }
-        return hasPlan ? "En pause" : "À la demande"
+        return hasPlan ? "Suspendu" : "À la demande"
     }
     private func row(_ title: String, status: String, detail: String, symbol: String, pane: SettingsPane, tint: Color? = nil) -> some View {
         // A disabled or unconfigured service is not "suspended": the global pause changes nothing for it.

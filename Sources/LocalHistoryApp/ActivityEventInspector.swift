@@ -9,7 +9,7 @@
             switch kind {
             case .recorderStarted: return "Enregistrement démarré"
             case .recorderStopped: return "Enregistrement arrêté"
-            case .recordingPaused: return "Enregistrement en pause"
+            case .recordingPaused: return "Enregistrement suspendu"
             case .recordingResumed: return "Enregistrement repris"
             case .permissionStatus: return "État des autorisations"
             case .recorderHealth: return "État de l’enregistrement"
@@ -45,7 +45,7 @@
             case .excludedDomain: return "Site exclu"
             case .secureInput: return "Saisie protégée"
             case .sessionUnavailable: return "Session indisponible"
-            case .manualPause: return "Pause manuelle"
+            case .manualPause: return "Enregistrement suspendu"
             case .accessibilityUnavailable: return "Accessibilité indisponible"
             }
         }

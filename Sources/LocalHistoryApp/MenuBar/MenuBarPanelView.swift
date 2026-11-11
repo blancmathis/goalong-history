@@ -356,7 +356,7 @@
                 case .page:
                     Button("Arrêter…") { model.stopLive(item.id) }
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                        .help("L’arrêt se demande dans Blocages (\(item.lock.title))")
+                        .help("L’arrêt se demande dans Garde-fous (\(item.lock.title))")
                         .accessibilityLabel("Demander l’arrêt : \(item.title)")
                 case .none:
                     EmptyView()
@@ -485,7 +485,7 @@
             // Decision 15: the big clock says what it counts.
             var parts: [String] = [run.isPaused ? "En pause" : run.remaining != nil ? "Temps restant" : "Temps écoulé"]
             if let cycle = run.cycle, let cycles = run.cycles { parts.append("cycle \(cycle) sur \(cycles)") }
-            if let next = run.nextBreak, !run.isPaused { parts.append("pause dans \(GoalongUIFormat.timerLength(next.timeIntervalSince(GoalongToday.now)))") }
+            if let next = run.nextBreak, !run.isPaused { parts.append("repos dans \(GoalongUIFormat.timerLength(next.timeIntervalSince(GoalongToday.now)))") }
             return parts.joined(separator: ", ")
         }
 
@@ -803,7 +803,7 @@
                     // T-050 point 13: the ranges are rules of the page « Blocages ».
                     Button("Règles…") { model.openRedScreenSettings() }
                         .buttonStyle(.link).font(.system(size: 12))
-                        .help("Ouvrir Blocages › Règles")
+                        .help("Ouvrir Garde-fous › Règles")
                         .accessibilityIdentifier("menubar-red-screen-ranges")
                 }
             }

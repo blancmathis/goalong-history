@@ -87,7 +87,7 @@ import XCTest
         }
         XCTAssertEqual(BlocagesTarget(.overview), .top)
         XCTAssertEqual(DashboardSection.primarySections, [.overview, .history, .blocking, .settings])
-        XCTAssertEqual(DashboardSection.blocking.title, "Blocages"); XCTAssertEqual(DashboardSection.blocking.simpleTitle, "Blocages")
+        XCTAssertEqual(DashboardSection.blocking.title, "Garde-fous"); XCTAssertEqual(DashboardSection.blocking.simpleTitle, "Garde-fous")
         XCTAssertTrue(DashboardSection.preheated.contains(.blocking), "built at rest: the first click draws nothing new")
     }
 
@@ -117,7 +117,7 @@ import XCTest
 
     func testANewMemberSeesEveryPartAndHowToStart() {
         let text = page(blocking())
-        for expected in ["blocages-page", "Blocages", "Règles", "blocages-new-rule", "blocages-no-rule", "blocages-rule-jev",
+        for expected in ["blocages-page", "Garde-fous", "Règles", "blocages-new-rule", "blocages-no-rule", "blocages-rule-jev",
                          "Listes", "Séances", "Protection", "blocking-state-idle"] {
             XCTAssertTrue(text.contains(expected), "missing: \(expected)")
         }

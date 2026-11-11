@@ -101,9 +101,9 @@ struct ConcentrationHubHeader: View {
                 } else {
                     GoalongSection(title: "Listes") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Les listes de sites et d’apps à bloquer viennent du module Blocage.")
+                            Text("Les listes de sites et d’apps à bloquer viennent du module Garde-fous.")
                                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                            Button("Activer Blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+                            Button("Activer Garde-fous") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                                 .buttonStyle(LHPrimaryButtonStyle())
                                 .accessibilityIdentifier("module-enable-blocking")
                         }
@@ -257,7 +257,7 @@ struct ConcentrationHubHeader: View {
                             row(item, session: current.session.id)
                         }
                         if blocking.controller == nil {
-                            Text("Activez Blocage pour les ajouter à une liste.")
+                            Text("Activez Garde-fous pour les ajouter à une liste.")
                                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.top, 8)
                         }
                         if let error { GoalongNote(error, tone: .warning).padding(.top, 8) }

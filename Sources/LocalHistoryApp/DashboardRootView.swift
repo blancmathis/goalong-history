@@ -283,9 +283,6 @@
                     Text("Goalong")
                         .font(.system(size: 17, weight: .bold))
                         .tracking(-0.5)
-                    Text("Historique sur ce Mac")
-                        .font(.system(size: 12))
-                        .foregroundStyle(LHTheme.secondaryText)
                 }
             }
         }
@@ -487,7 +484,7 @@
             case .work: return "Définition du travail"
             case .history: return "Historique"
             case .monitoring: return "Jev"
-            case .blocking: return "Blocages"
+            case .blocking: return "Garde-fous"
             case .concentration: return "Concentration"
             case .distractions: return "Distractions"
             case .ambiance: return "Ambiance"

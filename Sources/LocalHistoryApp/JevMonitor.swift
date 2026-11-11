@@ -184,7 +184,7 @@ struct JevRecentCheck: Identifiable {
         surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider()), now: now)
     }
     private var gate: String? {
-        if timedBreak != nil || breakStorageInvalid { return "Jev en pause : aucun appel ni rappel" }
+        if timedBreak != nil || breakStorageInvalid { return "Jev suspendu : aucun appel ni rappel" }
         if !enabled { return "Jev désactivé" }
         if let issue = surveillance.error { return issue }
         if activeSettings == nil { return Self.waitingText }
@@ -192,9 +192,9 @@ struct JevRecentCheck: Identifiable {
         if keyStorageInvalid { return "Clé d’accès Jev illisible : Jev suspendu" }
         if !hasKey { return "Configurez la connexion à Jev pour l’activer" }
         if circuitOpen { return circuitReason?.errorDescription ?? "Jev suspendu après erreur : vérifiez la connexion" }
-        if GoalongGlobalPause.isPaused() { return "Tout le suivi en pause : enregistrement et Jev suspendus" }
+        if GoalongGlobalPause.isPaused() { return "Tout l’enregistrement suspendu : enregistrement et Jev suspendus" }
         if !consents.isEnabled(.localComputerHistory) { return "Activez l’enregistrement pour utiliser Jev" }
-        if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement en pause : aucune analyse temps réel" }
+        if BackgroundContinuityPreferences().manuallyPaused { return "Enregistrement suspendu : aucune analyse temps réel" }
         if !sessionAvailable { return "Mac inactif ou verrouillé : aucune analyse temps réel" }
         if GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).blocked { return "Exclusions illisibles : aucune analyse temps réel" }
         return nil

@@ -437,7 +437,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
                     throw RedScreenRefusal(message: "24 h de protection au maximum.", isLock: false)
                 }
                 if value.effectiveLock == .password, !passwordAvailable(), ranges.brightnessLock?.effectiveLock != .password {
-                    throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
+                    throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Protection).", isLock: false)
                 }
             }
             next = value
@@ -554,7 +554,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             let range = write.range
             guard RedScreenProgram.isUsable(range) else { throw RedScreenRefusal(message: "Choisissez au moins un jour et deux heures différentes.", isLock: false) }
             if range.effectiveLock == .password, !passwordAvailable(), ranges.program.ranges.first(where: { $0.id == range.id })?.effectiveLock != .password {
-                throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
+                throw RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Protection).", isLock: false)
             }
             if let i = next.program.ranges.firstIndex(where: { $0.id == range.id }) { next.program.ranges[i] = range }
             else {
@@ -613,7 +613,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         guard length >= 60 else { return RedScreenRefusal(message: "Choisissez une fin dans au moins une minute.", isLock: false) }
         guard length <= Self.maximumHoldSeconds else { return RedScreenRefusal(message: "Une fenêtre ponctuelle dure 24 h au plus.", isLock: false) }
         if lock == .password, !passwordAvailable() {
-            return RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Blocages › Protection).", isLock: false)
+            return RedScreenRefusal(message: "Créez d’abord un mot de passe de blocage (Garde-fous › Protection).", isLock: false)
         }
         if brightness != nil, !canControlBrightness {
             return RedScreenRefusal(message: "Goalong ne peut régler la luminosité d’aucun écran de ce Mac.", isLock: false)

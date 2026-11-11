@@ -248,7 +248,7 @@ enum SupportFindings {
         if statuses.contains(402) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringPaymentRequired,
                 title: "Jev : crédit épuisé",
-                detail: "Le service d’analyse a répondu 402 (paiement requis) : Jev s’est mis en pause. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
+                detail: "Le service d’analyse a répondu 402 (paiement requis) : Jev s’est suspendu. Rechargez le compte TypeSafe puis cliquez sur Réessayer."))
         } else if statuses.contains(where: { $0 == 401 || $0 == 403 }) {
             findings.append(SupportFinding(severity: .warning, code: .monitoringAuthentication,
                 title: "Jev : clé refusée", detail: "Le service d’analyse refuse la clé configurée."))

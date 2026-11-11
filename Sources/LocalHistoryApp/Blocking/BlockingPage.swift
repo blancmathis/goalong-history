@@ -561,7 +561,7 @@ struct BlockingMeter: View {
     }
 
     private var actionTitle: String {
-        if wholeMac { return "Geler \(freezePromise.phrase(now: now))…" }
+        if wholeMac { return "Bloquer tout le Mac \(freezePromise.phrase(now: now))…" }
         return plan(at: now).actionTitle()
     }
 
@@ -581,8 +581,8 @@ struct BlockingMeter: View {
         switch (span, freeze) {
         case (.minutes, false): return "Ce blocage serait déjà fini. Relancez-le."
         case (.until, false): return "L’heure de fin est passée. Choisissez une autre heure."
-        case (.minutes, true): return "Le gel durerait moins de 5 min. Relancez-le."
-        case (.until, true): return "Le gel durerait moins de 5 min. Choisissez une autre heure."
+        case (.minutes, true): return "Le blocage de tout le Mac durerait moins de 5 min. Relancez-le."
+        case (.until, true): return "Le blocage de tout le Mac durerait moins de 5 min. Choisissez une autre heure."
         }
     }
 
@@ -619,9 +619,9 @@ struct BlockingMeter: View {
         } message: {
             Text(GuardConsent.message((pending ?? plan(at: now)).lockMessage(lock), needed: controller.guardNeedsConsent))
         }
-        .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
+        .alert("Bloquer tout le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
             Button("Annuler", role: .cancel) {}
-            Button("Geler") {
+            Button("Bloquer") {
                 controller.recordGuardConsent()
                 // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
                 guard let end = pendingFreeze.end(at: Date()) else { return refuseEndPassed(freeze: true) } // wall: page input; the controller moves it to its trusted frame
@@ -930,7 +930,7 @@ struct BlockingWholeMacChip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Tout le Mac, geler")
+        .accessibilityLabel("Tout le Mac, bloquer")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("blocking-pick-mac")
     }
@@ -1116,7 +1116,7 @@ struct BlockingLockExplainer: View {
 
     /// Why the start button is off, or nil when it is on.
     static func startHint(wholeMac: Bool, frozen: Bool, hasLists: Bool, anySelected: Bool, needsPassword: Bool) -> String? {
-        if wholeMac { return frozen ? "Le Mac est déjà gelé." : nil }
+        if wholeMac { return frozen ? "Tout le Mac est déjà bloqué." : nil }
         if !hasLists { return "Créez une liste, ou choisissez « Tout le Mac »." }
         if !anySelected { return "Choisissez au moins une liste." }
         if needsPassword { return "Choisissez d’abord un mot de passe de blocage." }

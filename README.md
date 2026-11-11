@@ -192,7 +192,7 @@ The SwiftUI dashboard sidebar has four fixed destinations (⌘1 to ⌘3 and ⌘,
 - **Historique** (⌘2) — one selected-day view with an all-sources timeline and filters for causal
   [Computer History](docs/COMPUTER_HISTORY_PARITY.md), Apple Screen Time and
   [AI conversations](Features/AgentActivity/README.md);
-- **Blocages** (⌘3) — one page for every block rule: a trigger (now, a weekly range, Jev), what it
+- **Garde-fous** (⌘3) — one page for every block rule: a trigger (now, a weekly range, Jev), what it
   does (site and app lists, red screen, locked brightness) and how hard it is to stop. It also holds
   the lists, the focus sessions and the Jev rule. See [the spec](docs/spec-blocages-20261110.md);
 - **Réglages** (⌘,) — ChatGPT connection, **Définition du travail** (your own definition of work and

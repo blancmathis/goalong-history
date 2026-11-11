@@ -263,7 +263,7 @@
                 alert = AgentActivityAlert(
                     title: "Détection indisponible",
                     message: GoalongGlobalPause.isPaused(in: pauseRoot)
-                        ? "Tout le suivi en pause. Reprenez tout le suivi pour détecter des sources."
+                        ? "Tout l’enregistrement suspendu. Reprenez tout le suivi pour détecter des sources."
                         : "La lecture des conversations locales est désactivée. Activez-la pour détecter des sources."
                 )
                 return

@@ -280,7 +280,7 @@
         ) -> (title: String, symbol: String, description: String) {
             let display: (title: String, symbol: String, description: String)
             if globalPaused {
-                display = ("Tout le suivi en pause", "pause.circle.fill", "Sources et envois suspendus")
+                display = ("Tout l’enregistrement suspendu", "pause.circle.fill", "Sources et envois suspendus")
             } else if configUnreadable {
                 display = ("Réglages illisibles", "exclamationmark.triangle.fill", ConfigManager.failClosedNotice)
             } else if !localEnabled {
@@ -295,7 +295,7 @@
                 display = ("Autorisation macOS à vérifier", "exclamationmark.triangle.fill",
                            "Ouvrez Goalong pour rétablir l’accès. Rien n’est enregistré en attendant.")
             } else if !recording {
-                display = ("Enregistrement en pause", "pause.circle.fill", "\(ProductIdentity.displayName) est en pause")
+                display = ("Enregistrement suspendu", "pause.circle.fill", "\(ProductIdentity.displayName) est suspendu")
             } else if let suppression, suppression == .accessibilityUnavailable {
                 display = ("Navigateur non accessible", "exclamationmark.shield.fill",
                            "Cette fenêtre ne peut pas être lue en toute sécurité : aucun détail enregistré")
@@ -349,7 +349,7 @@
             globalPauseItem.title = GoalongGlobalPause.load().invalid ? GoalongGlobalPauseText.repair + "…" : GoalongGlobalPause.isPaused() ? GoalongGlobalPauseText.resume : "Confidentialité, tout suspendre…"
             pauseMenuItem.title = !localEnabled
                 ? "Configurer l’enregistrement…"
-                : (state.isManuallyPaused ? "Reprendre l’enregistrement local" : "Mettre l’enregistrement en pause…")
+                : (state.isManuallyPaused ? "Reprendre l’enregistrement" : "Suspendre l’enregistrement…")
             Task { @MainActor in
                 let updates = SoftwareUpdateManager.shared
                 self.updateMenuItem.title = updates.availableVersion.map { "Installer la version \($0)…" }
@@ -517,10 +517,10 @@
         private func confirmRecordingStop(allSources: Bool) -> Bool {
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Mettre l’enregistrement en pause ?"
+            alert.messageText = allSources ? "Suspendre tout l’enregistrement ?" : "Suspendre l’enregistrement ?"
             alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour arrêter seulement les rappels de Jev, décochez « Surveillance » dans la règle ou la séance : l’historique continue."
             alert.addButton(withTitle: "Annuler")
-            alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Mettre en pause")
+            alert.addButton(withTitle: allSources ? "Suspendre tout" : "Suspendre")
             return alert.runModal() == .alertSecondButtonReturn
         }
         @objc private func retryKeychain() { onRetryKeychain() }

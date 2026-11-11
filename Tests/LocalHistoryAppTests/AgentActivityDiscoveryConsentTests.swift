@@ -686,7 +686,7 @@
             let before = runtime.configuration
             runtime.detectCommonSources()
             XCTAssertEqual(runtime.alert?.title, "Détection indisponible")
-            XCTAssertEqual(runtime.alert?.message, "Tout le suivi en pause. Reprenez tout le suivi pour détecter des sources.")
+            XCTAssertEqual(runtime.alert?.message, "Tout l’enregistrement suspendu. Reprenez tout le suivi pour détecter des sources.")
             XCTAssertEqual(runtime.configuration, before)
             XCTAssertFalse(runtime.configuration.watchedFolders.contains(where: { $0.id == discovered.id }))
         }

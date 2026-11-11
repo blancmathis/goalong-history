@@ -21,9 +21,9 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 - `UserDefaults` key `goalong.module.blocking.enabled`, default `false`. Read through
   `GoalongModuleStore` (`Sources/LocalHistoryApp/GoalongModules.swift`), cheap, never starts anything.
 - Off: no `BlockingController`, no timer, no observer, no window, no file under `Blocking/`, no
-  permission request, no system component. The sidebar entry **Blocages** (⌘3, one page since
+  permission request, no system component. The sidebar entry **Garde-fous** (⌘3, one page since
   docs/spec-blocages-20261110.md) holds the block rules and the red screen; it stays visible and only offers the switch.
-- On: the page Blocages can start blocks and programs. Turning the module on creates
+- On: the page Garde-fous can start blocks and programs. Turning the module on creates
   the controller and reads the store; nothing is blocked until the member starts a block or a
   program.
 - Off is refused while anything is locked (locked session, locked program, freeze) and while any
@@ -54,7 +54,7 @@ Target: parity with Cold Turkey Blocker Pro, as far as macOS allows.
 | Mode block / allowlist | « Bloquer ces éléments » / « Tout bloquer sauf ces éléments » |
 | Manual session | Blocage (« Bloquer maintenant ») |
 | Weekly windows | Programme (blocking) / Plages protégées (red screen) |
-| Sidebar page holding both | Blocages |
+| Sidebar page holding both | Garde-fous |
 | Lock kinds | Libre / Difficile / Mot de passe / Verrouillé |
 | Program lock | « Programme verrouillé jusqu'au … » |
 | Quota | « X min par jour » |
@@ -628,3 +628,11 @@ Tests cover reason limits, all new lock fields, confirmed attempts and deduplica
 per-list counters, midnight and local persistence, background app launch/quit, the actual timer
 with a fake inventory, trigger refusal/relaunch/free-stop behavior, earn floor/cap/receipts,
 Pomodoro breaks/skips, normal versus cancelled completion, quota enforcement and old-file decoding.
+
+## Garde-fous: one page, one module (T-050 lot C)
+- Visible name of the page and of Réglages › Modules: **Garde-fous**. Blocage and Concentration are one row and one
+  switch there. The two keys (`goalong.module.blocking.enabled`, `goalong.module.concentration.enabled`) and their
+  stops stay separate: the switch sets both, and each part keeps its own refusal (locked block, protected « Surveillance »).
+- Vocabulary (S8): « Pause » only lifts a rule for a moment; « Repos » is the short phase of a Pomodoro; « Suspendre
+  l’enregistrement » stops recording; « Désactivée » is an off rule; « Tout le Mac » replaces « gel ».
+- Identifiers, storage keys and gallery keys keep their old names.

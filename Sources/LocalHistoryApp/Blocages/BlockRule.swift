@@ -280,7 +280,7 @@ extension BlockRule {
         case .running(let end): return "En cours jusqu’à \(BlockingFormat.endTime(end))"
         case .stopped(let end): return "Arrêtée jusqu’à \(BlockingFormat.endTime(end))"
         case .next(let start): return "Commence \(BlockingFormat.moment(start, now: now))"
-        case .paused: return "En pause"
+        case .paused: return "Désactivée"
         case .idle: return "Inactive"
         }
     }

@@ -17,7 +17,7 @@ import SwiftUI
     nonisolated static let tabs: [DashboardSection] = [.blocking, .braise]
 
     nonisolated static func tabTitle(_ section: DashboardSection) -> String {
-        section == .braise ? "Écran rouge" : "Blocages"
+        section == .braise ? "Écran rouge" : "Garde-fous"
     }
 
     private var tab: DashboardSection { navigationStore.selectedSection == .braise ? .braise : .blocking }

@@ -179,7 +179,7 @@ struct FrozenMacShield: View {
     var onOpen: (BlockAppRule) -> Void = { _ in }
 
     /// The end time shows once, on the thread under it (R-85).
-    static let stateLine = "Mac gelé"
+    static let stateLine = "Tout le Mac bloqué"
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 1)) { context in // wall: display tick
@@ -225,7 +225,7 @@ struct FrozenMacShield: View {
                     }
                 }
                 Spacer()
-                Text("Éteindre le Mac reste possible. Au redémarrage, le gel reprend.")
+                Text("Éteindre le Mac reste possible. Au redémarrage, le blocage reprend.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).padding(.bottom, 32)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

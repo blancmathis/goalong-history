@@ -494,7 +494,7 @@ import LocalHistoryCore
                         } else {
                             if globalPause.blocksActivity, let recordingModel {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Tout le suivi est suspendu : l’accès ne peut pas être vérifié.")
+                                    Text("Tout l’enregistrement est suspendu : l’accès ne peut pas être vérifié.")
                                         .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.warning)
                                     GoalongGlobalPauseControl(model: recordingModel)
                                 }

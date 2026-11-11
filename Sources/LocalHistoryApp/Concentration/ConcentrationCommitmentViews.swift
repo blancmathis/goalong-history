@@ -128,7 +128,7 @@ enum FocusCommitmentFormat {
             switch result.stake.reason {
             case .late?: parts.append("Enjeu non appliqué : Goalong n’était pas ouvert avant \(deadline(until)).")
             case .noList?: parts.append("Enjeu non appliqué : ses listes n’existent plus.")
-            case .blockingOff?: parts.append("Enjeu non appliqué : Blocage est désactivé.")
+            case .blockingOff?: parts.append("Enjeu non appliqué : Garde-fous est désactivé.")
             case nil: break
             }
         case .none: break
@@ -153,7 +153,7 @@ enum FocusCommitmentFormat {
         case .locked?: return "L’engagement peut seulement devenir plus exigeant."
         case .invalidArgument?: return "Vérifiez l’objectif : sa période, sa valeur et le nom de la tâche."
         case .notFound?: return "Une liste de l’enjeu n’existe plus."
-        case .moduleDisabled?: return "Activez Blocage dans Réglages › Modules pour ajouter un enjeu."
+        case .moduleDisabled?: return "Activez Garde-fous dans Réglages › Modules pour ajouter un enjeu."
         default: return FocusUIError.message(error)
         }
     }
@@ -721,7 +721,7 @@ struct FocusCommitmentDraft: Equatable {
                     }
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 } else {
-                    Text("Facultatif. Une liste de Blocage, appliquée seulement si l’engagement n’est pas tenu.")
+                    Text("Facultatif. Une liste de Garde-fous, appliquée seulement si l’engagement n’est pas tenu.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText).fixedSize(horizontal: false, vertical: true)
                 }
             }

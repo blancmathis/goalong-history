@@ -1249,7 +1249,7 @@ enum GoalongActivityEmptyCopy {
     private static func stoppedReason(_ kind: GoalongRecordingStateNotice.Kind) -> String? {
         switch kind {
         case .off: return "L’enregistrement de ce Mac est désactivé : vos durées, vos apps et votre rythme apparaîtront ici une fois qu’il sera activé."
-        case .paused: return "L’enregistrement est en pause : rien de nouveau n’arrive ici avant la reprise."
+        case .paused: return "L’enregistrement est suspendu : rien de nouveau n’arrive ici avant la reprise."
         case .permissions: return "Une autorisation macOS manque : vos durées apparaîtront ici une fois l’accès rétabli."
         case .input: return nil
         }

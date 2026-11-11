@@ -49,7 +49,7 @@
             )
             let view = try XCTUnwrap(controller.mainMenu.items.first { $0.submenu?.title == "Présentation" }?.submenu)
             let entries = view.items.filter { $0.representedObject is String }
-            XCTAssertEqual(entries.map(\.title), ["Activité", "Historique", "Blocages", "Ambiance"])
+            XCTAssertEqual(entries.map(\.title), ["Activité", "Historique", "Garde-fous", "Ambiance"])
             XCTAssertEqual(entries.map(\.keyEquivalent), ["1", "2", "3", "4"])
             for entry in entries {
                 _ = (entry.target as? NSObject)?.perform(entry.action, with: entry)
