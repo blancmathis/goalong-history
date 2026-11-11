@@ -32,6 +32,8 @@ struct PreparedSession: Codable, Equatable, Identifiable {
     var surveillance: JevInterventionSettings?
     // Arrêt
     var lock: BlockLock = .free
+    /// « Pauses » of the session (T-050 D1). Nil = none.
+    var pause: PausePolicy?
 
     var trimmedIntent: String { intent.trimmingCharacters(in: .whitespacesAndNewlines) }
     var holdsScreen: Bool { red || brightness != nil }
@@ -56,6 +58,7 @@ struct PreparedSession: Codable, Equatable, Identifiable {
         draft.red = red; draft.intensity = intensity; draft.brightness = brightness
         draft.surveillance = surveillance
         draft.lock = lock
+        draft.loadPause(pause)
         return draft
     }
 
@@ -260,7 +263,7 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
             let span: BlockingNowComposer.Span
             if case .minutes(let value) = session.span { span = .minutes(value) } else { span = .until }
             var started: UUID?
-            guard BlockingNowStart.run(plan, listIDs: ids, lock: session.lock, controller: blocking,
+            guard BlockingNowStart.run(plan, listIDs: ids, lock: session.lock, pause: session.pause, controller: blocking,
                                        braise: session.holdsScreen ? braise : nil, red: session.red,
                                        intensity: session.intensity, brightness: session.brightness,
                                        refusal: BlockingNowComposer.refusal(span, freeze: false),

@@ -46,6 +46,7 @@ enum SupportSourceAllowlist {
         "BlockingPageLists.swift",
         "BlockingPassword.swift",
         "BlockingPasswordViews.swift",
+        "BlockingPause.swift",
         "BlockingPlus.swift",
         "BlockingRules.swift",
         "BlockingShieldViews.swift",

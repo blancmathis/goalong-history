@@ -181,7 +181,8 @@ struct JevRecentCheck: Identifiable {
     }
     /// The rules and sessions that carry « Surveillance » now.
     func currentActivity(now: Date = Date()) -> [JevSurveillanceActivity] {
-        surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider()), now: now)
+        surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider(),
+                                                         pausedPools: BlockingRuntime.shared.controller?.runningPausePools ?? []), now: now)
     }
     private var gate: String? {
         if timedBreak != nil || breakStorageInvalid { return "Jev suspendu : aucun appel ni rappel" }

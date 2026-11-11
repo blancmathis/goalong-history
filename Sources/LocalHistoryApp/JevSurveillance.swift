@@ -16,6 +16,8 @@ struct JevSurveillanceRange: Codable, Equatable, Identifiable {
     var endMinute: Int
     var lock: BlockLock
     var settings: JevInterventionSettings
+    /// The rule's pauses (T-050 D1): the same pool as its lists. Absent = no pause.
+    var pause: PausePolicy?
 
     var key: BlockRule.Key { BlockRule.Key(weekdays: weekdays, start: startMinute, end: endMinute, lock: lock) }
     var program: BlockProgramRange {
@@ -53,6 +55,8 @@ struct JevSurveillanceDocument: Codable, Equatable {
 struct JevRunningSessions: Equatable {
     var focus: UUID?
     var blocks: Set<UUID> = []
+    /// Pause pools running now (`PausePolicy.id`, T-050 D1): a rule on a pause does not watch.
+    var pausedPools: Set<UUID> = []
 }
 
 /// One rule or session that carries « Surveillance » now.
@@ -154,6 +158,7 @@ enum JevRangeWrite: Equatable {
                        calendar: Calendar = .current) -> [JevSurveillanceActivity] {
         var result: [JevSurveillanceActivity] = []
         for range in document.ranges where isRunning(range, now: now, calendar: calendar) {
+            if let pool = range.pause?.id, sessions.pausedPools.contains(pool) { continue }
             result.append(JevSurveillanceActivity(settings: range.settings, lock: range.lock))
         }
         if let focus = sessions.focus {
@@ -237,7 +242,8 @@ enum JevRangeWrite: Equatable {
         case .delete: break
         case .save(let range):
             if range.lock.strength >= old.lock.strength, range.weekdays == old.weekdays, range.startMinute == old.startMinute,
-               range.endMinute == old.endMinute, Self.score(range.settings) >= Self.score(old.settings) { return .allow }
+               range.endMinute == old.endMinute, Self.score(range.settings) >= Self.score(old.settings),
+               old.pause == range.pause || PauseEngine.weakening(old.pause, range.pause) == nil { return .allow }
         }
         return old.lock == .locked ? .refused(Self.protectedText) : .stop(old.lock)
     }

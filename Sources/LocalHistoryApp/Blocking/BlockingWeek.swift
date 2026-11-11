@@ -433,13 +433,18 @@ struct BlockingRangeDraft: Identifiable {
         let failure: String?
         if let existing = draft.existing, var next = list,
            let index = next.program.ranges.firstIndex(where: { $0.id == existing }) {
-            next.program.ranges[index] = range(id: existing)
+            var edited = range(id: existing)
+            edited.pause = next.program.ranges[index].pause
+            next.program.ranges[index] = edited
             failure = controller.save(next)
         } else {
             // Each list gets its own range id; all lists are checked before the first write.
             failure = controller.saveAll(controller.lists.filter { draft.listIDs.contains($0.id) }.map { list in
                 var next = list
-                next.program.ranges.append(range())
+                var added = range()
+                // A list's own pauses (« Autoriser des pauses ») cover its new ranges, as before T-050 D1.
+                added.pause = list.breaks.map { PausePolicy.migrated($0, listID: list.id, lock: added.effectiveLock) }
+                next.program.ranges.append(added)
                 return next
             })
         }

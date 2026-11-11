@@ -7,6 +7,8 @@ struct BlockingTimerInput: Equatable {
     var lists: [BlockList] = []
     var activeBlocks: [BlockingActiveBlock] = []
     var usage: BlockDayUsage
+    /// Lists on a pause and its end (T-050 D1: every block over the list paused). Nil = the day usage's pauses.
+    var pauseEnds: [UUID: Date]?
     /// Slow-down allowances by `BlockingFrictionPresentation.key`.
     var allowances: [String: Date] = [:]
     /// Starts of scheduled sessions and program windows, per list.
@@ -83,7 +85,8 @@ enum BlockingTimerSelection {
     static func select(_ input: BlockingTimerInput, at now: Date) -> BlockingVisibleTimer? {
         let usage = input.usage
         func active(_ id: UUID) -> Bool { input.activeBlocks.contains { $0.listIDs.contains(id) && $0.start <= now && $0.end > now } }
-        func onBreak(_ id: UUID, at date: Date) -> Bool { usage.breakEnds[id].map { $0 > date } == true }
+        let pauseEnds = input.pauseEnds ?? usage.breakEnds
+        func onBreak(_ id: UUID, at date: Date) -> Bool { pauseEnds[id].map { $0 > date } == true }
         func quotaLeft(_ list: BlockList) -> Double? {
             BlockingRules.effectiveQuotaSeconds(list, usage: usage).map { $0 - (usage.quotaSecondsUsed[list.id] ?? 0) }
         }
@@ -95,7 +98,7 @@ enum BlockingTimerSelection {
         var candidates: [BlockingVisibleTimer] = []
 
         for list in input.lists where active(list.id) {
-            if let end = usage.breakEnds[list.id], end > now {
+            if let end = pauseEnds[list.id], end > now {
                 candidates.append(.init(kind: .breakTime, listID: list.id, listName: list.name, remaining: end.timeIntervalSince(now)))
             }
         }

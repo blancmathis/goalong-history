@@ -290,6 +290,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         value.brightness = screen ? draft.brightness : nil
         value.surveillance = draft.surveillance
         value.lock = stopLevel
+        value.pause = freezing ? nil : draft.pause
         return value
     }
 
@@ -979,8 +980,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                           ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
                                           : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
             } else {
-                BlockingLockExplainer(lock: stopLevel)
+                BlockingLockExplainer(lock: stopLevel, text: stopLevel == .locked && draft.pause != nil ? PausePolicy.lockedText : nil)
             }
+            if showsPauses { pauseRows }
             let reasons = BlockLock.ordered.compactMap { lock in lockUnavailable(lock).map { (lock, $0) } }
             ForEach(Array(Set(reasons.map(\.1))).sorted(), id: \.self) { reason in
                 greyed(reason, id: "stop")
@@ -1000,6 +1002,141 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 help(GuardConsent.text).accessibilityIdentifier("block-rule-guard-consent")
             }
         }
+    }
+
+    // MARK: Pauses (T-050 D1)
+
+    /// A pause needs something the rule blocks or watches; a whole-Mac freeze has none (P4: hidden).
+    private var showsPauses: Bool {
+        !freezing && !usesFocus && (!draft.listIDs.isEmpty || draft.surveillance != nil)
+    }
+
+    /// The rule runs under a protected stop: its pauses can only go down (« Durcir seulement »).
+    private var pausesHardenOnly: Bool {
+        guard let rule else { return false }
+        if rule.lock != .free, case .running = rule.state { return true }
+        return rule.lists.contains { blocking?.isStricterOnly($0.id) == true }
+    }
+
+    /// Whether `next` may replace the opening pause now.
+    private func pauseAllows(_ next: PausePolicy?) -> Bool {
+        guard pausesHardenOnly else { return true }
+        var simulated = draft
+        simulated.setPause(next)
+        return !simulated.pauseChanged || PauseEngine.weakening(simulated.originalPause, simulated.pause) == nil
+    }
+
+    private func pauseChange(_ change: (inout PausePolicy) -> Void) -> PausePolicy? {
+        guard var next = draft.pause else { return nil }
+        change(&next)
+        return next
+    }
+
+    private func pauseBinding<T>(_ key: WritableKeyPath<PausePolicy, T>, fallback: T) -> Binding<T> {
+        Binding(get: { draft.pause?[keyPath: key] ?? fallback },
+                set: { value in
+                    let next = pauseChange { $0[keyPath: key] = value }
+                    if pauseAllows(next) { draft.setPause(next) }
+                })
+    }
+
+    /// The highest value a stepper may reach: the opening one under « Durcir seulement ».
+    private func pauseCap(_ key: KeyPath<PausePolicy, Int?>, _ range: ClosedRange<Int>) -> ClosedRange<Int> {
+        guard pausesHardenOnly, let value = draft.originalPause?[keyPath: key] else { return range }
+        return range.lowerBound...max(range.lowerBound, min(range.upperBound, value))
+    }
+
+    @ViewBuilder private var pauseRows: some View {
+        let on = Binding(get: { draft.pause != nil },
+                         set: { value in
+                             let next = value ? (draft.originalPause ?? PausePolicy()) : nil
+                             if pauseAllows(next) { draft.setPause(next) }
+                         })
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Autoriser des pauses", isOn: on).toggleStyle(.goalongSwitchInline)
+                .frame(minHeight: 28)
+                .disabled(draft.pause == nil && !pauseAllows(PausePolicy()))
+                .accessibilityIdentifier("block-rule-pause")
+            if let pause = draft.pause {
+                pauseSettings(pause)
+            }
+            if pausesHardenOnly {
+                greyed(PausePolicy.hardenOnlyReason, id: "pause")
+            }
+        }
+    }
+
+    @ViewBuilder private func pauseSettings(_ pause: PausePolicy) -> some View {
+        let budgetRange = pauseCap(\.optionalBudget, PausePolicy.budgetRange)
+        HStack(spacing: 14) {
+            Stepper(value: pauseBinding(\.budgetMinutes, fallback: 10), in: budgetRange, step: pause.budgetMinutes < 10 ? 1 : 5) {
+                Text("\(pause.budgetMinutes) min").monospacedDigit()
+            }
+            .fixedSize()
+            .accessibilityIdentifier("block-rule-pause-budget")
+            GoalongMenuPicker("Période", selection: pauseBinding(\.period, fallback: .day),
+                              options: PausePolicy.Period.allCases.filter { period in
+                                  pauseAllows(pauseChange { $0.period = period })
+                              }.map { ($0, "par \($0.title)") })
+                .fixedSize()
+                .accessibilityIdentifier("block-rule-pause-period")
+        }
+        HStack(spacing: 14) {
+            GoalongMenuPicker("Durée d’une pause", selection: pauseBinding(\.maxPauseMinutes, fallback: nil),
+                              options: PausePolicy.longestChoices(budget: pause.budgetMinutes, current: pause.maxPauseMinutes)
+                                  .filter { value in pauseAllows(pauseChange { $0.maxPauseMinutes = value }) }
+                                  .map { ($0, $0.map { "Une pause ≤ \($0) min" } ?? "Pauses sans durée max") })
+                .fixedSize()
+                .accessibilityIdentifier("block-rule-pause-longest")
+            GoalongMenuPicker("Nombre de pauses", selection: pauseBinding(\.maxPauses, fallback: nil),
+                              options: ([nil] + (1...10).map { Optional($0) })
+                                  .filter { value in pauseAllows(pauseChange { $0.maxPauses = value }) }
+                                  .map { ($0, $0.map { FrenchCount.count($0, "pause", "pauses") + " au plus" } ?? "Sans nombre max") })
+                .fixedSize()
+                .accessibilityIdentifier("block-rule-pause-count")
+        }
+        HStack(spacing: 14) {
+            GoalongMenuPicker("Avant une pause", selection: pauseBinding(\.gate, fallback: .none),
+                              options: gateChoices(pause).map { ($0, "Avant : \($0.title.lowercased())") })
+                .fixedSize()
+                .accessibilityIdentifier("block-rule-pause-gate")
+            if case .wait(let minutes) = pause.gate {
+                Stepper(value: Binding(get: { minutes }, set: { value in
+                            let next = pauseChange { $0.gate = .wait(minutes: value) }
+                            if pauseAllows(next) { draft.setPause(next) }
+                        }), in: PausePolicy.waitRange, step: minutes < 10 ? 1 : minutes < 60 ? 5 : 30) {
+                    Text(BlockingFormat.duration(minutes: minutes)).monospacedDigit()
+                }
+                .fixedSize()
+                .accessibilityIdentifier("block-rule-pause-wait")
+            }
+        }
+        if stopLevel == .locked {
+            Stepper(value: .constant(0), in: 0...0) { Text("Pauses en plus : 0").monospacedDigit() }
+                .fixedSize().disabled(true)
+                .accessibilityIdentifier("block-rule-pause-extra")
+            greyed(PausePolicy.lockedExtraReason, id: "pause-extra")
+        } else {
+            let extra = pause.extraPerPeriod ?? PausePolicy.extraRange.upperBound
+            Stepper(value: Binding(get: { extra }, set: { value in
+                        let next = pauseChange { $0.extraPerPeriod = value }
+                        if pauseAllows(next) { draft.setPause(next) }
+                    }), in: pauseCap(\.extraPerPeriod, PausePolicy.extraRange)) {
+                Text("Pauses en plus : \(extra) par \(pause.period.title)").monospacedDigit()
+            }
+            .fixedSize()
+            .accessibilityIdentifier("block-rule-pause-extra")
+            help(PausePolicy.extraHelp)
+        }
+    }
+
+    /// « Mot de passe » is offered once a password exists (P4: hidden otherwise, the stop row says how to set it).
+    private func gateChoices(_ pause: PausePolicy) -> [PausePolicy.Gate] {
+        let wait: PausePolicy.Gate
+        if case .wait = pause.gate { wait = pause.gate } else { wait = .wait(minutes: 5) }
+        var choices: [PausePolicy.Gate] = [.none, wait, .typing]
+        if blocking?.hasPassword == true || pause.gate == .password { choices.append(.password) }
+        return choices.filter { gate in pauseAllows(pauseChange { $0.gate = gate }) }
     }
 
     // MARK: Notes and footer
@@ -1245,7 +1382,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private func startBlock(_ promised: BlockingNowPlan, _ blocking: BlockingController) {
         let holds = sessionHoldsScreen ? braise : nil
         var session: UUID?
-        if BlockingNowStart.run(promised, listIDs: chosenIDs, lock: stopLevel, controller: blocking, braise: holds,
+        if BlockingNowStart.run(promised, listIDs: chosenIDs, lock: stopLevel, pause: draft.pause, controller: blocking, braise: holds,
                                 red: draft.red, intensity: draft.intensity, brightness: draft.brightness,
                                 refusal: BlockingNowComposer.refusal(span, freeze: false), started: { session = $0 }) {
             // A block session carries the mark; the red screen alone has no session: the mark keeps its own end.

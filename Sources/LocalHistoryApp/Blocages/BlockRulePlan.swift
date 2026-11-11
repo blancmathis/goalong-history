@@ -17,6 +17,12 @@ struct BlockRuleDraft: Equatable {
     var paused = false
     /// « Surveillance » checked, with its settings (T-050 B1). Nil = unchecked.
     var surveillance: JevInterventionSettings?
+    /// « Pauses » of the rule or session (T-050 D1). Nil = no pause. Change it with `setPause`.
+    private(set) var pause: PausePolicy?
+    /// The rule's pause when the editor opened: an unchanged pause is not written again.
+    private(set) var originalPause: PausePolicy?
+    /// The original pause is a list's former pauses (its id is the list's): a change gets its own pool.
+    private var originalLegacy = false
 
     init() {}
 
@@ -31,7 +37,26 @@ struct BlockRuleDraft: Equatable {
             paused = !part.enabled
         }
         surveillance = rule.jev?.settings
+        pause = rule.pause; originalPause = rule.pause
+        originalLegacy = rule.lists.contains { $0.id == rule.pause?.id }
     }
+
+    /// A new pause for the rule. Back to the opening values = unchanged. A change of a list's former pauses gets a new
+    /// pool, so the rule's lists share one budget.
+    mutating func setPause(_ value: PausePolicy?) {
+        guard var value else { pause = nil; return }
+        if let original = originalPause {
+            var same = value; same.id = original.id
+            if same == original { pause = original; return }
+            if originalLegacy, value.id == original.id { value.id = UUID() }
+        }
+        pause = value
+    }
+
+    /// For a prepared session or a preset: the pause it was saved with, as the opening value.
+    mutating func loadPause(_ value: PausePolicy?) { pause = value; originalPause = value; originalLegacy = false }
+
+    var pauseChanged: Bool { pause != originalPause }
 
     var hasRedPart: Bool { red || brightness != nil }
 
@@ -62,6 +87,14 @@ enum BlockRulePlan {
                        red: RedScreenProgram?) -> Writes {
         var result = Writes()
         let carried = Dictionary((rule?.lists ?? []).map { ($0.id, Set($0.rangeIDs)) }, uniquingKeysWith: { $0.union($1) })
+        let changed = draft.map { rule == nil || $0.pauseChanged } ?? false
+        let shared = draft.map { $0.pause.map { lists.map(\.id).contains($0.id) } != true } ?? false
+        /// The pause of a new range: the rule's when it is changed or its own pool; else the list's former pauses, as
+        /// before (T-050 D1).
+        func newPause(_ list: BlockList, _ draft: BlockRuleDraft) -> PausePolicy? {
+            if changed || shared { return draft.pause }
+            return list.breaks.map { PausePolicy.migrated($0, listID: list.id, lock: draft.lock) }
+        }
         for list in lists {
             let own = carried[list.id] ?? []
             var next = list
@@ -69,11 +102,18 @@ enum BlockRulePlan {
                 if own.isEmpty {
                     let key = BlockRule.Key(weekdays: draft.weekdays, start: draft.startMinute, end: draft.endMinute, lock: draft.lock)
                     if !next.program.ranges.contains(where: { BlockRule.Key($0) == key }) {
-                        next.program.ranges.append(BlockProgramRange(weekdays: draft.weekdays, startMinute: draft.startMinute,
-                                                                     endMinute: draft.endMinute, lock: draft.lock))
+                        var range = BlockProgramRange(weekdays: draft.weekdays, startMinute: draft.startMinute,
+                                                      endMinute: draft.endMinute, lock: draft.lock)
+                        range.pause = newPause(list, draft)
+                        next.program.ranges.append(range)
                     }
                 } else {
-                    next.program.ranges = next.program.ranges.map { own.contains($0.id) ? edited($0, draft) : $0 }
+                    next.program.ranges = next.program.ranges.map { range in
+                        guard own.contains(range.id) else { return range }
+                        var value = edited(range, draft)
+                        if changed { value.pause = draft.pause }
+                        return value
+                    }
                 }
             } else {
                 next.program.ranges.removeAll { own.contains($0.id) }
@@ -83,8 +123,11 @@ enum BlockRulePlan {
         if let draft, let settings = draft.surveillance {
             let range = JevSurveillanceRange(id: rule?.jev?.rangeID ?? UUID(), weekdays: draft.weekdays,
                                              startMinute: draft.startMinute, endMinute: draft.endMinute, lock: draft.lock,
-                                             settings: settings)
-            if rule?.jev == nil || rule?.jev?.settings != settings || rule?.key != range.key { result.jev = [.save(range)] }
+                                             settings: settings,
+                                             pause: changed || shared || rule?.jev == nil ? draft.pause : rule?.jev?.pause)
+            if rule?.jev == nil || rule?.jev?.settings != settings || rule?.key != range.key || rule?.jev?.pause != range.pause {
+                result.jev = [.save(range)]
+            }
         } else if let part = rule?.jev {
             result.jev = [.delete(part.rangeID)]
         }

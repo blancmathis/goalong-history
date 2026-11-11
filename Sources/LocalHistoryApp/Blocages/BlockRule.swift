@@ -46,6 +46,8 @@ struct BlockRule: Identifiable, Equatable {
         var name: String
         var kind: Kind
         var state: State
+        /// The pause of this list's ranges in the rule (T-050 D1). Nil = no pause.
+        var pause: PausePolicy? = nil
     }
 
     /// The red range of the rule. `intensity` 0 with a `brightness` = the brightness alone is held.
@@ -62,6 +64,7 @@ struct BlockRule: Identifiable, Equatable {
         var rangeID: UUID
         var settings: JevInterventionSettings
         var state: State
+        var pause: PausePolicy? = nil
     }
 
     var id: String
@@ -72,6 +75,10 @@ struct BlockRule: Identifiable, Equatable {
     var lock: BlockLock
     var state: State
     var jev: JevPart? = nil
+
+    /// The rule's pause (T-050 D1): the one of its first list, else of its « Surveillance ». Lists migrated from their
+    /// former pauses can each keep their own until the rule's pause is changed.
+    var pause: PausePolicy? { lists.lazy.compactMap(\.pause).first ?? jev?.pause }
 
     var isRedOnly: Bool { lists.isEmpty && red != nil }
 }
@@ -112,7 +119,8 @@ enum BlockRules {
                 parts[key, default: []].append(BlockRule.ListPart(
                     id: list.id, rangeIDs: ranges.map(\.id), name: list.name,
                     kind: list.mode == .allowOnly ? .allowOnly : list.effectiveAction == .slowDown ? .slowDown : .block,
-                    state: listState(ranges, running: input.runningRanges, stopped: input.stoppedRanges, now: input.now, calendar: input.calendar)))
+                    state: listState(ranges, running: input.runningRanges, stopped: input.stoppedRanges, now: input.now, calendar: input.calendar),
+                    pause: ranges.lazy.compactMap(\.pause).first))
             }
         }
         let redRanges = input.red?.program.ranges ?? []
@@ -148,7 +156,7 @@ enum BlockRules {
         // otherwise it is a rule by itself.
         for range in input.jev {
             let part = BlockRule.JevPart(rangeID: range.id, settings: range.settings,
-                                         state: jevState(range, now: input.now, calendar: input.calendar))
+                                         state: jevState(range, now: input.now, calendar: input.calendar), pause: range.pause)
             func join(_ rule: inout BlockRule) {
                 rule.jev = part; rule.state = combined([rule.state, part.state])
             }
