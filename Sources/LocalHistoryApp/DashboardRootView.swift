@@ -181,6 +181,7 @@
                     Spacer()
                     Button("Voir dans Réglages") { model.openRecordingSettings() }
                         .buttonStyle(LHQuietButtonStyle())
+                    // Lot 4 (22): a styled button; the confirmation (more than one change) is lot 3a's.
                     Button("Abandonner") {
                         if DashboardSection.discardNeedsConfirmation(saved: settingsStore.savedSettingsDraft, draft: settingsStore.settingsDraft) {
                             confirmingDiscard = true
@@ -188,6 +189,8 @@
                             model.discardSettingsChanges()
                         }
                     }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("pending-discard")
                     Button("Appliquer") { model.saveSettings() }
                         .buttonStyle(LHPrimaryButtonStyle())
                 }
