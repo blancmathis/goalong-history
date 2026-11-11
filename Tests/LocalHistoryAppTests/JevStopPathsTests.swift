@@ -137,7 +137,7 @@ import LocalHistoryCore
         let delegate = try source("AppDelegate.swift")
         let pause = try XCTUnwrap(delegate.range(of: "func toggleManualPause()"))
         let body = String(delegate[pause.lowerBound...].prefix(2_500))
-        let gate = try XCTUnwrap(body.range(of: "JevStopGate.confirm(action: \"Mettre en pause\")"))
+        let gate = try XCTUnwrap(body.range(of: "JevStopGate.confirm(action: \"Suspendre l’enregistrement\")"))
         let paused = try XCTUnwrap(body.range(of: "continuityPreferences.manuallyPaused = true"))
         XCTAssertLessThan(gate.lowerBound, paused.lowerBound, "asked before anything pauses")
         let menu = try source("MenuBarController.swift")

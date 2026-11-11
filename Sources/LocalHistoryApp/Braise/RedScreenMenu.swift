@@ -49,7 +49,7 @@ import Combine
         toggleItem.state = state.on ? .on : .off
         toggleItem.setAccessibilityValueDescription(state.on ? "activé" : "désactivé")
         restoreItem.isEnabled = state.on
-        restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par la page Blocages, « En cours »." : nil
+        restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par la page Garde-fous, « En cours »." : nil
         slider.value = state.intensity
         noticeItem.title = state.notice ?? ""; noticeItem.isHidden = state.notice == nil
         let percent = Int((state.intensity * 100).rounded())

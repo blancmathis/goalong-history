@@ -124,7 +124,7 @@ final class T043R4dATests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: empty); try? FileManager.default.removeItem(at: full) }
         try FileManager.default.createDirectory(at: full, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: full.appendingPathComponent("pending-stop.json"))
-        let help = "Aucune donnée de Concentration sur ce Mac."
+        let help = "Aucune donnée de séance sur ce Mac."
         let withoutData = ConcentrationRuntime(storeFactory: { FocusStore(directory: empty) }, presentsPanels: false)
         withoutData.refreshHasData()
         XCTAssertTrue(visibleText(GoalongModulesSettings(onOpen: { _ in }, concentration: withoutData), width: 640, height: 900).contains(help))

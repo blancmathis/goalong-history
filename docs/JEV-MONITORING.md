@@ -2,7 +2,7 @@
 
 ## Commandes
 
-La règle **Blocages › Jev** (page Blocages, ligne « Jev ») regroupe l’activation, la connexion et l’état de Jev.
+La règle **Garde-fous › Surveillance** (page Garde-fous, ligne « Jev ») regroupe l’activation, la connexion et l’état de Jev.
 Concentration et l’élément **Ouvrir la surveillance…** du menu y mènent ; Jev n’a plus
 de page dans la navigation principale (la route `.monitoring` ouvre cette rubrique). La capacité `jevMonitoring` est désactivée par
 défaut et indépendante de Computer History, ChatGPT, de l’envoi au site et du
@@ -12,7 +12,7 @@ champ protégé de **Connecter l’API** (ou **Gérer la connexion** quand une c
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
 Le menu **Jev** montre l’état, la fin anticipée d’une pause encore en cours, la désactivation
-de Jev et l’ouverture de Blocages › Jev. Depuis T-050 B1, aucune pause de Jev ne se lance :
+de Jev et l’ouverture de Garde-fous › Surveillance. Depuis T-050 B1, aucune pause de Jev ne se lance :
 une règle ou une séance dit quand Jev surveille. Une pause lancée avant la mise à jour finit
 normalement à son terme ; **Réinitialiser la pause** répare une minuterie illisible.
 
@@ -23,11 +23,11 @@ après confirmation. Ces actions n’accordent aucun nouveau consentement.
 **Fonctionnement et confidentialité** garde les détails de budget, les règles,
 l’inspection du dernier envoi et l’option séparée d’extraits à portée de main,
 sans surcharger l’écran. Les vérifications récentes sont repliées par défaut.
-Tous ces réglages sont dans Blocages › Jev, nulle part ailleurs.
+Tous ces réglages sont dans Garde-fous › Surveillance, nulle part ailleurs.
 
 ## Quand Jev surveille : le bloc « Surveillance » (T-050 B1)
 
-Le choix global « Toujours / Pendant mes séances » n’existe plus. Chaque règle de Blocages
+Le choix global « Toujours / Pendant mes séances » n’existe plus. Chaque règle de Garde-fous
 (Toujours ou Planifié) et chaque séance porte un bloc **Surveillance** facultatif, avec ses
 propres rappels et voiles (Modéré, Fort, Très fort, ou « Personnaliser »). Jev agit quand au
 moins une règle ou séance active le porte ; s’il y en a plusieurs, le réglage le plus fort
@@ -176,7 +176,7 @@ pour le modèle. Il faut tester les navigateurs utilisés, en français et angla
 
 ## Repères de travail et de procrastination
 
-Dans **Blocages › Jev → Mes repères de surveillance**, les trois rubriques
+Dans **Garde-fous › Surveillance → Mes repères de surveillance**, les trois rubriques
 productives restent disponibles : projets/objectifs, applications/sites, contenus/usages.
 Le champ facultatif **Ce que je considère comme de la procrastination** ajoute des
 exemples certains de distractions. Il ne remplace ni les critères productifs ni la

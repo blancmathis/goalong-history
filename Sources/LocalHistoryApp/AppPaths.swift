@@ -1948,7 +1948,7 @@
         }
 
         static let failClosedNotice =
-            "config.json est illisible : l’enregistrement est en pause. Corrigez le fichier puis rechargez, ou réinitialisez les réglages."
+            "config.json est illisible : l’enregistrement est suspendu. Corrigez le fichier puis rechargez, ou réinitialisez les réglages."
         static let reloadFailedNotice = "config.json est illisible. Les réglages précédents restent actifs."
 
         private(set) var config: RecorderConfig

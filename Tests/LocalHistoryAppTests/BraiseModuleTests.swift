@@ -43,7 +43,7 @@ final class BraiseModuleTests: XCTestCase {
         // The red screen lives in the page « Blocages » (the .blocking entry), not in Modules nor as its own entry.
         XCTAssertFalse(DashboardSection.sidebarSections(modules: [.braise]).contains(.braise))
         XCTAssertEqual(DashboardSection.sidebarSections(modules: [], showing: .braise).suffix(2), [.blocking, .settings])
-        XCTAssertEqual(DashboardSection.blocking.title, "Blocages")
+        XCTAssertEqual(DashboardSection.blocking.title, "Garde-fous")
         XCTAssertFalse(GoalongModule.listed.contains(.braise))
         XCTAssertEqual(GoalongModule.braise.title, "Écran rouge")
     }

@@ -837,7 +837,7 @@ import LocalHistoryQueryCLI
     func authorizeQuit(password: String) -> BlockingPasswordResult {
         refresh(enforceLast: false)
         quitAuthorization = nil
-        guard !quitIsLocked else { return refusePassword("Un verrou sans arrêt possible ou un gel du Mac reste actif.") }
+        guard !quitIsLocked else { return refusePassword("Un verrou sans arrêt possible ou un blocage de tout le Mac reste actif.") }
         guard quitRequiresPassword else { return .ok }
         let result = verifyPassword(password)
         if result == .ok {
@@ -925,7 +925,7 @@ import LocalHistoryQueryCLI
 
     @discardableResult func takeBreak(listID: UUID, password: String? = nil) -> BlockingPasswordResult {
         guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
-        guard freeze == nil else { return refusePassword("Aucune pause pendant le gel du Mac.") }
+        guard freeze == nil else { return refusePassword("Aucune pause pendant le blocage de tout le Mac.") }
         guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let breaks = list(listID)?.breaks else { return refusePassword("Cette liste n’a pas de pause disponible.") }
         var usage = todayUsage()
         guard usage.breakEnds[listID].map({ $0 > clock() }) != true else { return refusePassword("Une pause est déjà en cours.") }
@@ -957,7 +957,7 @@ import LocalHistoryQueryCLI
 
     func startFreeze(until end: Date, mode: BlockFreeze.Mode, allowedApps: [BlockAppRule]) {
         guard admitEdit() else { return }
-        guard freeze == nil else { error = "Le gel en cours ne peut pas être remplacé."; return }
+        guard freeze == nil else { error = "Le blocage de tout le Mac en cours ne peut pas être remplacé."; return }
         if mode == .lockScreen, backend?.canLockScreen == false { error = "Le verrouillage de session nécessite l’accessibilité. Choisissez l’Écran Goalong."; return }
         let now = clock()
         let bounded = BlockingWallClock.freezeEnd(trusted(end), now: now)

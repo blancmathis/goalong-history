@@ -4,7 +4,7 @@ import LocalHistoryCore
 
 /// One wording for the global pause, shared by the window and the menu bar.
 enum GoalongGlobalPauseText {
-    static let resume = "Reprendre tout le suivi"
+    static let resume = "Reprendre tout l’enregistrement"
     static let failureTitle = "Pause non modifiée"
     static let repair = "Réparer et reprendre"
     static let repairTitle = "Réparer le réglage de pause ?"
@@ -91,8 +91,8 @@ struct GoalongGlobalPauseBanner: View {
                 HStack(spacing: 14) {
                     Image(systemName: "pause.circle.fill").foregroundStyle(LHTheme.secondaryText)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Tout le suivi en pause").font(.system(size: 13, weight: .semibold))
-                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout le suivi est arrêté : rien n’est enregistré et Jev ne repère rien. Reprenez le suivi pour enregistrer à nouveau.")
+                        Text("Tout l’enregistrement suspendu").font(.system(size: 13, weight: .semibold))
+                        Text(pause.invalid ? GoalongGlobalPauseText.damagedNotice : "Tout l’enregistrement est arrêté : rien n’est enregistré et Jev ne repère rien. Reprenez l’enregistrement pour enregistrer à nouveau.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }

@@ -123,7 +123,7 @@ struct FocusPanel: Equatable {
     var menuBarText: String {
         guard let phase else { return status.state }
         let seconds = phase.endsAt.map { max(0, Int($0.timeIntervalSince(clock()))) }
-        return (phase.isWork ? "Concentration" : "Pause") + (seconds.map { " \($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")
+        return (phase.isWork ? "Concentration" : "Repos") + (seconds.map { " \($0 / 60):\(String(format: "%02d", $0 % 60))" } ?? "")
     }
 
     init(store: FocusStore, clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent, // wall: the raw clock; stake decisions read `stakeNow()`
@@ -581,7 +581,7 @@ struct FocusPanel: Equatable {
                     if lastSyncErrorShown != message { lastSyncErrorShown = message; self.error = message }
                 }
                 if phaseIdentity != key {
-                    if phaseIdentity != nil { showPanel(.init(kind: .phase, text: p.isWork ? "On reprend : \(value.intent)" : "Pause — \(Int((p.endsAt?.timeIntervalSince(p.startedAt) ?? 0) / 60)) min", expiresAt: now.addingTimeInterval(6))); if settings.phaseSound { onPhaseSound?() } }
+                    if phaseIdentity != nil { showPanel(.init(kind: .phase, text: p.isWork ? "On reprend : \(value.intent)" : "Repos — \(Int((p.endsAt?.timeIntervalSince(p.startedAt) ?? 0) / 60)) min", expiresAt: now.addingTimeInterval(6))); if settings.phaseSound { onPhaseSound?() } }
                     if value.ambiance { if p.isWork { audio.startWork() } else { audio.startBreak() } }
                     phaseIdentity = key
                 }

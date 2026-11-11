@@ -632,7 +632,7 @@
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
             switch state {
             case .recording: return "Enregistrement actif"
-            case .paused: return "Enregistrement en pause"
+            case .paused: return "Enregistrement suspendu"
             case .permissionsMissing: return "Accès à rétablir"
             case .inputTapUnavailable: return "Pas d’interactions"
             case .storageUnavailable(.diskFull): return "Enregistrement interrompu : le disque est plein"
@@ -640,7 +640,7 @@
             case .storageUnavailable: return "Enregistrement interrompu"
             case .suppressed(let reason):
                 switch reason {
-                case .manualPause: return "Enregistrement en pause"
+                case .manualPause: return "Enregistrement suspendu"
                 case .sessionUnavailable: return "Session Mac inactive"
                 case .accessibilityUnavailable: return "Navigateur non accessible"
                 case .privateBrowserWindow, .excludedApplication, .excludedDomain, .secureInput:
@@ -653,13 +653,13 @@
         /// `storageNamedByBanner`: the banner already says the storage cause (GoalongAttentionBanner.storageSlot == .storage),
         /// so the row only says the state, short (« Interrompu »), never the cause nor « Voir le bandeau » (R8-6).
         func sidebarTitle(recordingEnabled: Bool, globallyPaused: Bool, storageNamedByBanner: Bool = false) -> String {
-            if globallyPaused { return "Tout le suivi en pause" }
+            if globallyPaused { return "Tout suspendu" }
             if !recordingEnabled { return "Enregistrement désactivé" }
             if isBackgroundPrivacyRule { return "Enregistrement actif" }
             if storageNamedByBanner, storageFailure != nil { return "Interrompu" }
             switch state {
             case .recording: return "Enregistrement actif"
-            case .paused, .suppressed(.manualPause): return "En pause"
+            case .paused, .suppressed(.manualPause): return "Enregistrement suspendu"
             case .permissionsMissing: return "Accès à rétablir"
             case .inputTapUnavailable: return "Pas d’interactions"
             case .storageUnavailable(.diskFull): return "Disque plein"
@@ -694,7 +694,7 @@
             case .suppressed(let reason):
                 switch reason {
                 case .manualPause:
-                    return "L’enregistrement est en pause."
+                    return "L’enregistrement est suspendu."
                 case .sessionUnavailable:
                     return "Le Mac est verrouillé, en veille ou indisponible."
                 case .accessibilityUnavailable:

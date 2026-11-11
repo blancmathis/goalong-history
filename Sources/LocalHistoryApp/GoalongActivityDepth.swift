@@ -83,7 +83,7 @@ struct GoalongActivityGaps: Equatable {
         case .gap: return "Plus de deux minutes entre deux observations"
         case .observationGap: return "Collecte interrompue"
         case .recorderStopped: return "Goalong arrêté"
-        case .paused: return "Enregistrement en pause"
+        case .paused: return "Enregistrement suspendu"
         case .sleep: return "Mac en veille"
         case .locked: return "Session verrouillée"
         case .accessibility: return "Accessibilité non autorisée"

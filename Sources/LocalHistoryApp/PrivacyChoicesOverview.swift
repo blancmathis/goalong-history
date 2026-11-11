@@ -42,7 +42,7 @@ import LocalHistoryCore
                     }
                     Divider()
                     // With every source off, the recording summary would describe a capture that does not happen.
-                    Text(pause.blocksActivity ? "Tout le suivi en pause."
+                    Text(pause.blocksActivity ? "Tout l’enregistrement suspendu."
                          : Self.sources.contains { consents.isEnabled($0) } ? settingsStore.appliedSettings.recordingSummary : "Aucune source activée.")
                         .font(.system(size: 13))
                     Text(settingsStore.appliedSettings.capturePrivateBrowsing
@@ -50,7 +50,7 @@ import LocalHistoryCore
                          : "Fenêtres privées détectées : exclues. La détection dépend du navigateur ; la pause reste le plus sûr pour une activité sensible.")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     HStack(spacing: 12) {
-                        // During the global pause, « Reprendre tout le suivi » is the one lime action of the screen.
+                        // During the global pause, « Reprendre tout l’enregistrement » is the one lime action of the screen.
                         Button("Modifier l’enregistrement") { model.openRecordingSettings() }
                             .modifier(GoalongMainActionStyle(primary: !pause.blocksActivity))
                         Button("Gérer les exclusions") { model.openApplicationsSettings() }.buttonStyle(LHSecondaryButtonStyle())

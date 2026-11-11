@@ -13,13 +13,15 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     /// Réglages › Modules. The red screen (`.braise`) needs no activation: it lives in Goalong's menu, so a
     /// module switch would duplicate its on/off. The case stays only to migrate the old key (BraiseRuntime).
-    static let listed: [GoalongModule] = allCases.filter { $0 != .braise }
+    static let listed: [GoalongModule] = allCases.filter { $0 != .braise && $0 != .concentration }
+    /// T-050 lot C: « Garde-fous » is one row, one switch. It carries both parts; their keys and stops stay separate.
+    static let guardrailParts: [GoalongModule] = [.blocking, .concentration]
     var defaultsKey: String { "goalong.module.\(rawValue).enabled" }
 
     var title: String {
         switch self {
-        case .blocking: return "Blocage"
-        case .concentration: return "Concentration"
+        case .blocking: return "Garde-fous"
+        case .concentration: return "Garde-fous"
         case .ambiance: return "Ambiance"
         case .braise: return "Écran rouge"
         }
@@ -28,7 +30,7 @@ enum GoalongModule: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .concentration: return "Lancer des séances et des Pomodoro, préparer le plan du jour, lire le bilan. Le Terminal peut suivre la séance en cours."
-        case .blocking: return "Bloquer des sites et des apps, verrouiller un blocage, geler le Mac."
+        case .blocking: return "Bloquer des sites et des apps, lancer des séances et des Pomodoro, préparer le plan du jour, lire le bilan, verrouiller, bloquer tout le Mac. Le Terminal peut suivre la séance en cours."
         case .ambiance: return "De la musique pour travailler ou souffler, téléchargée à la demande."
         case .braise: return "Filtre rouge, luminosité et horaires, sans accès supplémentaire."
         }

@@ -79,9 +79,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static let focusLockReason = "Une séance Pomodoro ou avec intention s’arrête librement ou se verrouille, sans autre niveau."
     static let focusScreenReason = "Une séance Pomodoro ou avec intention ne porte pas encore l’écran rouge ni la luminosité."
     static let laterScreenReason = "Un blocage programmé plus tard ne porte pas l’écran rouge ni la luminosité."
-    static let freezeScreenReason = "Le gel de tout le Mac couvre déjà l’écran."
-    static let freezeLockReason = "Le gel de tout le Mac est toujours verrouillé."
-    static let wholeMacReason = "Tout le Mac se gèle seulement pendant une séance en Continu, sans intention."
+    static let freezeScreenReason = "Tout le Mac couvre déjà l’écran."
+    static let freezeLockReason = "Tout le Mac est toujours verrouillé."
+    static let wholeMacReason = "Tout le Mac ne se bloque que pendant une séance en Continu, sans intention."
     /// A session started without an intention still needs one for Concentration.
     static let defaultIntent = "Séance"
 
@@ -339,7 +339,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             }
         case .schedule: break
         }
-        if lock == .password, blocking == nil { return "Le mot de passe vient du module Blocage." }
+        if lock == .password, blocking == nil { return "Le mot de passe vient du module Garde-fous." }
         return nil
     }
 
@@ -476,9 +476,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             Text(watchOnly ? plan.watchLockMessage(stopLevel)
                            : GuardConsent.message(plan.lockMessage(stopLevel), needed: BlockingRuntime.shared.guardNeedsConsent))
         }
-        .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
+        .alert("Bloquer tout le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
             Button("Annuler", role: .cancel) {}
-            Button("Geler") { freeze() }
+            Button("Bloquer") { freeze() }
         } message: {
             Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
                                       needed: BlockingRuntime.shared.guardNeedsConsent))
@@ -546,9 +546,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private var moduleOff: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Les listes de sites et d’apps viennent du module Blocage.").foregroundStyle(LHTheme.secondaryText)
+            Text("Les listes de sites et d’apps viennent du module Garde-fous.").foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Activer Blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+            Button("Activer Garde-fous") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                 .buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("block-rule-enable-blocking")
         }
@@ -586,7 +586,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             }
             if rule != nil, draft.listIDs.isEmpty, draft.hasRedPart {
                 row("État") {
-                    Toggle("Mettre la règle en pause", isOn: $draft.paused).toggleStyle(.goalongSwitchInline)
+                    Toggle("Désactiver la règle", isOn: $draft.paused).toggleStyle(.goalongSwitchInline)
                         .frame(minHeight: 32)
                         .accessibilityIdentifier("block-rule-paused")
                 }
@@ -689,7 +689,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                             .accessibilityLabel("Intention, facultative")
                             .accessibilityIdentifier("concentration-intent")
                             .frame(minHeight: 32)
-                        help(usesFocus ? "Avec une intention ou en Pomodoro, la séance a son minuteur, ses pauses et son bilan."
+                        help(usesFocus ? "Avec une intention ou en Pomodoro, la séance a son minuteur, ses repos et son bilan."
                                        : "Sans intention, en Continu, c’est un blocage simple.")
                     }
                 }
@@ -699,7 +699,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private var laterUnavailable: String? {
         if usesFocus { return "Une séance Pomodoro ou avec intention commence tout de suite." }
-        if wholeMac { return "Tout le Mac se gèle tout de suite." }
+        if wholeMac { return "Tout le Mac se bloque tout de suite." }
         return nil
     }
 
@@ -740,7 +740,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             if sessionDraft.rhythm == .custom {
                 HStack(spacing: 14) {
                     stepper("Travail", value: $sessionDraft.work, range: 5...120, unit: "min")
-                    stepper("Pause", value: $sessionDraft.shortBreak, range: 1...30, unit: "min")
+                    stepper("Repos", value: $sessionDraft.shortBreak, range: 1...30, unit: "min")
                     stepper("Longue", value: $sessionDraft.longBreak, range: 5...60, unit: "min")
                     stepper("Toutes les", value: $sessionDraft.every, range: 2...8, unit: "")
                 }
@@ -870,7 +870,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                     freezeRows
                 } else {
                     if trigger == .session, sessionDraft.kind == .pomodoro, !chosenIDs.isEmpty {
-                        Toggle("Aussi pendant les pauses", isOn: $sessionDraft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
+                        Toggle("Aussi pendant les repos", isOn: $sessionDraft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
                     }
                     if trigger != .session { greyed(wholeMacUnavailable, id: "whole-mac") }
                     if draft.listIDs.isEmpty, !draft.hasRedPart, draft.surveillance == nil, trigger != .session {
@@ -1096,7 +1096,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             return plan.startsLater ? BlockingFormat.period(from: plan.start, to: plan.end, now: now).capitalizedFirst
                                     : BlockingFormat.until(plan.end, now: now).capitalizedFirst
         }
-        guard let blocking else { return "Activez Blocage, ou donnez une intention." }
+        guard let blocking else { return "Activez Garde-fous, ou donnez une intention." }
         let hint = BlockingProtectionDetails.startHint(wholeMac: freezing, frozen: blocking.freeze != nil,
                                                        hasLists: !blocking.lists.isEmpty || sessionHoldsScreen,
                                                        anySelected: !chosenIDs.isEmpty || sessionHoldsScreen,

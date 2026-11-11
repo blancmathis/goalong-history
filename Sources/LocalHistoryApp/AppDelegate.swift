@@ -617,7 +617,7 @@ import AppleScreenTime
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = "Une plage d’écran rouge ou le verrou de luminosité est protégé"
-                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou le verrou de luminosité dans Blocages, « En cours »."
+                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou le verrou de luminosité dans Garde-fous, « En cours »."
                 alert.addButton(withTitle: "Ouvrir Écran rouge")
                 alert.addButton(withTitle: "Annuler")
                 if alert.runModal() == .alertFirstButtonReturn { BraiseRuntime.shared.onOpen?() }
@@ -873,7 +873,7 @@ import AppleScreenTime
                 resumeManualPause(message: "Recording resumed from the Goalong History interface")
             } else {
                 // T-050 B1 correction 1: the menu, the menu bar panel, the dashboard and ⌘P all land here.
-                guard MainActor.assumeIsolated({ JevStopGate.confirm(action: "Mettre en pause") }) else { return }
+                guard MainActor.assumeIsolated({ JevStopGate.confirm(action: "Suspendre l’enregistrement") }) else { return }
                 recorder.record(kind: .recordingPaused, message: "Recording paused from the Goalong History interface")
                 recorder.flush()
                 continuityPreferences.manuallyPaused = true

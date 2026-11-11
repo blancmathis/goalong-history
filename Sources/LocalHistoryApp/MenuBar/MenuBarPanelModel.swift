@@ -41,8 +41,8 @@ import LocalHistoryCore
     var headerActionLabel: String {
         if globalPaused { return "\(GoalongGlobalPauseText.resume)…" }
         if consentOff { return "Configurer l’enregistrement…" }
-        if case .paused = tracking { return "Reprendre le suivi" }
-        return "Mettre en pause"
+        if case .paused = tracking { return "Reprendre l’enregistrement" }
+        return "Suspendre l’enregistrement"
     }
 
     struct DaySegment: Identifiable {
@@ -252,7 +252,7 @@ import LocalHistoryCore
             trackingDetail = "Activez l’enregistrement dans Réglages"
         } else if state.isManuallyPaused {
             if case .paused = tracking {} else { pausedSince = nil }
-            tracking = .paused(since: pausedSince); trackingDetail = "Enregistrement local en pause"
+            tracking = .paused(since: pausedSince); trackingDetail = "Enregistrement local suspendu"
         } else if [.storageUnavailable, .permissionRequired, .permissionAppearsEnabledButStaleForBuild,
                    .accessibilityContextUnavailable, .inputTapUnavailable, .awaitingInputEvidence].contains(health()) {
             let health = health()
@@ -326,8 +326,8 @@ import LocalHistoryCore
         let title: String
         switch phase.kind {
         case .work: title = session.mode.kind == .pomodoro ? "Concentration" : "Séance libre"
-        case .shortBreak: title = "Pause courte"
-        case .longBreak: title = "Pause longue"
+        case .shortBreak: title = "Repos court"
+        case .longBreak: title = "Repos long"
         case .ended: title = "Terminée"
         }
         focusRun = FocusRun(phaseTitle: title, remaining: phase.endsAt.map { max(0, $0.timeIntervalSince(now)) },

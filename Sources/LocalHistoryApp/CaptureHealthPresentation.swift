@@ -11,7 +11,7 @@
             case .permissionAppearsEnabledButStaleForBuild: return "Autorisation liée à une ancienne version de l’app"
             case .inputTapUnavailable: return "Interactions non reçues"
             case .accessibilityContextUnavailable: return "Contexte de la fenêtre illisible"
-            case .paused: return "Enregistrement en pause"
+            case .paused: return "Enregistrement suspendu"
             case .excludedPrivateOrSecure: return "Détails masqués (exclusion, fenêtre privée ou champ sécurisé)"
             case .healthyButIdle: return "Enregistrement opérationnel, sans activité récente"
             case .awaitingInputEvidence: return "En attente de la première interaction"
@@ -32,7 +32,7 @@
             case .accessibilityContextUnavailable:
                 return "L’accessibilité semble activée, mais Goalong ne parvient pas à lire l’app au premier plan."
             case .paused:
-                return "L’enregistrement est volontairement en pause. L’historique existant reste consultable."
+                return "L’enregistrement est volontairement suspendu. L’historique existant reste consultable."
             case .excludedPrivateOrSecure:
                 return "Le suivi détaillé est volontairement masqué : app ou site exclu, navigation privée ou saisie sécurisée active (mot de passe, terminal). L’enregistrement reprend automatiquement."
             case .healthyButIdle:
@@ -53,7 +53,7 @@
             case .excludedDomain: return "site exclu"
             case .secureInput: return "saisie sécurisée"
             case .sessionUnavailable: return "session indisponible"
-            case .manualPause: return "pause manuelle"
+            case .manualPause: return "enregistrement suspendu"
             case .accessibilityUnavailable: return "Accessibilité indisponible"
             }
         }

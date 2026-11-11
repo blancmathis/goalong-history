@@ -87,7 +87,7 @@ struct GoalongAnalyticsPage: View {
     private var shareBlockedReason: String? {
         guard !previewActive else { return nil }
         // Paused: nothing is read, so there is nothing to share yet (same grey button as an empty day).
-        if analytics.paused { return "Tout le suivi en pause : rien à partager pour l’instant" }
+        if analytics.paused { return "Tout l’enregistrement suspendu : rien à partager pour l’instant" }
         guard let payload = analytics.payload, selection.matches(payload, preview: false) else { return nil }
         return payload.current.observedSeconds > 0 ? nil : "Rien à partager ce jour-là"
     }

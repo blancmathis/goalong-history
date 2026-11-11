@@ -33,8 +33,8 @@ final class T046UI15ATests: XCTestCase {
 
     func testSidebarStatusSaysOffPauseAndRefusedWrite() {
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: false), "Enregistrement désactivé")
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout le suivi en pause")
-        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout le suivi en pause")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: true), "Tout suspendu")
+        XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: false, globallyPaused: true), "Tout suspendu")
         XCTAssertEqual(runtime(.storageUnavailable(.permissionDenied)).sidebarTitle(recordingEnabled: true, globallyPaused: false),
                        "Écriture refusée")
         XCTAssertEqual(runtime(.storageUnavailable(.diskFull)).sidebarTitle(recordingEnabled: true, globallyPaused: false), "Disque plein")
@@ -48,7 +48,7 @@ final class T046UI15ATests: XCTestCase {
         XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: false), "Disque plein")
         XCTAssertEqual(runtime(.recording).sidebarTitle(recordingEnabled: true, globallyPaused: false, storageNamedByBanner: true),
                        "Enregistrement actif")
-        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: true, storageNamedByBanner: true), "Tout le suivi en pause")
+        XCTAssertEqual(full.sidebarTitle(recordingEnabled: true, globallyPaused: true, storageNamedByBanner: true), "Tout suspendu")
     }
 
     /// « Historique de ce Mac » and « Temps d’écran Apple » are masculine, « Conversations locales » feminine plural.

@@ -99,7 +99,7 @@ final class GoalongUXOptimizationTests: XCTestCase {
         XCTAssertFalse(offUnreadable.title.contains("Aucune activité"))
         let permissions = today(.permissions)
         XCTAssertFalse(permissions.message.contains("premières minutes"), "UI-sombre-02: no promise while nothing is recorded")
-        XCTAssertTrue(today(.paused).message.contains("pause"))
+        XCTAssertTrue(today(.paused).message.contains("suspendu"))
         XCTAssertEqual(today(nil).title, "Pas encore d’activité aujourd’hui")
         XCTAssertEqual(today(.input).title, "Pas encore d’activité aujourd’hui", "Input loss alone does not stop recording")
         XCTAssertEqual(today(nil, incomplete: 1).title, "Lecture incomplète")

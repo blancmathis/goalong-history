@@ -125,7 +125,7 @@ enum GoalongHomeRows {
     var body: some View {
         LHCard(padding: 0) {
             VStack(spacing: 0) {
-                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : runtimeStore.runtime.state == .paused ? "En pause" : GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText),
+                row("Enregistrement", status: !consents.isEnabled(.localComputerHistory) ? "Désactivé" : runtimeStore.runtime.state == .paused ? "Suspendu" : GoalongRecordingSetup.profile(settingsStore.appliedSettings, visibleText: visibleText),
                     detail: "Ce que Goalong conserve sur ce Mac", symbol: GoalongHomeRows.recordingSymbol, pane: .recording)
                 GoalongRowDivider()
                 row("Envoyer au site Goalong", status: Self.websiteStatus(enabled: sender.enabled, hasPlan: sender.savedConfiguration != nil, pauseReason: sender.pauseReason),

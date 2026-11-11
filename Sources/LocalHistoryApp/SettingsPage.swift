@@ -316,7 +316,7 @@ import AppKit
     /// Jev's settings are in its rule, on the page « Blocages »: this row opens that rule.
     private var jevLink: some View {
         GoalongSettingsLink(title: "Jev", value: consents.isEnabled(.jevMonitoring) ? "Activé" : "Désactivé",
-                            symbol: "eye.circle", detail: "Une règle de la page Blocages") { model.selectSection(.monitoring) }
+                            symbol: "eye.circle", detail: "Une règle de la page Garde-fous") { model.selectSection(.monitoring) }
     }
     /// The value column holds a state only (UI-12B, 20); descriptions go under the title (`detail`).
     private func summary(_ item: SettingsPane) -> String {
@@ -437,7 +437,7 @@ enum SettingsPane: Hashable {
         case .applications: return "ignorer exclure exclusions masquer application navigateur domaine"
         case .connections: return "connexions"
         case .website: return "compte goalong connecter partager envoyer synchroniser fréquence quotidien"
-        case .modules: return "module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente blocage bloquer site sites app apps verrouiller cold turkey geler activer"
+        case .modules: return "garde-fous garde-fou module modules ambiance braise filtre rouge luminosité horaires musique son sons concentration détente blocage bloquer site sites app apps verrouiller cold turkey geler activer"
         case .work: return "travail définition définir projet projets objectif objectifs tâche tâches classement classer agent verdict verdicts corriger productif procrastination mon travail"
         case .chatGPT: return "chatgpt analyse prompt consignes remplacement masquer pseudonyme sources données"
         case .permissions: return "accès accessibilité disque autoriser problème réparer"

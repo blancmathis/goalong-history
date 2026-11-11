@@ -171,7 +171,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Blocages").goalongPageTitle()
+                Text("Garde-fous").goalongPageTitle()
                 Text("Ce que Goalong bloque, quand, et ce qu’il faut pour l’arrêter.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -226,10 +226,10 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
             } else {
                 GoalongSection(title: "Listes") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Les listes de sites et d’apps à bloquer viennent du module Blocage.")
+                        Text("Les listes de sites et d’apps à bloquer viennent du module Garde-fous.")
                             .foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Activer Blocage") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+                        Button("Activer Garde-fous") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
                             .buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("module-enable-blocking")
                     }

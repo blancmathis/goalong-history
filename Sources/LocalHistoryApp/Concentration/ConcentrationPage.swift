@@ -146,7 +146,7 @@ struct FocusStatusLabel: View {
     private var words: String {
         switch status.state {
         case "focus": return status.source == "detected" ? "Concentré, détecté" : "Concentré"
-        case "break": return "En pause"
+        case "break": return "Repos"
         case "active": return "Actif"
         case "away": return "Absent"
         default: return "Non observé"
@@ -341,7 +341,7 @@ struct FocusComposerDraft: Equatable {
     private var previewDescription: String {
         let mode = draft.mode
         if mode.kind == .free { return mode.minutes.map { "Une séance de \(BlockingFormat.duration(minutes: $0))" } ?? "Une séance sans fin" }
-        return "\(mode.workMinutes) min de travail, \(mode.shortBreakMinutes) min de pause, puis \(mode.longBreakMinutes) min de pause longue toutes les \(mode.longBreakEvery) phases"
+        return "\(mode.workMinutes) min de travail, \(mode.shortBreakMinutes) min de repos, puis \(mode.longBreakMinutes) min de repos long toutes les \(mode.longBreakEvery) phases"
     }
 
     private var freeOptions: some View {
@@ -380,7 +380,7 @@ struct FocusComposerDraft: Equatable {
             if draft.rhythm == .custom {
                 HStack(spacing: 14) {
                     stepper("Travail", value: $draft.work, range: 5...120, unit: "min")
-                    stepper("Pause", value: $draft.shortBreak, range: 1...30, unit: "min")
+                    stepper("Repos", value: $draft.shortBreak, range: 1...30, unit: "min")
                     stepper("Longue", value: $draft.longBreak, range: 5...60, unit: "min")
                     stepper("Toutes les", value: $draft.every, range: 2...8, unit: "")
                 }
@@ -402,7 +402,7 @@ struct FocusComposerDraft: Equatable {
                 if !chosenLists.isEmpty {
                     HStack(spacing: 18) {
                         if draft.kind == .pomodoro {
-                            Toggle("Aussi pendant les pauses", isOn: $draft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
+                            Toggle("Aussi pendant les repos", isOn: $draft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
                         }
                         Toggle("Verrouiller", isOn: $draft.lock).toggleStyle(.goalongCheckbox)
                             .disabled(!draft.canLock)
@@ -519,7 +519,7 @@ struct FocusPlanChip: View {
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
                 } else {
                     if session.mode.kind == .pomodoro {
-                        Button(phase.isWork ? "Passer à la pause" : "Reprendre le travail") { act { try controller.skipPhase() } }
+                        Button(phase.isWork ? "Passer au repos" : "Reprendre le travail") { act { try controller.skipPhase() } }
                             .accessibilityIdentifier("concentration-skip")
                     }
                     Button("Arrêter") {
@@ -572,7 +572,7 @@ struct FocusPlanChip: View {
     private var blockingWords: String {
         let names = lists.map(\.name).joined(separator: ", ")
         // R-84: the state first, then the group (« Bloqué : Réseaux sociaux, Vidéo »).
-        if !phase.isWork && !session.blockDuringBreaks { return "Libre pendant la pause : \(names)" }
+        if !phase.isWork && !session.blockDuringBreaks { return "Libre pendant le repos : \(names)" }
         return lists.allSatisfy { $0.effectiveAction == .slowDown } ? "Ralenti : \(names)" : "Bloqué : \(names)"
     }
 
@@ -1420,7 +1420,7 @@ enum FocusUIError {
         case .planFull: return "Le plan compte déjà dix tâches."
         case .itemFinished: return "Une tâche terminée ou abandonnée ne se déplace pas. Rouvrez-la d’abord."
         case .storageFailed: return "Enregistrement impossible. Les données déjà enregistrées restent intactes ; Goalong réessaie chaque minute."
-        case .moduleDisabled: return "Activez Blocage dans Réglages › Modules pour bloquer pendant une séance."
+        case .moduleDisabled: return "Activez Garde-fous dans Réglages › Modules pour bloquer pendant une séance."
         case .appNotRunning: return "Goalong ne répond pas. Réessayez ; si cela continue, relancez Goalong."
         case nil: return isReadableSentence(raw) ? raw : "L’action n’a pas abouti. Réessayez."
         }

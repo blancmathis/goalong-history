@@ -71,7 +71,7 @@ enum BlockRuleSwitchAction {
             case (.free, _): break
             case (.typing, .typed(let typed, let challenge)): if typed != challenge { return "Le texte ne correspond pas." }
             case (.password, .password(let password)):
-                guard let blocking else { return "Le mot de passe vient du module Blocage." }
+                guard let blocking else { return "Le mot de passe vient du module Garde-fous." }
                 if let refusal = passwordWords(blocking.verifyRedScreenPassword(password)) { return refusal }
             default: return "L’arrêt de cette règle est demandé d’abord."
             }
@@ -168,7 +168,7 @@ enum BlockRuleSentence {
                      session: Session? = nil, now: Date) -> String? {
         let what: String
         if session?.wholeMac == true {
-            what = "Gèle tout le Mac"
+            what = "Bloque tout le Mac"
         } else {
             let rule = BlockRule(draft, lists: lists)
             guard !rule.lists.isEmpty || rule.red != nil || rule.jev != nil else { return nil }

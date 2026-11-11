@@ -139,12 +139,12 @@ struct FocusPhaseNotice: View {
 
     private var title: String {
         guard let endsAt else { return fallback }
-        return isWork ? "Concentration jusqu’à \(BlockingFormat.time(endsAt))" : "Pause jusqu’à \(BlockingFormat.time(endsAt))"
+        return isWork ? "Concentration jusqu’à \(BlockingFormat.time(endsAt))" : "Repos jusqu’à \(BlockingFormat.time(endsAt))"
     }
 
     private var detail: String {
         if isWork { return intent ?? fallback }
-        guard let endsAt else { return "La prochaine séance démarre automatiquement à la fin de la pause." }
+        guard let endsAt else { return "La prochaine séance démarre automatiquement à la fin du repos." }
         return "La prochaine séance démarre automatiquement à \(BlockingFormat.time(endsAt))."
     }
 }
@@ -241,7 +241,7 @@ struct FocusFactsView: View {
             }
             .accessibilityElement(children: .combine)
         } else {
-            Text("Pas de mesure : l’enregistrement était en pause pendant cette séance.")
+            Text("Pas de mesure : l’enregistrement était suspendu pendant cette séance.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }

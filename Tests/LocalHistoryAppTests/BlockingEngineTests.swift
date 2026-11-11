@@ -1151,8 +1151,8 @@ final class BlockingEngineTests: XCTestCase {
     func testLateClickRefusalSpeaksOfTheChosenSpan() {
         XCTAssertEqual(BlockingNowComposer.refusal(.minutes(30), freeze: false), "Ce blocage serait déjà fini. Relancez-le.")
         XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: false), "L’heure de fin est passée. Choisissez une autre heure.")
-        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(25), freeze: true), "Le gel durerait moins de 5 min. Relancez-le.")
-        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: true), "Le gel durerait moins de 5 min. Choisissez une autre heure.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.minutes(25), freeze: true), "Le blocage de tout le Mac durerait moins de 5 min. Relancez-le.")
+        XCTAssertEqual(BlockingNowComposer.refusal(.until, freeze: true), "Le blocage de tout le Mac durerait moins de 5 min. Choisissez une autre heure.")
     }
 
     /// R5-blocage-01: a free session inside a locked block speaks with the locked block's lock and end.

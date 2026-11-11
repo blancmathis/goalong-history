@@ -492,7 +492,7 @@ import XCTest
         XCTAssertEqual(hint(false, false, false, false, false), "Créez une liste, ou choisissez « Tout le Mac ».")
         XCTAssertEqual(hint(false, false, true, false, false), "Choisissez au moins une liste.")
         XCTAssertEqual(hint(false, false, true, true, true), "Choisissez d’abord un mot de passe de blocage.")
-        XCTAssertEqual(hint(true, true, true, true, false), "Le Mac est déjà gelé.")
+        XCTAssertEqual(hint(true, true, true, true, false), "Tout le Mac est déjà bloqué.")
         XCTAssertNil(hint(true, false, true, false, false))
     }
 

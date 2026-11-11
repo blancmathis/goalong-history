@@ -122,7 +122,7 @@ import LocalHistoryQueryCLI
         let text: String, next: TimeInterval
         if let end = phase.endsAt {
             let left = max(0, end.timeIntervalSince(now)), minutes = max(1, Int((left / 60).rounded(.up)))
-            text = (phase.isWork ? "" : "Pause ") + "\(minutes) min"
+            text = (phase.isWork ? "" : "Repos ") + "\(minutes) min"
             next = left - Double(minutes - 1) * 60
         } else {
             let elapsed = max(0, now.timeIntervalSince(session.startedAt))
