@@ -138,7 +138,7 @@ enum GoalongHomeRows {
         }.onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
             .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
     }
-    /// Two automations run through ChatGPT: classifying time when Activité opens, and daily
+    /// Two automations run through ChatGPT: classifying time in the background (2 calls a day at most), and daily
     /// reports. The status names the ones that really run, not only the report schedule.
     private var chatGPTStatus: String {
         guard consents.isEnabled(.chatGPTAnalysis), analysisSelection.isValid(for: exclusions.policy) else { return "À configurer" }
@@ -146,7 +146,7 @@ enum GoalongHomeRows {
         case .signedOut, .codexUnavailable, .unsupportedCredentialMode, .failed: return "Non connecté"
         case .checking, .connected: break
         }
-        switch (work.automatic && !work.definition.isEmpty, analysis.automaticRecapsEnabled) {
+        switch (work.backgroundConsent && !work.definition.isEmpty, analysis.automaticRecapsEnabled) {
         case (true, true): return "Automatique"
         case (true, false): return "Classement automatique"
         case (false, true): return "Bilans automatiques"

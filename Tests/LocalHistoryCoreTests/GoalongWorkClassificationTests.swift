@@ -117,7 +117,7 @@ final class GoalongWorkClassificationTests: XCTestCase {
                        "Already judged or asked today, shorter than 15 s or withheld contexts are not sent")
     }
 
-    func testRequestCarriesDefinitionAndTimelineButNeverKeys() throws {
+    func testRequestCarriesDefinitionAndNeighboursButNeverKeys() throws {
         let events = minutes(0...20, from: 36_000, app: "Pages", title: "Rapport client")
             + minutes(21...30, from: 36_000, app: "Xcode", title: "A.swift")
         let observation = observe(events)
@@ -129,7 +129,9 @@ final class GoalongWorkClassificationTests: XCTestCase {
             batch: pending.keys, day: observation.day, verdicts: verdicts, knownTasks: ["Goalong"], examples: [], calendar: calendar)
         XCTAssertEqual(request.contexts.map(\.id), ["c1"])
         XCTAssertEqual(request.contexts.first?.title, "Rapport client")
-        XCTAssertEqual(request.timeline, ["10:00 c1 21 min", "10:21 [travail: Goalong] 9 min"])
+        XCTAssertEqual(request.contexts.first?.neighbours.count, 2, "Two neighbours per context, not the whole day")
+        XCTAssertEqual(request.contexts.first?.neighbours.first, "début")
+        XCTAssertTrue(request.contexts.first?.neighbours.last?.hasPrefix("w:Goalong") == true)
         let prompt = GoalongWorkClassification.prompt(request, definition: definition)
         XCTAssertTrue(prompt.contains("Goalong et les clients d’Atlas"))
         XCTAssertTrue(prompt.contains("Vidéos de divertissement"))
@@ -161,20 +163,21 @@ final class GoalongWorkClassificationTests: XCTestCase {
         let request = GoalongWorkClassification.request(date: "2026-09-10", definition: .init(goals: "Rapport"), pending: pending,
             batch: pending.keys, day: observation.day, verdicts: .init(), knownTasks: [], examples: [], calendar: calendar)
         func answer(_ items: String, id: String? = nil) -> Data {
-            Data(#"{"request_id":"\#(id ?? request.request_id)","items":[\#(items)]}"#.utf8)
+            Data(#"{"r":"\#(id ?? request.request_id)","c":[\#(items)]}"#.utf8)
         }
-        let valid = try GoalongWorkClassification.parse(answer(#"{"id":"c1","verdict":"work","task":"  Rapport\n trimestriel "},{"id":"c2","verdict":"unknown","task":""}"#))
+        let valid = try GoalongWorkClassification.parse(answer(#"{"i":"c1","v":"w","k":"  Rapport\n trimestriel "},{"i":"c2","v":"u","k":""}"#))
         let applied = try GoalongWorkClassification.apply(valid, to: request)
         XCTAssertEqual(applied[request.keys["c1"]!], GoalongWorkAssignment(verdict: .work, task: "Rapport trimestriel"))
         XCTAssertEqual(applied[request.keys["c2"]!]?.verdict, .unclear)
 
-        for broken in [answer(#"{"id":"c1","verdict":"work","task":"x"}"#),
-                       answer(#"{"id":"c1","verdict":"work","task":"x"},{"id":"c1","verdict":"other","task":""}"#),
-                       answer(#"{"id":"c1","verdict":"work","task":"x"},{"id":"c9","verdict":"other","task":""}"#),
-                       answer(#"{"id":"c1","verdict":"work","task":"x"},{"id":"c2","verdict":"other","task":""}"#, id: "other-request")] {
+        for broken in [answer(#"{"i":"c1","v":"w","k":"x"}"#),
+                       answer(#"{"i":"c1","v":"w","k":"x"},{"i":"c1","v":"o","k":""}"#),
+                       answer(#"{"i":"c1","v":"w","k":"x"},{"i":"c9","v":"o","k":""}"#),
+                       answer(#"{"i":"c1","v":"w","k":"x"},{"i":"c2","v":"work","k":""}"#),
+                       answer(#"{"i":"c1","v":"w","k":"x"},{"i":"c2","v":"o","k":""}"#, id: "other-request")] {
             XCTAssertThrowsError(try GoalongWorkClassification.apply(GoalongWorkClassification.parse(broken), to: request))
         }
-        XCTAssertThrowsError(try GoalongWorkClassification.parse(Data(#"{"request_id":"x","items":[],"extra":1}"#.utf8)))
+        XCTAssertThrowsError(try GoalongWorkClassification.parse(Data(#"{"r":"x","c":[],"extra":1}"#.utf8)))
     }
 
     func testDefinitionRevisionFollowsItsMeaning() {

@@ -45,39 +45,89 @@ Day.applying(verdicts) → .work / .other / .unclassified + tâche
 
 ## Agent
 
-- Déclenchement : à l’ouverture d’Activité pour les jours affichés (aujourd’hui au plus
-  toutes les 15 min, un autre jour une fois par lancement, 30 min après un échec), après
-  l’enregistrement d’une nouvelle définition, ou par « Classer aujourd’hui ». Aucune
-  minuterie, rien pendant un bilan quotidien.
+- États (`GoalongWorkClassification.states`, un seul endroit) : chaque contexte du jour est
+  **classé** (travail / hors travail, par une règle de l’utilisateur ou par l’agent),
+  **en attente** (avec une raison lisible : pas encore passé, pause, limite du jour, limite
+  du compte proche, Codex occupé, consentement manquant…), **à préciser** (l’agent n’a pas su,
+  ou le contexte est exclu de l’envoi) ou **trop court** (groupe de moins de 15 s sans règle).
+- Interface (lot B2) :
+  - **Activité** montre la phrase « Pour vous, le travail c’est : … » (avec « Modifier » ; vide :
+    invite à l’écrire, le classement attend cette phrase) et trois états nommés : **Classé**,
+    **En attente du classement automatique** (n’appelle aucune action), **Le classement n’a pas
+    su trancher** (seul appel à l’action : bouton « À préciser (N) »). Les états sont calculés sur
+    la journée affichée, ou sur les 7 derniers jours d’une période (la note de portée le dit).
+  - Une ligne d’état remplace l’ancien bouton : dernier passage, prochain passage
+    (`GoalongWorkPassLine`), ou la raison de l’attente avec un lien pour la lever.
+  - **À préciser** ouvre une feuille (`GoalongWorkClarifySheet`) : une question à la fois, la plus
+    longue d’abord, « <contexte> (38 min) : est-ce du travail ? » → Travail / Pas du travail /
+    Passer. Portée : ce contexte seul, toute l’app, tout le site (site seulement s’il existe).
+    Compteur d’avancement, « Annuler la dernière réponse » (restaure la règle précédente).
+  - **Réglages › Définition du travail** : « Vos réponses » (modifier le verdict, supprimer),
+    accord « Classer en arrière-plan », « Usage du classement » (jetons du jour et de la semaine,
+    part du quota, plafond). « Lancer un passage maintenant » y reste et compte dans le plafond.
+- Règles de l’utilisateur : portée **contexte**, **app** ou **site**, appliquées sur le Mac
+  avant tout envoi. Ordre : réponse sur le contexte > règle de site > règle d’app > agent.
+  Les anciennes réponses (`byOwner`) restent des règles de contexte. Goalong ne crée jamais
+  seul une règle d’app.
+- Groupes : les titres sont normalisés (casse, suffixe « — App », nombres → #). Un seul
+  contexte par groupe est envoyé ; sa réponse vaut pour tout le groupe et pour les membres
+  vus plus tard (sans nouvel appel).
+- Passage en arrière-plan : vérifié toutes les 15 min, seulement avec le consentement
+  « Classer en arrière-plan » (décoché par défaut ; l’ancien réglage « automatique » ne
+  compte pas). Au plus **2 appels par jour** : dès 40 groupes en attente, ou aux créneaux
+  12 h 30 et 18 h 30 s’il reste quelque chose. Plafond **24 000 jetons par jour**, passage
+  manuel compris. Rien en pause, pendant un bilan, quand Codex est occupé, ni quand le
+  compte approche de sa limite (≥ 90 % d’une fenêtre, lue par `account/rateLimits/read`,
+  sans inférence ; une lecture qui échoue efface l’état affiché). Le passage manuel
+  « Lancer un passage maintenant » vit dans Réglages → Définition du travail ; Activité
+  n’envoie plus rien à l’ouverture, ni la connexion ChatGPT. Un clic pendant un passage
+  n’est pas lancé et la page le dit.
+- Jours couverts : les 7 derniers jours, les plus anciens d’abord. Les réponses connues
+  (règles, groupes) s’appliquent à chaque jour ; le seul appel va au jour le plus ancien
+  qui a des groupes en attente, dans le même budget.
+- Comptage : un appel est compté **dès l’envoi**, à son estimation ; un échec compte donc
+  dans le plafond et dans les 2 appels du jour. Les jetons réels de Codex remplacent
+  l’estimation à la réponse. La marge gardée pour un appel est la moyenne réelle de la
+  semaine (5 000 au moins).
 - Conditions : définition non vide, historique activé, consentement « Analyse ChatGPT »,
   compte ChatGPT connecté, pas de pause globale.
-- Envoi : les contextes **sans verdict**, ou les contextes indéterminés admissibles à une nouvelle tentative, pour la définition actuelle, de 15 s ou
-  plus, les plus longs d’abord, par lots de 250 (3 lots au plus par passage). Chaque
-  contexte : nom de l’app, site, titre (secrets masqués), minutes ; plus la définition,
-  les tâches déjà nommées, les corrections de l’utilisateur (40 au plus) et la chronologie
-  du jour (contextes à classer par id, les autres par leur tâche connue).
+- Envoi : **un appel par passage**, 60 groupes au plus, les plus longs d’abord, réduit
+  jusqu’à tenir dans les jetons restants du jour. Clés JSON courtes. Chaque contexte :
+  app, site, titre (secrets masqués), minutes du groupe, 2 voisins (précédent, suivant) ;
+  plus la définition, 20 tâches connues au plus et les **10 réponses de l’utilisateur les
+  plus proches** (même site, puis même app).
+  Avec aussi la note de la journée (si elle est incluse) et, pour un contexte à redemander,
+  un extrait du texte visible (240 caractères au plus, si « Données pour ChatGPT » le
+  permet). Les deux textes d’accord nomment toutes ces données ; l’accord d’arrière-plan
+  est en version 2 (à redonner).
 - Filtre de confidentialité (`GoalongWorkSharingFilter`) : exclusions globales, puis
   sélection « Données pour ChatGPT » si elle est confirmée (apps autorisées, sites exclus,
   titres et sites autorisés, remplacements de noms). Un contexte filtré reste à classer.
   Les corrections envoyées comme exemples passent par le même filtre au moment de
   l’envoi : une correction sur un contexte exclu depuis n’est plus envoyée. Les
   remplacements de noms s’appliquent aussi à la définition, à la note du jour, aux tâches
-  connues et aux tâches de la chronologie ; s’ils ne peuvent pas être appliqués, rien
+  connues et aux tâches des voisins ; s’ils ne peuvent pas être appliqués, rien
   n’est envoyé. Les tâches renvoyées par l’agent peuvent donc porter le nom remplacé.
 - Exécution : compte ChatGPT de Goalong (`codex app-server`, `CODEX_HOME` isolé), profil
   `goalong-site-analysis` (aucun outil, aucun réseau, aucun fichier), thread éphémère,
-  `gpt-5.6-luna` / `high`, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
+  `gpt-5.6-luna` / `low` (contrat de classement propre, vérifié par `model/list` ; le
+  bilan quotidien garde `high`), instructions de base courtes, sortie JSON stricte. Les révisions des exclusions et des choix « Données pour
   ChatGPT » sont revérifiées avant chaque lot et juste avant l’envoi ; si l’une a changé,
   le classement s’arrête sans rien envoyer.
-- Validation : même `request_id`, exactement un élément par contexte envoyé, aucun id
-  inconnu ou dupliqué ; sinon rien n’est enregistré. « unknown » devient *indéterminé* et
+- Validation : même identifiant de requête (`r`), exactement un élément par contexte envoyé,
+  aucun id inconnu ou dupliqué, verdict `w` / `o` / `u` ; sinon rien n’est enregistré.
+  `u` devient *indéterminé* et
   peut être reposé sur un autre jour observé, avec au moins 5 minutes et moins de 3 tentatives automatiques. Un verdict de l’utilisateur n’est jamais reposé.
 
 ## Stockage
 
 `~/Library/Application Support/LocalHistory/work-classification.json` (0600) :
 révision de la définition, verdicts par empreinte de contexte (sans titre), `attempts` et `lastAskedDay` pour les tentatives automatiques, corrections
-de l’utilisateur (avec leur libellé, pour servir d’exemples), réglage « automatique ».
+de l’utilisateur (avec leur libellé, pour servir d’exemples), règles d’app et de site,
+verdicts par groupe, consentement d’arrière-plan (version), ancien réglage « automatique »
+(gardé, sans effet). `work-classification-usage.json` (0600) : par jour (14 jours), appels,
+appels d’arrière-plan, jetons (réels si Codex les publie par `thread/tokenUsage/updated`,
+sinon estimés et marqués comme tels), part hebdomadaire du compte avant et après.
 20 000 verdicts au plus (les plus anciens verdicts de l’agent sont retirés d’abord).
 
 - Changer la définition efface les verdicts de l’agent ; les corrections restent.

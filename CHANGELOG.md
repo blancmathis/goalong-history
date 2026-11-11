@@ -7,6 +7,7 @@
 ## À publier — le panneau de la barre des menus se ferme comme attendu
 
 - **Le panneau ouvert depuis l’icône de Goalong se ferme d’un clic ailleurs** (autre app, bureau, autre icône de la barre des menus) et avec Échap, comme un menu. Depuis 0.6.178 (icône portée par l’app d’aide), seul un second clic sur l’icône le fermait. Goalong passe au premier plan à l’ouverture du panneau, qui reçoit donc le clavier ; Échap rend la main à l’app d’avant.
+- **Le panneau reste ouvert quand la souris quitte l’icône.** Il ne se ferme plus tout seul : seulement sur un clic ailleurs, Échap ou un second clic sur l’icône.
 
 ## À publier — galerie des écrans
 

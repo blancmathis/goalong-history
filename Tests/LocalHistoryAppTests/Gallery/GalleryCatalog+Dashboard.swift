@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 import SwiftUI
 @testable import LocalHistoryApp
 
@@ -28,6 +29,29 @@ extension GalleryCatalog {
         }
     }
 
+    /// Contexts waiting for the next automatic pass (nothing to answer).
+    static var galleryWaitingStates: GoalongWorkStateModel.Snapshot {
+        var snapshot = GoalongWorkStateModel.Snapshot()
+        snapshot.counts = [.classified: 4, .waiting: 9, .toClarify: 0, .tooShort: 6]
+        snapshot.seconds = [.classified: 7_800, .waiting: 5_400, .tooShort: 420]
+        snapshot.pendingGroups = 5
+        return snapshot
+    }
+
+    /// Contexts the classification could not decide, longest first: the only state that asks for something.
+    static var galleryClarifyStates: GoalongWorkStateModel.Snapshot {
+        func question(_ title: String, _ host: String?, _ app: String, _ seconds: TimeInterval) -> GoalongWorkStateModel.Question {
+            let label = GoalongWorkContext.Label(application: app, bundleIdentifier: nil, host: host, title: title)
+            return .init(id: GoalongWorkContext.key(label), label: label, seconds: seconds, reason: .agentUnsure)
+        }
+        var snapshot = GoalongWorkStateModel.Snapshot()
+        snapshot.questions = [question("Notes de réunion Atlas", "notion.so", "Safari", 2_280), question("Maquettes", "figma.com", "Safari", 1_260),
+                              question("Idées de lancement", nil, "Notes", 540)]
+        snapshot.counts = [.classified: 12, .waiting: 2, .toClarify: snapshot.questions.count, .tooShort: 4]
+        snapshot.seconds = [.classified: 12_600, .waiting: 600, .toClarify: 4_080, .tooShort: 300]
+        return snapshot
+    }
+
     static var dashboardEntries: [GalleryEntry] {
         [workReviewEntry] + [
             // Activité, the home page: a realistic, classified day at the real, minimum and large window sizes, whole
@@ -36,6 +60,14 @@ extension GalleryCatalog {
                       themes: GalleryTheme.withContrast, fixture: .classified),
             dashboard("activite/7-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .classified, period: 7),
             dashboard("activite/28-jours", section: .overview, sizes: [.window, .full(1240)], fixture: .classified, period: 28),
+            // T-049 B2: the three states of the classification, then the sheet of questions (GalleryCatalog+Settings).
+            dashboard("activite/etat-classe", section: .overview, sizes: [.window, .full(1240)], fixture: .classified),
+            dashboard("activite/etat-en-attente", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic,
+                      prepare: { _ in GoalongWorkStateModel.galleryOverride = galleryWaitingStates },
+                      configure: { _, ctx in ctx.cleanups.append { GoalongWorkStateModel.galleryOverride = nil } }),
+            dashboard("activite/etat-a-preciser", section: .overview, sizes: [.window, .full(1240)], fixture: .classified,
+                      prepare: { _ in GoalongWorkStateModel.galleryOverride = galleryClarifyStates },
+                      configure: { _, ctx in ctx.cleanups.append { GoalongWorkStateModel.galleryOverride = nil } }),
             dashboard("activite/non-classe", section: .overview, sizes: [.window, .full(1240)], fixture: .realistic),
             dashboard("activite/journee-vide", section: .overview, sizes: [.window, .full(1240)], fixture: .recordingOn),
             dashboard("activite/traces-isolees", section: .overview, sizes: [.window, .full(1240)], fixture: .sparse),
@@ -80,6 +112,16 @@ extension GalleryCatalog {
                     content: "Documentation Swift, notes de lancement.",
                     procrastination: "youtube.com, Messages")
             }),
+            // T-049 B2: « Vos réponses » (app, site and context answers, changeable) and « Usage du classement ».
+            dashboard("mon-travail/reponses-et-usage", section: .work, sizes: [.full(1240)], fixture: .classified,
+                      configure: { _, _ in
+                          let work = GoalongWorkStore.shared, day = GoalongWorkAgent.dayString(GalleryClock.today)
+                          work.setRule(scope: .application, target: "com.apple.mail", label: "Mail", verdict: .work, day: day)
+                          work.setRule(scope: .site, target: "youtube.com", label: "youtube.com", verdict: .other, day: day)
+                          work.setRule(scope: .site, target: "docs.atlas.example", label: "docs.atlas.example", verdict: .work, day: day)
+                          work.recordUsage(day: day, at: GalleryClock.now.addingTimeInterval(-3_600), tokens: 7_400, estimated: false,
+                                           background: true, weeklyBefore: 11, weeklyAfter: 12)
+                      }),
             dashboard("historique/vide", section: .history, sizes: [.window, .full(1240)]),
             dashboard("historique/journee-vide", section: .history, sizes: [.window, .full(1240)], fixture: .recordingOn),
             // R4e-suite B: the gallery clock is 23 Oct, so the entry above shows today (« pas encore »); this one shows the day before.

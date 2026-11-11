@@ -53,6 +53,6 @@ final class GoalongWorkReassessmentTests: XCTestCase {
             contextExcerpts: excerpts, dayNote: String(repeating: "n", count: 400))
         XCTAssertEqual(request.contexts.first?.visible_context_excerpt?.count, 240)
         XCTAssertEqual(request.day_note?.count, 280)
-        XCTAssertTrue(GoalongWorkClassification.prompt(request, definition: .init(goals: "Project")).contains("day_note"))
+        XCTAssertTrue(GoalongWorkClassification.prompt(request, definition: .init(goals: "Project")).contains("\"N\":"), "The day note is sent under its short key")
     }
 }
