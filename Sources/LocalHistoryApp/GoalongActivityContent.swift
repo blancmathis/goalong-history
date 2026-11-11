@@ -82,7 +82,7 @@ struct GoalongDetailHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button(action: onBack) { Label("Activité", systemImage: "chevron.left") }
+            Button(action: onBack) { Label("Retour à l’activité", systemImage: "chevron.left") }
                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                 .help(backHelp)
                 .accessibilityIdentifier("activity-detail-back")

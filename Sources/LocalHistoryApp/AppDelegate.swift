@@ -365,7 +365,9 @@ import AppleScreenTime
                     canCheckForUpdates: {
                         SoftwareUpdateManager.shared.canCheckForUpdates
                     },
-                    onQuit: { [weak self] in self?.requestUserQuit() }
+                    onQuit: { [weak self] in self?.requestUserQuit() },
+                    onFindInPage: { [weak self] in self?.dashboardWindowController.focusSearch() },
+                    canFindInPage: { [weak self] in self?.dashboardWindowController.canFocusSearch ?? false }
                 )
                 applicationMenuController.install(in: NSApplication.shared)
 
@@ -381,7 +383,7 @@ import AppleScreenTime
                     onDeleteDetails: { [weak self] cutoff, completion in
                         self?.deleteDetails(since: cutoff, completion: completion)
                     },
-                    onOpenDashboard: { [weak self] in self?.dashboardWindowController.show(section: .overview) },
+                    onOpenDashboard: { [weak self] in self?.dashboardWindowController.show(section: nil) },
                     onOpenMonitoring: { [weak self] in self?.dashboardWindowController.show(section: .monitoring) },
                     onOpenShare: { [weak self] in self?.dashboardWindowController.show(section: .share) },
                     onTogglePause: { [weak self] in self?.toggleManualPause() },
@@ -849,7 +851,7 @@ import AppleScreenTime
             _ sender: NSApplication,
             hasVisibleWindows flag: Bool
         ) -> Bool {
-            dashboardWindowController?.show(section: dashboardViewModel?.navigationStore.selectedSection ?? .overview)
+            dashboardWindowController?.show(section: nil)
             return false
         }
 
