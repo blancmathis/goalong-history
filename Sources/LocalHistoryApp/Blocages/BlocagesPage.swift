@@ -206,7 +206,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                     BlocagesRuleList(rules: BlockRules.current(blocking: blocking, braise: braise,
                                                                jev: surveillance.error == nil ? surveillance.document.ranges : [],
                                                                now: now), now: now,
-                                     onEdit: { editing = $0 })
+                                     blocking: blocking, braise: braise, onEdit: { editing = $0 })
                 }
             }
         })
@@ -263,7 +263,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     static let protectionSubtitle = "Ce qui empêche de contourner un blocage."
     static let redSafetyTitle = "Secours de l’écran rouge"
     /// The empty list of rules: the rule of Jev stays under it, so it says « autre » (T-050 point 15).
-    static let noRuleText = "Aucune autre règle. « Nouvelle règle » bloque toujours, à des horaires, ou le temps d’une séance."
+    static let noRuleText = "Aucune autre règle. Partez d’un modèle, ou de « Nouvelle règle » : toujours, à des horaires, ou le temps d’une séance."
 
     private var protection: some View {
         GoalongSection(title: "Protection", subtitle: Self.protectionSubtitle, trailing: {
@@ -412,11 +412,19 @@ struct BlocagesFoldView<Content: View>: View {
 
 // MARK: - Règles
 
-/// The rules, one row each, then the rule of Jev. A row opens the one editor.
+/// The rules, one row each, then the rule of Jev. A row opens the one editor; its switch turns it on at once and off
+/// through its stop (S2, P3); right click and double click give its actions (A8). No rule: the four templates (A1).
 @MainActor private struct BlocagesRuleList: View {
     let rules: [BlockRule]
     let now: Date
+    let blocking: BlockingController?
+    let braise: BraiseController?
     let onEdit: (BlockRuleEditor.Subject) -> Void
+    @State private var typing: (rule: BlockRule, text: String)?
+    @State private var asking: BlockRule?
+    @State private var password = ""
+    @State private var deleting: BlockRule?
+    @State private var refusal: String?
 
     var body: some View {
         LHCard(padding: 0) {
@@ -425,23 +433,108 @@ struct BlocagesFoldView<Content: View>: View {
                     Text(BlocagesPageContent.noRuleText)
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 14)
+                        .padding(.horizontal, LHTheme.cardInset).padding(.top, 14)
                         .accessibilityIdentifier("blocages-no-rule")
+                    BlockRuleTemplatesRow(lists: blocking?.lists ?? []) { onEdit(.preset($0)) }
+                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10)
                     GoalongRowDivider(inset: LHTheme.cardInset)
                 }
                 ForEach(Array(rules.enumerated()), id: \.element.id) { index, rule in
-                    Button { onEdit(.rule(rule)) } label: {
-                        BlocagesRuleRow(title: rule.title, summary: rule.summary, lock: rule.lock.title,
-                                        state: rule.stateText(now: now), running: rule.isRunning)
-                    }
-                    .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
-                    .accessibilityLabel(rule.spokenLabel(now: now))
-                    .accessibilityHint("Ouvre la règle")
-                    .accessibilityIdentifier("blocages-rule-\(index)")
+                    row(rule, index: index)
                     GoalongRowDivider(inset: LHTheme.cardInset)
                 }
                 BlocagesJevRow { onEdit(.jev) }
             }
+        }
+        .sheet(isPresented: Binding(get: { typing != nil }, set: { if !$0 { typing = nil } })) {
+            if let typing {
+                BlockingTypingChallengeSheet(text: typing.text, onSubmit: { typed in
+                    self.typing = nil
+                    finish(typing.rule, .typed(typed, challenge: typing.text))
+                }, onCancel: { self.typing = nil })
+            }
+        }
+        .alert("Éteindre cette règle ?", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            SecureField("Mot de passe de blocage", text: $password)
+            Button("Éteindre", role: .destructive) { if let rule = asking { finish(rule, .password(password)) }; password = "" }
+            Button("Annuler", role: .cancel) { password = "" }
+        } message: { Text("Son arrêt demande le mot de passe de blocage.") }
+        .alert("Supprimer cette règle ?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Supprimer", role: .destructive) { if let rule = deleting { delete(rule) } }
+            Button("Annuler", role: .cancel) {}
+        } message: { Text("Les listes restent. Seules leurs plages à ces heures sont retirées.") }
+        .alert(refusal ?? "", isPresented: Binding(get: { refusal != nil }, set: { if !$0 { refusal = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+
+    private func row(_ rule: BlockRule, index: Int) -> some View {
+        let state = BlockRuleSwitch.of(rule, canVerifyPassword: blocking != nil)
+        return HStack(spacing: 0) {
+            Button { onEdit(.rule(rule)) } label: {
+                BlocagesRuleRow(title: rule.summary, summary: rule.title, lock: rule.lock.title, lockSymbol: rule.lock.symbol,
+                                state: rule.stateText(now: now), running: rule.isRunning)
+            }
+            .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
+            .accessibilityLabel(rule.spokenLabel(now: now))
+            .accessibilityHint("Ouvre la règle")
+            .accessibilityIdentifier("blocages-rule-\(index)")
+            if state != .hidden {
+                Toggle("Règle active", isOn: Binding(get: { state != .off }, set: { toggle(rule, on: $0) }))
+                    .labelsHidden().toggleStyle(.goalongSwitch)
+                    .padding(.trailing, LHTheme.cardInset)
+                    .accessibilityIdentifier("blocages-rule-switch-\(index)")
+            }
+        }
+        .contextMenu {
+            Button("Modifier…") { onEdit(.rule(rule)) }
+            Button("Dupliquer…") { onEdit(.preset(BlockRulePreset(copying: rule))) }
+            if state != .hidden { Button(state == .off ? "Allumer" : "Éteindre") { toggle(rule, on: state == .off) } }
+            Divider()
+            Button("Supprimer…", role: .destructive) { deleting = rule }
+        }
+    }
+
+    /// On: at once. Off: through the rule's stop.
+    private func toggle(_ rule: BlockRule, on: Bool) {
+        if on { refusal = BlockRuleSwitchAction.turnOn(rule, braise: braise); return }
+        guard case .on(let stop) = BlockRuleSwitch.of(rule, canVerifyPassword: blocking != nil) else { return }
+        switch stop {
+        case .typing: typing = (rule, BlockRuleSwitchAction.challenge(rule, blocking: blocking))
+        case .password: asking = rule
+        case .free, .locked: finish(rule, .none)
+        }
+    }
+
+    private func finish(_ rule: BlockRule, _ proof: BlockRuleStopProof) {
+        refusal = BlockRuleSwitchAction.turnOff(rule, proof: proof, blocking: blocking, braise: braise)
+    }
+
+    private func delete(_ rule: BlockRule) {
+        let writes = BlockRulePlan.writes(nil, replacing: rule, lists: blocking?.lists ?? [], red: braise?.ranges)
+        refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise, surveillance: .shared)
+    }
+}
+
+/// The four starts of a rule (A1): each opens the editor already filled; nothing is saved before « Enregistrer ».
+@MainActor struct BlockRuleTemplatesRow: View {
+    let lists: [BlockList]
+    let onPick: (BlockRulePreset) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { buttons }
+            VStack(alignment: .leading, spacing: 6) { buttons }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("blocages-templates")
+    }
+
+    private var buttons: some View {
+        ForEach(BlockRulePreset.templates(lists: lists), id: \.id) { preset in
+            Button(preset.title) { onPick(preset) }
+                .buttonStyle(LHSecondaryButtonStyle())
+                .accessibilityIdentifier("blocages-template-\(preset.id)")
         }
     }
 }
@@ -515,11 +608,12 @@ private extension BlockRule {
     }
 }
 
-/// When and what on the left, the stop rule and the state on the right, in words.
+/// What first, then when, on the left; the stop level (an icon, its name on hover) and the state on the right.
 private struct BlocagesRuleRow: View {
     let title: String
     let summary: String
     let lock: String
+    var lockSymbol: String? = nil
     let state: String
     let running: Bool
 
@@ -532,12 +626,19 @@ private struct BlocagesRuleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(lock).font(.system(size: 12, weight: .medium))
-                Text(state).font(.system(size: 12, weight: running ? .medium : .regular))
-                    .foregroundStyle(running ? LHTheme.text : LHTheme.secondaryText)
+            HStack(spacing: 8) {
+                if let lockSymbol {
+                    Image(systemName: lockSymbol).font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LHTheme.secondaryText).help("Arrêt : \(lock)")
+                        .accessibilityLabel("Arrêt : \(lock)")
+                }
+                VStack(alignment: .trailing, spacing: 3) {
+                    if lockSymbol == nil { Text(lock).font(.system(size: 12, weight: .medium)) }
+                    Text(state).font(.system(size: 12, weight: running ? .medium : .regular))
+                        .foregroundStyle(running ? LHTheme.text : LHTheme.secondaryText)
+                }
+                .multilineTextAlignment(.trailing)
             }
-            .multilineTextAlignment(.trailing)
             Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(LHTheme.tertiaryText).accessibilityHidden(true)
         }

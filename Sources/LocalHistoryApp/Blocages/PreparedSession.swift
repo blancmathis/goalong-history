@@ -166,6 +166,18 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
         write(next)
     }
 
+    /// « Dupliquer » (A8): a copy under a new id, « (copie) » after its name, right after the original.
+    @discardableResult
+    func duplicate(_ session: PreparedSession) -> PreparedSession {
+        var copy = session
+        copy.id = UUID(); copy.name = "\(session.name) (copie)"
+        var next = document
+        let index = next.sessions.firstIndex { $0.id == session.id }.map { $0 + 1 } ?? next.sessions.count
+        next.sessions.insert(copy, at: index)
+        write(next)
+        return copy
+    }
+
     func delete(_ id: UUID) {
         var next = document
         next.sessions.removeAll { $0.id == id }
@@ -279,6 +291,7 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
     let lists: [BlockList]
     let launch: (PreparedSession) -> PreparedSessionLauncher.Outcome
     let onOpen: (PreparedSession) -> Void
+    @State private var deleting: PreparedSession?
 
     private var names: [UUID: String] { Dictionary(lists.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }) }
 
@@ -320,10 +333,23 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
                     Button("Lancer") { run(session) }.buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("blocages-prepared-launch")
                 }
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { onOpen(session) }
+                .contextMenu {
+                    Button("Modifier…") { onOpen(session) }
+                    Button("Lancer") { run(session) }
+                    Button("Dupliquer") { store.duplicate(session) }
+                    Divider()
+                    Button("Supprimer…", role: .destructive) { deleting = session }
+                }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("blocages-prepared-\(session.id.uuidString)")
             }
         }
+        .alert("Supprimer cette séance ?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Supprimer", role: .destructive) { if let session = deleting { store.delete(session.id) } }
+            Button("Annuler", role: .cancel) {}
+        } message: { Text("Les listes et les règles restent.") }
     }
 
     private func run(_ session: PreparedSession) {
