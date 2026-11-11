@@ -272,7 +272,14 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
 
     private var names: [UUID: String] { Dictionary(lists.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }) }
 
+    /// Nothing saved, nothing relaunched: no view at all, so the section keeps its spacing.
+    private var isEmpty: Bool { store.error == nil && store.document.last == nil && store.document.sessions.isEmpty }
+
     var body: some View {
+        if !isEmpty { rows }
+    }
+
+    private var rows: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let error = store.error {
                 GoalongNote(error, tone: .warning).accessibilityIdentifier("blocages-prepared-error")
