@@ -61,14 +61,38 @@
             XCTAssertTrue(SoftwareUpdateManager.shouldCheckInBackground(lastCheck: now, now: now.addingTimeInterval(3600)))
         }
 
-        func testDetectedUpdateIsNotClickableUntilSparkleAlertIsReady() {
+        func testDetectedUpdateShowsBadgeButIsNotReadyToPresent() {
             var state = SoftwareUpdatePresentationState()
 
             state.recordDetected(version: "5000.0.6")
 
             XCTAssertEqual(state.detectedVersion, "5000.0.6")
-            XCTAssertNil(state.availableVersion)
+            XCTAssertEqual(state.availableVersion, "5000.0.6")
             XCTAssertFalse(state.isReady)
+        }
+
+        /// T-053: the app found 0.6.186 at 01:56, 0.6.191 was published later, and the click at
+        /// 08:13 installed 0.6.186. Background checks must never hold an update session, and a
+        /// click must read the feed again.
+        func testBackgroundChecksNeverHoldAnUpdateSession() {
+            XCTAssertFalse(SoftwareUpdateManager.sparkleMayRun(.updatesInBackground))
+            XCTAssertTrue(SoftwareUpdateManager.sparkleMayRun(.updateInformation))
+            XCTAssertTrue(SoftwareUpdateManager.sparkleMayRun(.updates))
+            XCTAssertTrue(SoftwareUpdateManager.isHeldSessionRefusal(
+                NSError(domain: SoftwareUpdateManager.heldSessionRefusalDomain, code: 1)))
+            XCTAssertFalse(SoftwareUpdateManager.isHeldSessionRefusal(nil))
+            XCTAssertFalse(SoftwareUpdateManager.isHeldSessionRefusal(
+                NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue))))
+        }
+
+        func testClickOnDetectedUpdateReadsTheFeedAgainAndKeepsTheNewestVersion() {
+            var state = SoftwareUpdatePresentationState()
+            state.recordDetected(version: "0.6.186")
+            state.recordDetected(version: "0.6.191")
+
+            XCTAssertEqual(state.availableVersion, "0.6.191")
+            XCTAssertEqual(state.requestAvailableUpdate(hasActiveSession: false), .check)
+            XCTAssertEqual(state.pendingRequest, .presentAvailableUpdate)
         }
 
         func testReadyUpdateCanBePresentedImmediately() {
@@ -91,7 +115,7 @@
             state.recordSessionFinished()
 
             XCTAssertEqual(state.availableVersion, "5000.0.6")
-            XCTAssertEqual(state.requestAvailableUpdate(hasActiveSession: false), .prepare)
+            XCTAssertEqual(state.requestAvailableUpdate(hasActiveSession: false), .check)
             XCTAssertEqual(state.pendingRequest, .presentAvailableUpdate)
             XCTAssertTrue(state.recordReady(version: "5000.0.6"))
             XCTAssertTrue(state.isReady)
