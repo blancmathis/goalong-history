@@ -214,7 +214,6 @@
         }
         @ObservedObject private var updates = SoftwareUpdateManager.shared
         @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-        @ObservedObject private var monitor = JevMonitor.shared
 
         @ObservedObject private var modules = GoalongModuleStore.shared
         @ObservedObject private var ambianceDownload = AmbianceDownloadSignal.shared
@@ -245,12 +244,6 @@
                 }
 
                 Spacer(minLength: 20)
-
-                // Reminder breaks only mean something once real-time monitoring is on.
-                if consents.isEnabled(.jevMonitoring) || monitor.timedBreak != nil {
-                    JevQuickPauseControl()
-                        .padding(.horizontal, 16).padding(.bottom, 12)
-                }
 
                 statusRow
                     .padding(.horizontal, 10)

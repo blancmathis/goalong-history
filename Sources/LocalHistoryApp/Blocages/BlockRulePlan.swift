@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 
 /// What the editor of a schedule rule holds. `lock` is the stored lock of the rule's ranges.
 struct BlockRuleDraft: Equatable {
@@ -14,6 +15,8 @@ struct BlockRuleDraft: Equatable {
     var lock: BlockLock = .free
     /// A rule with the red screen only can be switched off without being removed.
     var paused = false
+    /// « Surveillance » checked, with its settings (T-050 B1). Nil = unchecked.
+    var surveillance: JevInterventionSettings?
 
     init() {}
 
@@ -27,6 +30,7 @@ struct BlockRuleDraft: Equatable {
             brightness = part.brightness
             paused = !part.enabled
         }
+        surveillance = rule.jev?.settings
     }
 
     var hasRedPart: Bool { red || brightness != nil }
@@ -34,7 +38,7 @@ struct BlockRuleDraft: Equatable {
     /// Why the rule cannot be saved as it is. Nil = it can be handed to the engines.
     var problem: String? {
         if weekdays.isEmpty || startMinute == endMinute { return "Choisissez au moins un jour et deux heures différentes." }
-        if listIDs.isEmpty && !hasRedPart { return "Choisissez ce que la règle bloque." }
+        if listIDs.isEmpty && !hasRedPart && surveillance == nil { return "Choisissez ce que la règle fait." }
         return nil
     }
 }
@@ -47,9 +51,10 @@ enum BlockRulePlan {
         var lists: [BlockList] = []
         var red: [BraiseController.RangeWrite] = []
         var deleting: Set<UUID> = []
+        var jev: [JevRangeWrite] = []
 
         var touchesRed: Bool { !red.isEmpty || !deleting.isEmpty }
-        var isEmpty: Bool { lists.isEmpty && !touchesRed }
+        var isEmpty: Bool { lists.isEmpty && !touchesRed && jev.isEmpty }
     }
 
     /// The writes that turn `rule` into `draft`. A nil draft removes the rule; a nil rule creates one. Pure.
@@ -74,6 +79,14 @@ enum BlockRulePlan {
                 next.program.ranges.removeAll { own.contains($0.id) }
             }
             if next != list { result.lists.append(next) }
+        }
+        if let draft, let settings = draft.surveillance {
+            let range = JevSurveillanceRange(id: rule?.jev?.rangeID ?? UUID(), weekdays: draft.weekdays,
+                                             startMinute: draft.startMinute, endMinute: draft.endMinute, lock: draft.lock,
+                                             settings: settings)
+            if rule?.jev == nil || rule?.jev?.settings != settings || rule?.key != range.key { result.jev = [.save(range)] }
+        } else if let part = rule?.jev {
+            result.jev = [.delete(part.rangeID)]
         }
         guard let program = red else { return result }
         let existing = rule?.red.flatMap { part in program.program.ranges.first { $0.id == part.rangeID } }
@@ -104,7 +117,13 @@ enum BlockRulePlan {
 
     /// Checks both engines, then writes: the lists in one change, then the red ranges in one change. A refusal
     /// of either engine comes back as its own words and nothing is written. Nil = saved.
-    @MainActor static func apply(_ writes: Writes, blocking: BlockingController?, braise: BraiseController?) -> String? {
+    /// The « Surveillance » block is checked with the others and written last.
+    @MainActor static func apply(_ writes: Writes, blocking: BlockingController?, braise: BraiseController?,
+                                 surveillance: JevSurveillanceStore? = nil, now: Date = Date()) -> String? {
+        if !writes.jev.isEmpty {
+            guard let surveillance else { return "La surveillance n’a pas pu être enregistrée." }
+            for write in writes.jev { if let refusal = surveillance.refusal(write, now: now) { return refusal } }
+        }
         if !writes.lists.isEmpty {
             guard let blocking else { return "Le blocage est désactivé. Activez-le dans Réglages › Modules." }
             for list in writes.lists {
@@ -121,6 +140,7 @@ enum BlockRulePlan {
                 return writes.lists.isEmpty ? words(error) : "Les listes sont enregistrées, pas l’écran rouge. \(words(error))"
             }
         }
+        if let surveillance { for write in writes.jev { surveillance.apply(write) } }
         return nil
     }
 

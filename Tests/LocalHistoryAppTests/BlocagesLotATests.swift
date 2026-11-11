@@ -2,6 +2,7 @@
 import AppKit
 import BraiseCore
 import Foundation
+import LocalHistoryCore
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
@@ -99,7 +100,7 @@ final class LotAGamma: BraiseGammaDriving {
         let games = list("Jeux", [BlockProgramRange(weekdays: Set(1...5), startMinute: 21 * 60, endMinute: 23 * 60)])
         let lists = blocking(BlockingDocument(lists: [games]))
         let rule = try XCTUnwrap(BlockRules.current(blocking: lists, braise: nil, now: wednesday10h, calendar: paris).first)
-        for subject in [BlockRuleEditor.Subject.new, .rule(rule), .jev, .session(FocusComposerDraft())] {
+        for subject in [BlockRuleEditor.Subject.new, .rule(rule), .session(FocusComposerDraft())] {
             let text = visibleText(editor(subject, blocking: lists))
             for id in ["block-rule-box-when", "block-rule-box-what", "block-rule-box-stop", "block-rule-when", "block-rule-stop"] {
                 XCTAssertTrue(text.contains(id), "\(subject.id): missing \(id)")
@@ -110,12 +111,12 @@ final class LotAGamma: BraiseGammaDriving {
 
     /// Point 2: four choices; on an existing rule the selector stays, fixed on its choice.
     func testPoint2FourTriggersAndTheTriggerIsFixedOnceTheRuleExists() throws {
-        XCTAssertEqual(BlockRuleEditor.Trigger.allCases.map(\.title), ["Toujours", "Horaires", "Jev", "Séance"])
+        XCTAssertEqual(BlockRuleEditor.Trigger.allCases.map(\.title), ["Toujours", "Planifié", "Séance"])
         let games = list("Jeux", [BlockProgramRange(weekdays: Set(1...5), startMinute: 21 * 60, endMinute: 23 * 60)])
         let lists = blocking(BlockingDocument(lists: [games]))
         let rule = try XCTUnwrap(BlockRules.current(blocking: lists, braise: nil, now: wednesday10h, calendar: paris).first)
         XCTAssertTrue(editor(.rule(rule), blocking: lists).triggerIsFixed)
-        XCTAssertTrue(editor(.jev).triggerIsFixed)
+        XCTAssertFalse(editor(.jev).triggerIsFixed)
         XCTAssertFalse(editor(.new).triggerIsFixed); XCTAssertFalse(editor(.session(FocusComposerDraft())).triggerIsFixed)
         XCTAssertTrue(visibleText(editor(.rule(rule), blocking: lists)).contains("block-rule-when"), "the selector stays shown")
     }
@@ -138,11 +139,6 @@ final class LotAGamma: BraiseGammaDriving {
     /// Point 3: the three blocks stay in place; one the engine lacks for this « Quand » is greyed with its reason.
     func testPoint3BlocksTheEngineLacksAreGreyedWithTheirReason() throws {
         let clocks = Clocks(wednesday10h), red = try braise(clocks, store: store(root())), lists = blocking(), concentration = try focus()
-        let jev = editor(.jev, blocking: lists, braise: red)
-        XCTAssertEqual(jev.blockUnavailable, BlockRuleEditor.jevBlockReason)
-        XCTAssertEqual(jev.screenUnavailable, BlockRuleEditor.jevBlockReason)
-        let jevText = visibleText(jev)
-        for id in ["block-rule-red", "block-rule-brightness", BlockRuleEditor.jevBlockReason] { XCTAssertTrue(jevText.contains(id), id) }
         let session = editor(.session(pomodoro()), blocking: lists, braise: red, focus: concentration, session: pomodoro())
         XCTAssertEqual(session.screenUnavailable, BlockRuleEditor.focusScreenReason)
         XCTAssertNil(session.blockUnavailable)
@@ -164,7 +160,6 @@ final class LotAGamma: BraiseGammaDriving {
         XCTAssertNil(always.lockUnavailable(.typing))
         let schedule = editor(.new, blocking: lists)
         for lock in BlockLock.ordered { XCTAssertNil(schedule.lockUnavailable(lock), "\(lock)") }
-        XCTAssertEqual(editor(.jev).lockUnavailable(.locked), BlockRuleEditor.jevLockReason)
         XCTAssertEqual(BlockLock.ordered.count, 4)
     }
 
@@ -475,6 +470,74 @@ final class LotAGamma: BraiseGammaDriving {
         guard object.responds(to: selector), let method = object.method(for: selector) else { return nil }
         typealias Getter = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
         return unsafeBitCast(method, to: Getter.self)(object, selector)?.takeUnretainedValue()
+    }
+}
+#endif
+
+#if os(macOS)
+/// T-050 lot B1: « Surveillance » is a fourth block of « Quoi ». Off screen; no real controller.
+extension BlocagesLotATests {
+    /// B1 point 1: three choices of « Quand »; « Horaires » is now « Planifié »; « Jev » is gone.
+    func testB1Point1ThreeTriggers() {
+        XCTAssertEqual(BlockRuleEditor.Trigger.allCases.map(\.title), ["Toujours", "Planifié", "Séance"])
+        let text = visibleText(editor(.new, blocking: blocking()))
+        XCTAssertTrue(text.contains("Planifié")); XCTAssertFalse(text.contains("Horaires"))
+    }
+
+    /// B1 point 2: the « Surveillance » row is there under the three « Quand »; checked, it shows one strength control,
+    /// one help line and « Personnaliser », and alone it is enough for a rule.
+    func testB1Point2SurveillanceRowUnderEveryTrigger() {
+        let lists = blocking()
+        for trigger in BlockRuleEditor.Trigger.allCases {
+            let text = visibleText(editor(.new, blocking: lists, trigger: trigger))
+            XCTAssertTrue(text.contains("block-rule-jev"), "\(trigger)"); XCTAssertTrue(text.contains("Surveillance"), "\(trigger)")
+        }
+        var draft = BlockRuleDraft(); draft.surveillance = JevInterventionSettings()
+        XCTAssertNil(draft.problem, "Surveillance alone is a rule")
+        let text = visibleText(editor(.new, blocking: lists, trigger: .schedule, draft: draft))
+        for id in ["block-rule-jev-strength", "block-rule-jev-custom", "Modéré", "Fort", "Très fort", BlockRuleEditor.surveillanceHelp] {
+            XCTAssertTrue(text.contains(id), id)
+        }
+        XCTAssertFalse(text.contains("Verrou"), "no padlock switch")
+        var strong = JevInterventionSettings(); strong.applyStrength(.strong); strong.effectsEnabled = true
+        XCTAssertEqual(BlockRuleEditor.strength(of: strong), .strong)
+        strong.effectsEnabled = false
+        XCTAssertNil(BlockRuleEditor.strength(of: strong), "effects off = no strength shown")
+    }
+
+    /// B1 point 3: a rule with lists and « Surveillance » is written to both stores and read back as one rule.
+    func testB1Point3SurveillanceJoinsTheRule() throws {
+        let name = "b1-join-" + UUID().uuidString, defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        let store = JevSurveillanceStore(defaults: defaults), games = list("Jeux"), lists = blocking(BlockingDocument(lists: [games]))
+        var draft = BlockRuleDraft(); draft.listIDs = [games.id]; draft.surveillance = JevInterventionSettings()
+        let writes = BlockRulePlan.writes(draft, replacing: nil, lists: lists.lists, red: nil)
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: lists, braise: nil, surveillance: store, now: wednesday10h))
+        let rules = BlockRules.current(blocking: lists, braise: nil, jev: store.document.ranges, now: wednesday10h, calendar: paris)
+        let rule = try XCTUnwrap(rules.first); XCTAssertEqual(rules.count, 1)
+        XCTAssertEqual(rule.jev?.settings, JevInterventionSettings()); XCTAssertEqual(rule.lists.map(\.id), [games.id])
+        XCTAssertEqual(BlockRuleDraft(rule).surveillance, JevInterventionSettings())
+        var off = BlockRuleDraft(rule); off.surveillance = nil
+        let removing = BlockRulePlan.writes(off, replacing: rule, lists: lists.lists, red: nil)
+        XCTAssertEqual(removing.jev, [.delete(try XCTUnwrap(rule.jev).rangeID)])
+    }
+
+    /// B1 point 5: checking « Surveillance » without consent asks for it and checks nothing.
+    func testB1Point5CheckingWithoutConsentAsksForIt() {
+        let settings = JevInterventionSettings()
+        XCTAssertEqual(BlockRuleEditor.surveillanceStep(true, consented: false, defaults: settings), .askConsent)
+        XCTAssertEqual(BlockRuleEditor.surveillanceStep(true, consented: true, defaults: settings), .on(settings))
+        XCTAssertEqual(BlockRuleEditor.surveillanceStep(false, consented: false, defaults: settings), .off)
+    }
+
+    /// B1 point 8: the Jev page keeps only global things; the reminder settings live in each rule.
+    func testB1Point8JevPageHoldsNoRuleSetting() {
+        for part in [JevMonitoringPage.Part.page, .when] {
+            let text = visibleText(JevMonitoringPage(onOpenRecording: {}, part: part), width: 760, height: 2_000)
+            for id in ["jev-intervention-settings", "jev-move-warning", "jev-effects-enabled", "Faire une pause"] {
+                XCTAssertFalse(text.contains(id), "\(part): \(id)")
+            }
+        }
     }
 }
 #endif

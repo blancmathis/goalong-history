@@ -27,10 +27,14 @@ struct JevRecentCheck: Identifiable {
     @Published private(set) var lastPayload = ""
     @Published private(set) var recentChecks: [JevRecentCheck] = []
     @Published private(set) var error: String?
-    @Published private(set) var scope: JevMonitoringScope = .always
+    /// The settings of the strongest rule or session that carries « Surveillance » now (T-050 B1 point 3).
+    @Published private(set) var activeSettings: JevInterventionSettings?
     private let scopePreferences: JevMonitoringPreferences
+    private let surveillance: JevSurveillanceStore
     private let consents: GoalongCapabilityConsentStore
     private let sessionProvider: () -> UUID?
+    private let blocksProvider: () -> Set<UUID>
+    private let legacySettings: () -> JevInterventionSettings
     private var apiKey = ""
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -64,15 +68,24 @@ struct JevRecentCheck: Identifiable {
     }
     /// One name for an unreadable break.json, in the monitor error and in the pause controls.
     static let unreadableBreakNotice = "Minuterie illisible : Jev suspendu, historique inchangé."
-    init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
-         sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
+    /// `scopePreferences` and `legacySettings` are read once, by the migration (point 4).
+    init(scopePreferences: JevMonitoringPreferences? = nil, surveillance: JevSurveillanceStore? = nil,
+         consents: GoalongCapabilityConsentStore? = nil,
+         sessionProvider: (() -> UUID?)? = nil, blocksProvider: (() -> Set<UUID>)? = nil,
+         legacySettings: (() -> JevInterventionSettings)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
          localRoot: URL? = nil) {
         self.scopePreferences = scopePreferences ?? .shared
+        self.surveillance = surveillance ?? .shared
         self.consents = consents ?? .shared
         self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
+        self.blocksProvider = blocksProvider ?? {
+            // A block programmed later is not running yet.
+            let now = Date() // wall: compared with the controller's block dates
+            return Set(BlockingRuntime.shared.controller?.activeBlocks.filter { $0.start <= now }.map(\.id) ?? [])
+        }
+        self.legacySettings = legacySettings ?? { JevInterventionPreferences.shared.settings }
         self.inbox = inbox ?? .shared
         self.localRoot = localRoot ?? AppPaths.applicationSupportDirectory
-        scope = self.scopePreferences.scope
         guard loadLocalSettings else { return }
         loadLocalFiles()
     }
@@ -108,9 +121,10 @@ struct JevRecentCheck: Identifiable {
     }
     func start() {
         guard !started else { return }; started = true
+        migrateSurveillance()
         let center = NotificationCenter.default
         // These notifications are posted on the main actor. End/disable cancels synchronously.
-        for name in [Notification.Name.goalongFocusSessionDidChange, .jevMonitoringScopeDidChange] {
+        for name in [Notification.Name.goalongFocusSessionDidChange, .jevSurveillanceDidChange] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reconfigure() }
             })
@@ -150,14 +164,23 @@ struct JevRecentCheck: Identifiable {
         reconfigure()
     }
     private var signature: String {
-        "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)|\(scopePreferences.scope.rawValue)"
+        "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)"
     }
     private var focusSessionID: UUID? { sessionProvider() }
+    static let waitingText = "En attente : aucune règle ni séance avec Surveillance en cours"
+    /// Once per Mac, before the first gate: the old scope becomes a rule or the session default. Nothing starts or stops.
+    @discardableResult func migrateSurveillance() -> JevSurveillanceStore.Migration {
+        surveillance.migrateIfNeeded(consent: enabled, scope: scopePreferences, settings: legacySettings())
+    }
+    /// The rules and sessions that carry « Surveillance » now.
+    func currentActivity(now: Date = Date()) -> [JevSurveillanceActivity] {
+        surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider()), now: now)
+    }
     private var gate: String? {
         if timedBreak != nil || breakStorageInvalid { return "Jev en pause : aucun appel ni rappel" }
         if !enabled { return "Jev désactivé" }
-        if let issue = scopePreferences.error { return issue }
-        if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
+        if let issue = surveillance.error { return issue }
+        if activeSettings == nil { return Self.waitingText }
         if let issue = JevWorkContextStore.shared.error { return issue }
         if keyStorageInvalid { return "Clé d’accès Jev illisible : Jev suspendu" }
         if !hasKey { return "Configurez la connexion à Jev pour l’activer" }
@@ -179,10 +202,6 @@ struct JevRecentCheck: Identifiable {
     func setIncludeText(_ value: Bool) {
         GoalongDefaults.standard.set(value, forKey: Self.excerptKey)
         reconfigure()
-    }
-    func setScope(_ value: JevMonitoringScope) {
-        scopePreferences.setScope(value)
-        if !started { reconfigure() }
     }
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -256,8 +275,8 @@ struct JevRecentCheck: Identifiable {
     }
     func reconfigure() {
         cancelPending(); timer?.invalidate(); timer = nil
-        scope = scopePreferences.scope
         settingsSignature = signature
+        activeSettings = JevSurveillanceStore.strongest(currentActivity().map(\.settings))
         boundary = Date(); previousWall = boundary; previousUptime = ProcessInfo.processInfo.systemUptime
         let available = gate == nil
         inbox.configure(enabled: available, includeText: includeText, collectDistractions: focusSessionID != nil)
@@ -265,12 +284,13 @@ struct JevRecentCheck: Identifiable {
         if timedBreak != nil && !breakStorageInvalid {
             scheduleTimer(seconds: 1)
         } else if available { scheduleTimer(seconds: 15) }
+        else if gate == Self.waitingText { scheduleTimer(seconds: 30) }
     }
     private func scheduleTimer(seconds: TimeInterval) {
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
-        timer.tolerance = seconds == 15 ? 1.5 : 0.2
+        timer.tolerance = seconds >= 15 ? 1.5 : 0.2
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
     private func tick() {
@@ -280,6 +300,7 @@ struct JevRecentCheck: Identifiable {
             if remainingSeconds == 0, !breakStorageInvalid { endBreak() }
             return
         }
+        if JevSurveillanceStore.strongest(currentActivity(now: now).map(\.settings)) != activeSettings { reconfigure(); return }
         guard gate == nil else { reconfigure(); return }
         let uptime = ProcessInfo.processInfo.systemUptime
         let clockJump = abs(now.timeIntervalSince(previousWall) - (uptime - previousUptime)) > 2
@@ -351,7 +372,7 @@ struct JevRecentCheck: Identifiable {
                 if verdict == .procrastination {
                     JevWarningPanel.shared.update(seconds: self.streak.observedSeconds,
                         appearance: self.streak.appearanceCount, present: warn,
-                        settings: JevInterventionPreferences.shared.settings)
+                        settings: self.activeSettings ?? self.legacySettings())
                 }
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .monitoring)

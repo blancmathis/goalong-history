@@ -79,6 +79,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     @State private var open: Set<BlocagesFold>
     @State private var editing: BlockRuleEditor.Subject?
     @State private var editingList: UUID?
+    @ObservedObject private var surveillance = JevSurveillanceStore.shared
 
     init(blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
          now: Date? = nil, measures: [FocusItemMeasure]? = nil, target: BlocagesTarget = .top, request: Int = 0,
@@ -192,7 +193,9 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         }, content: {
             ObservedOptional(object: blocking) { blocking in
                 ObservedOptional(object: braise) { braise in
-                    BlocagesRuleList(rules: BlockRules.current(blocking: blocking, braise: braise, now: now), now: now,
+                    BlocagesRuleList(rules: BlockRules.current(blocking: blocking, braise: braise,
+                                                               jev: surveillance.error == nil ? surveillance.document.ranges : [],
+                                                               now: now), now: now,
                                      onEdit: { editing = $0 })
                 }
             }
@@ -322,6 +325,7 @@ struct BlocagesFoldView<Content: View>: View {
             if let braise, redLive {
                 BraisePageContent(controller: braise, showsTitle: false, part: .live)
             }
+            BlocagesWatchLive(now: now)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // One listener per window: it opens the stop sheet that the menu or the shortcut asks for.
@@ -430,23 +434,49 @@ private extension BlockRule {
     }
 }
 
-/// The rule of Jev. It warns, it does not block: the row says so instead of a stop rule (T-050 point 15).
+/// A session with « Surveillance » and no block session of its own (T-050 B1): it says until when, and stops when its
+/// stop is « Libre ». A protected one stays until its end.
+@MainActor private struct BlocagesWatchLive: View {
+    @ObservedObject private var store = JevSurveillanceStore.shared
+    let now: Date
+
+    var body: some View {
+        if let mark = store.runningOwn(now: now), let end = mark.end {
+            HStack(spacing: 12) {
+                Text("Surveillance \(BlockingFormat.until(end, now: now))").font(.system(size: 13, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                if mark.lock == .free {
+                    Button("Arrêter") { store.endOwn(mark.id, now: Date()) } // wall: compared with the mark's dates
+                        .buttonStyle(LHSecondaryButtonStyle())
+                        .accessibilityIdentifier("blocages-watch-stop")
+                } else {
+                    Text(mark.lock.title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("blocages-watch-live")
+        }
+    }
+}
+
+/// The settings that every rule with « Surveillance » shares: consent, connection, work context (T-050 B1 point 8).
 @MainActor struct BlocagesJevRow: View {
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     let action: () -> Void
-    static let summary = "Vous rappelle votre projet quand il repère une distraction"
-    static let kind = "Rappel, ne bloque rien"
+    static let summary = "Accord d’envoi et contexte de travail, communs à chaque règle avec « Surveillance »"
+    static let kind = "Réglages communs"
 
     var body: some View {
         let on = consents.isEnabled(.jevMonitoring)
-        let state = on ? "Activée" : "Désactivée"
+        let state = on ? "Autorisée" : "Non autorisée"
         Button(action: action) {
             BlocagesRuleRow(title: BlockRuleEditor.jevTitle, summary: Self.summary, lock: Self.kind,
                             state: state, running: on)
         }
         .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
         .accessibilityLabel("\(BlockRuleEditor.jevTitle). \(Self.summary). \(Self.kind). \(state).")
-        .accessibilityHint("Ouvre la règle")
+        .accessibilityHint("Ouvre les réglages")
         .accessibilityIdentifier("blocages-rule-jev")
     }
 }

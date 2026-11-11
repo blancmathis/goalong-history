@@ -386,43 +386,4 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - When monitoring runs
-
-/// Always, or only while a Concentration session runs. Changing it never turns monitoring on.
-@MainActor struct JevScopeControl: View {
-    @ObservedObject private var monitor = JevMonitor.shared
-    @ObservedObject private var modules = GoalongModuleStore.shared
-    /// GoalongSegmentedControl draws `.disabled` itself, labels in secondary text (≥ 4.5:1, UI-16A, 5): no extra fade here.
-    @Environment(\.isEnabled) private var isEnabled
-    /// False inside the rule editor: its « Quand » box already carries the title (T-050 lot A2).
-    var showsTitle = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                if showsTitle {
-                    Text("Quand").font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isEnabled ? LHTheme.text : LHTheme.secondaryText)
-                    Spacer(minLength: 8)
-                }
-                GoalongSegmentedControl("Quand recevoir les rappels", selection: Binding(get: { monitor.scope }, set: { monitor.setScope($0) }),
-                                        options: JevMonitoringScope.allCases) {
-                    $0 == .always ? "Toujours" : "Pendant mes séances"
-                }
-                .controlSize(.small)
-                .accessibilityIdentifier("jev-scope")
-            }
-            // Connected but off: only the activation is missing (UI-14, M2).
-            Text(!isEnabled ? (monitor.hasKey ? "Activez Jev pour choisir quand il agit."
-                               : "Connectez d’abord Jev, puis activez-le, pour choisir quand il agit.")
-                 : monitor.scope == .always
-                 ? "Dès que les rappels Jev sont activés, toute la journée."
-                 : "Seulement pendant une séance Concentration, pauses comprises. Hors séance : aucun envoi, rappel ni effet.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
-            if isEnabled && monitor.scope == .sessionsOnly && !modules.isEnabled(.concentration) {
-                GoalongNote("Activez Concentration pour lancer une séance : sans séance, Jev attend.", tone: .warning)
-            }
-        }
-    }
-}
 #endif

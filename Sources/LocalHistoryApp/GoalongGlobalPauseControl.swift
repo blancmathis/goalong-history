@@ -55,7 +55,7 @@ struct GoalongGlobalPauseControl: View {
             Button("Annuler", role: .cancel) {}
             Button("Tout suspendre", role: .destructive) { changePause(true) }
         } message: {
-            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour une pause détente sans trou dans l’historique, utilisez la pause de Jev.")
+            Text("L’historique, les analyses et les envois seront suspendus jusqu’à votre reprise. Pour arrêter seulement les rappels sans trou dans l’historique, décochez « Surveillance » dans la règle ou la séance.")
         }
         .alert(GoalongGlobalPauseText.repairTitle, isPresented: $confirmingRepair) {
             Button("Annuler", role: .cancel) {}

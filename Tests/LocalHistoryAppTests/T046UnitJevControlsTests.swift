@@ -21,7 +21,8 @@ import AppleScreenTime
     func testPresetBreakButtonsStartATimedBreakAndResumeEndsIt() throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let (m, _) = try monitor(enabled: true, root: root)
-        for minutes in JevQuickPauseControl.menuItems(enabled: true, breakRunning: false).durations {
+        // No control starts a break any more (T-050 B1 point 6); a break started before the update still runs and ends.
+        for minutes in [5, 10, 15, 30] {
             m.startBreak(minutes: minutes)
             XCTAssertNotNil(m.timedBreak, "\(minutes) min")
             XCTAssertGreaterThan(m.remainingSeconds, (minutes - 1) * 60)
@@ -44,7 +45,6 @@ import AppleScreenTime
         let (m, _) = try monitor(enabled: false, root: root)
         m.startBreak(minutes: 10)
         XCTAssertNil(m.timedBreak)
-        XCTAssertEqual(JevQuickPauseControl.menuItems(enabled: false, breakRunning: false).durations, [])
     }
     func testBreakIsWrittenToDiskAndReloadedByANewMonitor() throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }
@@ -66,10 +66,6 @@ import AppleScreenTime
         XCTAssertEqual(m.error, JevMonitor.unreadableBreakNotice)
         m.endBreak()
         XCTAssertFalse(m.breakStorageInvalid); XCTAssertNil(m.error); XCTAssertNil(m.timedBreak)
-    }
-    func testMenuOffersResumeOnlyWhileABreakRuns() {
-        XCTAssertTrue(JevQuickPauseControl.menuItems(enabled: true, breakRunning: true).resume)
-        XCTAssertFalse(JevQuickPauseControl.menuItems(enabled: true, breakRunning: false).resume)
     }
     func testDisablingFromTheMenuTurnsConsentOff() throws {
         let root = tempRoot(); defer { try? FileManager.default.removeItem(at: root) }

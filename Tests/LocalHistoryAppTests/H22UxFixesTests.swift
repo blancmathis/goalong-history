@@ -13,12 +13,6 @@ final class H22UxFixesTests: XCTestCase {
             XCTAssertTrue(use.partial, "exclusions \(exclusions) allow \(allow)")
         }
     }
-    func testQuickPauseOffersNoDurationWhileJevIsOff() {
-        XCTAssertEqual(JevQuickPauseControl.menuItems(enabled: false, breakRunning: true).durations, [])
-        XCTAssertTrue(JevQuickPauseControl.menuItems(enabled: false, breakRunning: true).resume)
-        XCTAssertEqual(JevQuickPauseControl.menuItems(enabled: true, breakRunning: false).durations, [5, 10, 15, 30])
-        XCTAssertFalse(JevQuickPauseControl.menuItems(enabled: true, breakRunning: false).resume)
-    }
     @MainActor func testUnreadableBreakFileHasOneName() throws {
         let root = URL(fileURLWithPath: "/private/tmp/jev-h22-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

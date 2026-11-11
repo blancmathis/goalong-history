@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import LocalHistoryCore
 
 /// Observes an object that may be absent (a module that is off): the content is drawn again on each of its
 /// changes, and still draws without it.
@@ -47,19 +48,22 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     enum Trigger: Hashable, CaseIterable {
-        case always, schedule, jev, session
+        case always, schedule, session
         var title: String {
             switch self {
             case .always: return "Toujours"
-            case .schedule: return "Horaires"
-            case .jev: return "Jev"
+            case .schedule: return "Planifié"
             case .session: return "Séance"
             }
         }
     }
 
     static let width: CGFloat = 660
-    static let jevTitle = "Quand Jev me voit décrocher"
+    /// The « Jev » sheet keeps only what all rules share (T-050 B1 point 8).
+    static let jevTitle = "Réglages de la surveillance"
+    static let surveillanceToggle = "Prévenir quand je décroche"
+    static let surveillanceHelp = "Un rappel quand une distraction dure, puis un voile sur l’écran si elle continue."
+    static let surveillanceSetupReason = "La surveillance demande d’abord la clé de Jev et l’historique local."
     static let alwaysSentence = "Actif tout le temps, jusqu’à ce que vous l’arrêtiez."
     /// Product question raised in T-050: a locked rule without an end would never stop.
     static let alwaysLockedReason = "Une règle « Toujours » verrouillée ne s’arrêterait jamais."
@@ -70,8 +74,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static let laterScreenReason = "Un blocage programmé plus tard ne porte pas l’écran rouge ni la luminosité."
     static let freezeScreenReason = "Le gel de tout le Mac couvre déjà l’écran."
     static let freezeLockReason = "Le gel de tout le Mac est toujours verrouillé."
-    static let jevBlockReason = "Jev prévient seulement : il ne bloque rien et ne change pas l’écran."
-    static let jevLockReason = "Vous arrêtez Jev quand vous voulez, ici ou depuis le menu Goalong."
     static let wholeMacReason = "Tout le Mac se gèle seulement pendant une séance en Continu, sans intention."
     /// A session started without an intention still needs one for Concentration.
     static let defaultIntent = "Séance"
@@ -108,6 +110,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @State private var confirmingLock = false
     @State private var confirmingFreeze = false
     @State private var confirmingFocusLock = false
+    @State private var confirmingJev = false
+    @Environment(\.openJevSettings) private var openJevSettings
     /// The plan the open alert promises: a click on it keeps this end (R5-regressions-01).
     @State private var pending: BlockingNowPlan?
     @State private var pendingFreezePromise: BlockingFreezePromise?
@@ -136,14 +140,21 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             rule.listIDs = value.blockListIds
             rule.lock = value.lock ? .locked : .free
         case .rule(let value): first = value.key.isAlways ? .always : .schedule; rule = BlockRuleDraft(value)
-        case .jev: first = .jev
+        case .jev: break
         }
+        if case .rule = subject {} else if (trigger ?? first) == .session { rule.surveillance = Self.sessionSurveillance }
         _trigger = State(initialValue: trigger ?? first)
         _sessionDraft = State(initialValue: composer ?? .remembered())
         _draft = State(initialValue: startDraft ?? rule)
         let clock = now ?? GoalongToday.now
         _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: clock) ?? clock)
         _until = State(initialValue: Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock)
+    }
+
+    /// « Surveillance » in a new session: checked as in the last one started (T-050 B1 point 4).
+    static var sessionSurveillance: JevInterventionSettings? {
+        let store = JevSurveillanceStore.shared
+        return store.error == nil && store.document.sessionDefault ? store.document.sessionSettings : nil
     }
 
     private var rule: BlockRule? {
@@ -154,8 +165,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     /// The trigger is fixed once the rule exists: the selector stays shown, on its choice.
     var triggerIsFixed: Bool {
         switch subject {
-        case .rule, .jev: return true
-        case .new, .session: return false
+        case .rule: return true
+        case .new, .session, .jev: return false
         }
     }
 
@@ -182,14 +193,12 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     /// Why the « Bloquer » block is greyed for this « Quand ». Nil = it works.
     var blockUnavailable: String? {
-        if trigger == .jev { return Self.jevBlockReason }
-        return nil
+        nil
     }
 
     /// Why the red screen and the brightness are greyed for this « Quand ». Nil = they work.
     var screenUnavailable: String? {
         switch trigger {
-        case .jev: return Self.jevBlockReason
         case .session:
             if usesFocus { return Self.focusScreenReason }
             if wholeMac { return Self.freezeScreenReason }
@@ -203,7 +212,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     /// Why a stop level is greyed for this « Quand ». Nil = the engine has it.
     func lockUnavailable(_ lock: BlockLock) -> String? {
         switch trigger {
-        case .jev: return lock == .free ? nil : Self.jevLockReason
         case .always: if lock == .locked, !keepsAlwaysLock { return Self.alwaysLockedReason }
         case .session:
             if freezing { return lock == .locked ? nil : Self.freezeLockReason }
@@ -244,13 +252,47 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     private var showsConsent: Bool {
-        trigger != .session && trigger != .jev
+        trigger != .session
             && RedScreenRangeEditor.showsConsent(lock: stopLevel, needed: BlockingRuntime.shared.guardNeedsConsent)
     }
 
     // MARK: Body
 
     var body: some View {
+        if case .jev = subject { jevBody } else { ruleBody }
+    }
+
+    /// The « Jev » sheet: only what every rule shares — consent, connection, work context (T-050 B1 point 8).
+    private var jevBody: some View {
+        VStack(spacing: 0) {
+            GoalongSheetScroll(cap: cap) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(Self.jevTitle).font(LHTheme.sheetTitleFont).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("block-rule-title")
+                    LHCard {
+                        JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
+                                          part: .when)
+                    }
+                }
+                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            GoalongSheetFooter(inset: 28) {
+                Spacer()
+                // Jev's global settings are written as they change: there is nothing to cancel or to save.
+                Button("Fermer", action: onClose).buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("block-rule-close")
+            }
+        }
+        .font(.system(size: 13))
+        .frame(width: Self.width)
+        .background(LHTheme.pageBackground)
+        .foregroundStyle(LHTheme.text)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("block-rule-editor")
+    }
+
+    private var ruleBody: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
             ObservedOptional(object: blocking) { _ in
@@ -279,7 +321,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         .frame(width: Self.width)
         .background(LHTheme.pageBackground)
         .foregroundStyle(LHTheme.text)
-        .onChange(of: trigger) { _ in refusal = nil; braise?.endPreview() }
+        .onChange(of: trigger) { next in
+            refusal = nil; braise?.endPreview()
+            if rule == nil, next == .session, draft.surveillance == nil { draft.surveillance = Self.sessionSurveillance }
+        }
         .onDisappear { braise?.endPreview() }
         .alert("Supprimer cette règle ?", isPresented: $confirmingDelete) {
             Button("Supprimer", role: .destructive) { delete() }
@@ -302,6 +347,15 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         } message: {
             Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
                                       needed: BlockingRuntime.shared.guardNeedsConsent))
+        }
+        .alert(JevMonitoringPage.consentTitle, isPresented: $confirmingJev) {
+            Button("Annuler", role: .cancel) {}
+            Button(JevMonitoringPage.consentButton) {
+                JevMonitor.shared.setEnabled(true)
+                if GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring) { draft.surveillance = Self.defaultSurveillance }
+            }
+        } message: {
+            Text(JevMonitoringPage.consentMessage)
         }
         .alert("Verrouiller chaque phase de travail ?", isPresented: $confirmingFocusLock) {
             Button("Annuler", role: .cancel) {}
@@ -378,9 +432,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 help(Self.alwaysSentence).accessibilityIdentifier("block-rule-always")
             case .schedule:
                 scheduleRows
-            case .jev:
-                JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
-                                  part: .when)
             case .session:
                 sessionRows(now: now)
             }
@@ -565,16 +616,83 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @ViewBuilder private var whatBox: some View {
         VStack(alignment: .leading, spacing: 14) {
             row("Bloquer") { blockPart }
+            row("Surveillance") { surveillancePart }
             row("Écran rouge") { redPart }
             row("Luminosité") { brightnessPart }
             if let notice = braise?.previewNotice {
                 help(notice).accessibilityIdentifier("block-rule-preview-notice")
             }
-            if trigger == .jev {
-                row("Rappel") {
-                    JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
-                                      part: .what)
+        }
+    }
+
+    // MARK: Surveillance (T-050 B1 points 2 and 5)
+
+    /// The settings a new « Surveillance » starts with: the last ones chosen for a session (the old ones after the
+    /// migration).
+    static var defaultSurveillance: JevInterventionSettings {
+        JevSurveillanceStore.shared.document.sessionSettings
+    }
+
+    private var jevReady: Bool {
+        JevActivationAvailability(hasKey: JevMonitor.shared.hasKey,
+                                  localHistoryEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory)).isReady
+    }
+
+    /// What a press on the « Surveillance » switch does. Pure.
+    enum SurveillanceStep: Equatable { case off, on(JevInterventionSettings), askConsent }
+
+    /// Checking « Surveillance » without consent opens the consent request of the Jev page (point 5).
+    static func surveillanceStep(_ on: Bool, consented: Bool, defaults: JevInterventionSettings) -> SurveillanceStep {
+        guard on else { return .off }
+        return consented ? .on(defaults) : .askConsent
+    }
+
+    private func setSurveillance(_ on: Bool) {
+        switch Self.surveillanceStep(on, consented: GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring),
+                                     defaults: Self.defaultSurveillance) {
+        case .off: draft.surveillance = nil
+        case .on(let settings): draft.surveillance = settings
+        case .askConsent: confirmingJev = true
+        }
+    }
+
+    /// The preset whose veils match the settings, if any.
+    static func strength(of settings: JevInterventionSettings) -> JevEffectStrength? {
+        guard settings.effectsEnabled else { return nil }
+        let levels = settings.stages.map(\.intensity)
+        return JevEffectStrength.allCases.first { $0.intensities == levels }
+    }
+
+    @ViewBuilder private var surveillancePart: some View {
+        let consented = GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring)
+        let blocked = !consented && !jevReady && draft.surveillance == nil
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(Self.surveillanceToggle, isOn: Binding(get: { draft.surveillance != nil }, set: setSurveillance))
+                .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
+                .disabled(blocked)
+                .accessibilityLabel("Surveillance")
+                .accessibilityIdentifier("block-rule-jev")
+            if blocked {
+                HStack(spacing: 10) {
+                    help(Self.surveillanceSetupReason).accessibilityIdentifier("block-rule-reason-jev")
+                    Button("Configurer…") { openJevSettings() }
+                        .buttonStyle(LHQuietButtonStyle()).fixedSize()
+                        .accessibilityIdentifier("block-rule-jev-setup")
                 }
+            } else if let settings = draft.surveillance {
+                GoalongSegmentedControl("Force", selection: Binding(get: { Self.strength(of: settings) }, set: { value in
+                    guard let value, var next = draft.surveillance else { return }
+                    next.applyStrength(value); next.effectsEnabled = true
+                    draft.surveillance = next
+                }), options: JevEffectStrength.allCases.map(Optional.some), title: { $0?.title ?? "" })
+                    .frame(minHeight: 32, alignment: .leading)
+                    .accessibilityIdentifier("block-rule-jev-strength")
+                help(Self.surveillanceHelp)
+                GoalongDisclosureGroup("Personnaliser") {
+                    JevInterventionControls(settings: Binding(get: { draft.surveillance ?? settings },
+                                                              set: { draft.surveillance = $0 }))
+                }
+                .accessibilityIdentifier("block-rule-jev-custom")
             }
         }
     }
@@ -606,8 +724,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                         Toggle("Aussi pendant les pauses", isOn: $sessionDraft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
                     }
                     if trigger != .session { greyed(wholeMacUnavailable, id: "whole-mac") }
-                    if draft.listIDs.isEmpty, !draft.hasRedPart, trigger != .session {
-                        help("Choisissez au moins une liste, l’écran rouge ou la luminosité.")
+                    if draft.listIDs.isEmpty, !draft.hasRedPart, draft.surveillance == nil, trigger != .session {
+                        help("Choisissez au moins une liste, la surveillance, l’écran rouge ou la luminosité.")
                     }
                 }
             }
@@ -664,7 +782,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             if let reason {
                 // Jev: « Bloquer » already says it, once for the three blocks.
                 if reason != blockUnavailable { greyed(reason, id: "red") }
-                if braise == nil, trigger != .jev, trigger != .session || !usesFocus {
+                if braise == nil, trigger != .session || !usesFocus {
                     Button("Préparer l’écran rouge", action: onPrepareRed).buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("block-rule-prepare-red")
                 }
@@ -706,9 +824,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             GoalongSegmentedControl("Arrêt", selection: Binding(get: { stopLevel }, set: { draft.lock = $0 }),
                                     options: BlockLock.ordered, unavailable: lockUnavailable) { $0.title }
                 .accessibilityIdentifier("block-rule-stop")
-            if trigger == .jev {
-                BlockingLockExplainer(lock: .free, text: Self.jevLockReason)
-            } else if freezing {
+            if freezing {
                 BlockingLockExplainer(lock: .locked,
                                       text: freezeMode == .shield
                                           ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
@@ -717,7 +833,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 BlockingLockExplainer(lock: stopLevel)
             }
             let reasons = BlockLock.ordered.compactMap { lock in lockUnavailable(lock).map { (lock, $0) } }
-                .filter { _ in trigger != .jev } // Jev: the explainer above already says it
             ForEach(Array(Set(reasons.map(\.1))).sorted(), id: \.self) { reason in
                 greyed(reason, id: "stop")
             }
@@ -762,18 +877,12 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText).lineLimit(2)
                     .accessibilityIdentifier("block-rule-hint")
             }
-            if trigger == .jev {
-                // Jev's settings are written as they change: there is nothing to cancel or to save.
-                Button("Fermer", action: close).buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("block-rule-close")
-            } else {
-                Button("Annuler", action: close).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("block-rule-cancel")
-                Button(primaryTitle(now: now)) { primary(now: now) }
-                    .buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
-                    .disabled(primaryDisabled)
-                    .accessibilityIdentifier(trigger == .session ? "block-rule-start-session" : "block-rule-save")
-            }
+            Button("Annuler", action: close).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("block-rule-cancel")
+            Button(primaryTitle(now: now)) { primary(now: now) }
+                .buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+                .disabled(primaryDisabled)
+                .accessibilityIdentifier(trigger == .session ? "block-rule-start-session" : "block-rule-save")
         }
     }
 
@@ -793,6 +902,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             session.plannedEndAt = nil
             return FocusPhases.plannedEnd(session).map { "Jusqu’à \(BlockingFormat.time($0))" }
         }
+        if watchOnly {
+            let plan = blockPlan(at: now)
+            return plan.startsLater ? BlockingFormat.period(from: plan.start, to: plan.end, now: now).capitalizedFirst
+                                    : BlockingFormat.until(plan.end, now: now).capitalizedFirst
+        }
         guard let blocking else { return "Activez Blocage, ou donnez une intention." }
         let hint = BlockingProtectionDetails.startHint(wholeMac: freezing, frozen: blocking.freeze != nil,
                                                        hasLists: !blocking.lists.isEmpty || sessionHoldsScreen,
@@ -806,13 +920,17 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     private var sessionHoldsScreen: Bool { braise != nil && screenUnavailable == nil && draft.hasRedPart }
+    /// A Continu session with « Surveillance » only: no list, no screen, no whole Mac. Jev watches it alone.
+    private var watchOnly: Bool {
+        trigger == .session && !usesFocus && !freezing && chosenIDs.isEmpty && !sessionHoldsScreen && draft.surveillance != nil
+    }
 
     private var primaryDisabled: Bool {
         switch trigger {
         case .always, .schedule: return ruleProblem != nil || !unreadableFields.isEmpty
-        case .jev: return false
         case .session:
             if usesFocus { return focus?.currentSession != nil }
+            if watchOnly { return false }
             guard let blocking else { return true }
             if freezing { return blocking.freeze != nil }
             return (chosenIDs.isEmpty && !sessionHoldsScreen) || (stopLevel == .password && !blocking.hasPassword)
@@ -827,7 +945,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private func primary(now: Date) {
         switch trigger {
         case .always, .schedule: save()
-        case .jev: close()
         case .session: startSession(now: now)
         }
     }
@@ -846,7 +963,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private func save() {
         let consent = showsConsent
         let writes = BlockRulePlan.writes(ruleDraft, replacing: rule, lists: lists, red: braise?.ranges)
-        if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise) {
+        if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise, surveillance: .shared) {
             self.refusal = refusal
             return
         }
@@ -858,7 +975,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private func delete() {
         guard let rule else { return }
         let writes = BlockRulePlan.writes(nil, replacing: rule, lists: lists, red: braise?.ranges)
-        if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise) {
+        if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise, surveillance: .shared) {
             self.refusal = refusal
             return
         }
@@ -889,8 +1006,16 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             if stopLevel == .locked { confirmingFocusLock = true } else { beginFocus() }
             return
         }
-        guard let blocking else { return }
         let date = Date() // wall: page input; the controller moves it to its trusted frame
+        if watchOnly {
+            let plan: BlockingNowPlan?
+            if case .minutes = span { plan = blockPlan(at: date) } else { plan = blockPlan(at: now).confirmed(at: date) }
+            guard let plan else { refusal = BlockingNowComposer.refusal(span, freeze: false); return }
+            markSession(.own, id: UUID(), start: plan.start, end: plan.end)
+            close()
+            return
+        }
+        guard let blocking else { return }
         if freezing {
             let shown: BlockingNowPlan
             if case .minutes = span { shown = blockPlan(at: date) } else { shown = blockPlan(at: now) }
@@ -911,9 +1036,13 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private func startBlock(_ promised: BlockingNowPlan, _ blocking: BlockingController) {
         let holds = sessionHoldsScreen ? braise : nil
+        var session: UUID?
         if BlockingNowStart.run(promised, listIDs: chosenIDs, lock: stopLevel, controller: blocking, braise: holds,
                                 red: draft.red, intensity: draft.intensity, brightness: draft.brightness,
-                                refusal: BlockingNowComposer.refusal(span, freeze: false)) {
+                                refusal: BlockingNowComposer.refusal(span, freeze: false), started: { session = $0 }) {
+            // A block session carries the mark; the red screen alone has no session: the mark keeps its own end.
+            if let session { markSession(.block, id: session) }
+            else { markSession(.own, id: UUID(), start: promised.start, end: promised.end) }
             close()
         }
     }
@@ -926,7 +1055,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             blocking.error = BlockingNowComposer.refusal(span, freeze: true); return
         }
         blocking.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
-        if blocking.freeze != nil { close() }
+        if blocking.freeze != nil { markSession(.own, id: UUID(), start: Date(), end: end); close() } // wall: same frame as `end`
     }
 
     /// Concentration: Pomodoro, or Continu with an intention. Without one, the session is named « Séance ».
@@ -942,10 +1071,20 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                    blockDuringBreaks: mode.kind == .pomodoro && mode.blockDuringBreaks,
                                    lock: stopLevel == .locked && mode.canLock && !ids.isEmpty)
             sessionDraft.remember()
+            if let id = focus.currentSession?.id { markSession(.focus, id: id) }
             close()
         } catch {
             focus.error = FocusUIError.message(error)
         }
+    }
+}
+
+extension BlockRuleEditor {
+    /// The session's « Surveillance » choice, checked or not: Jev follows it, and the next session starts with it.
+    func markSession(_ kind: JevSessionMark.Kind, id: UUID, start: Date? = nil, end: Date? = nil) {
+        let mark = JevSessionMark(id: id, kind: kind, on: draft.surveillance != nil, start: start, end: end, lock: stopLevel,
+                                  settings: draft.surveillance ?? JevSurveillanceStore.shared.document.sessionSettings)
+        JevSurveillanceStore.shared.mark(mark, now: Date()) // wall: compared with the session's dates
     }
 }
 

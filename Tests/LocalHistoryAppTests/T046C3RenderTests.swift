@@ -96,9 +96,9 @@ final class T046C3RenderTests: XCTestCase {
         assertNoVisibleWindow()
     }
 
-    /// Jev on: the group and the menu offer the durations; a break shows its countdown and « Reprendre la
-    /// surveillance » in both, and resuming ends it.
-    @MainActor func testJevOnOffersBreakDurationsAndARunningBreakOffersToResumeInTheGroupAndTheMenu() throws {
+    /// T-050 B1 point 6: Jev on offers no break anywhere; a break started before the update shows its countdown and
+    /// « Reprendre Jev » in the group and the menu, and resuming ends it.
+    @MainActor func testJevOnOffersNoBreakAndABreakFromBeforeTheUpdateOffersToResumeInTheGroupAndTheMenu() throws {
         try requireThrowawayHome()
         let monitor = JevMonitor.shared
         consent(.jevMonitoring, true)
@@ -109,20 +109,17 @@ final class T046C3RenderTests: XCTestCase {
         let menu = NSMenu()
         JevMenuController.shared.menuNeedsUpdate(menu)
         var titles = menu.items.map(\.title)
-        XCTAssertTrue(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
+        XCTAssertFalse(titles.contains { $0.hasPrefix("Pause de") }, "No break is offered; saw \(titles)")
         XCTAssertTrue(titles.contains("Désactiver Jev"), "saw \(titles)")
         XCTAssertFalse(titles.contains("Reprendre Jev"), "No break yet; saw \(titles)")
 
-        let quick = strings(of: host(JevQuickPauseControl()))
-        XCTAssertTrue(quick.contains("jev-quick-pause"), "saw \(quick.sorted())")
-
-        let breaks = host(JevBreakControls())
-        var seen = strings(of: breaks)
-        for label in ["Faire une pause", "5 min", "10 min", "15 min", "30 min", "Autre durée"] {
-            XCTAssertTrue(seen.contains(label), "\(label); saw \(seen.sorted())")
+        var seen = strings(of: host(VStack { JevBreakControls(); Text("probe") })) // nothing else to show
+        for label in ["Faire une pause", "5 min", "10 min", "Autre durée"] {
+            XCTAssertFalse(seen.contains(label), "\(label); saw \(seen.sorted())")
         }
-        XCTAssertTrue(press("10 min", in: breaks))
-        XCTAssertNotNil(monitor.timedBreak, "Pressing a duration starts the break")
+        monitor.startBreak(minutes: 10) // a break written before the update
+        XCTAssertNotNil(monitor.timedBreak)
+        let breaks = host(JevBreakControls())
         spin(until: { strings(of: breaks).contains("jev-end-break") })
         seen = strings(of: breaks)
         XCTAssertTrue(seen.contains("Reprendre Jev"), "saw \(seen.sorted())")
@@ -134,9 +131,6 @@ final class T046C3RenderTests: XCTestCase {
         XCTAssertTrue(titles.contains("Reprendre Jev"), "saw \(titles)")
         XCTAssertTrue(titles.contains { $0.hasPrefix("Jev en pause · ") && $0.hasSuffix(" restantes") }, "saw \(titles)")
         XCTAssertFalse(titles.contains("Pause de 5 min (historique inchangé)"), "saw \(titles)")
-
-        let quickBreak = strings(of: host(JevQuickPauseControl()))
-        XCTAssertTrue(quickBreak.contains { $0.hasPrefix("Pause · ") }, "The quick control shows the countdown; saw \(quickBreak.sorted())")
 
         XCTAssertTrue(press("Reprendre Jev", in: breaks))
         XCTAssertNil(monitor.timedBreak, "Resuming ends the break")

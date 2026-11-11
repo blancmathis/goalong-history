@@ -518,7 +518,7 @@
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Mettre l’enregistrement en pause ?"
-            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de Jev, utilisez plutôt « Faire une pause » : l’historique continue."
+            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour arrêter seulement les rappels de Jev, décochez « Surveillance » dans la règle ou la séance : l’historique continue."
             alert.addButton(withTitle: "Annuler")
             alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Mettre en pause")
             return alert.runModal() == .alertSecondButtonReturn

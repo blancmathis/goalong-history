@@ -1,8 +1,8 @@
-# Jev : surveillance facultative et pauses minutées
+# Jev : surveillance facultative
 
 ## Commandes
 
-La règle **Blocages › Jev** (page Blocages, ligne « Jev ») regroupe l’activation, l’état de Jev et les pauses.
+La règle **Blocages › Jev** (page Blocages, ligne « Jev ») regroupe l’activation, la connexion et l’état de Jev.
 Concentration et l’élément **Ouvrir la surveillance…** du menu y mènent ; Jev n’a plus
 de page dans la navigation principale (la route `.monitoring` ouvre cette rubrique). La capacité `jevMonitoring` est désactivée par
 défaut et indépendante de Computer History, ChatGPT, de l’envoi au site et du
@@ -11,11 +11,10 @@ explicite de l’envoi à TypeSafe. L’utilisateur fournit sa propre clé API d
 champ protégé de **Connecter l’API** (ou **Gérer la connexion** quand une clé existe) ; aucun secret n’est inclus dans le code ou envoyé au site Goalong.
 L’API TypeSafe peut être facturée selon son offre. Aucun appel n’est fait sans clé.
 
-Le menu **Jev** permet une pause de 5, 10, 15 ou 30 minutes,
-sa fin anticipée, la désactivation de Jev et l’ouverture de Blocages › Jev.
-**Autre durée** permet une pause de 1 à 120 minutes. Le décompte persiste au redémarrage et à la veille.
-Une pause de travail suspend Jev seulement : elle ne change aucun autre
-consentement, ne réactive jamais l’enregistrement et ne remplace pas l’arrêt de confidentialité.
+Le menu **Jev** montre l’état, la fin anticipée d’une pause encore en cours, la désactivation
+de Jev et l’ouverture de Blocages › Jev. Depuis T-050 B1, aucune pause de Jev ne se lance :
+une règle ou une séance dit quand Jev surveille. Une pause lancée avant la mise à jour finit
+normalement à son terme ; **Réinitialiser la pause** répare une minuterie illisible.
 
 Le bouton d’activation nécessite une clé et le consentement local Computer History.
 Une surveillance déjà activée reste toujours désactivable, même si un prérequis manque.
@@ -26,19 +25,23 @@ l’inspection du dernier envoi et l’option séparée d’extraits à portée 
 sans surcharger l’écran. Les vérifications récentes sont repliées par défaut.
 Tous ces réglages sont dans Blocages › Jev, nulle part ailleurs.
 
-## Périmètre : toujours ou seulement pendant les séances
+## Quand Jev surveille : le bloc « Surveillance » (T-050 B1)
 
-`JevMonitor.scope: JevMonitoringScope` prend `.always` (défaut historique) ou `.sessionsOnly` ;
-`setScope(_:)` ne modifie aucun consentement. Le réglage v1 est local dans UserDefaults
-(`goalong.jev.scope.v1`, JSON `schema: 1`, `scope`). Un ancien profil sans ce réglage reste en
-`.always` sans écriture sur lecture. Un réglage illisible ou d'une version inconnue suspend Jev
-jusqu'à un nouveau choix explicite ; il ne reprend jamais implicitement la surveillance continue.
+Le choix global « Toujours / Pendant mes séances » n’existe plus. Chaque règle de Blocages
+(Toujours ou Planifié) et chaque séance porte un bloc **Surveillance** facultatif, avec ses
+propres rappels et voiles (Modéré, Fort, Très fort, ou « Personnaliser »). Jev agit quand au
+moins une règle ou séance active le porte ; s’il y en a plusieurs, le réglage le plus fort
+gagne, en entier. Le consentement Jev reste global et toujours demandé.
 
-En `.sessionsOnly`, Jev activé affiche « En attente d’une séance » tant qu'aucune séance
-Concentration ne tourne : aucun appel, rappel ou effet, tampon désactivé, aucune minuterie de
-classification. Une pause Jev explicite garde son décompte. Les pauses Pomodoro font partie de
-la séance active ; le focus détecté hors séance ne suffit pas. Blocage/Concentration éteints,
-confidentialité, historique suspendu, connexion et exclusions conservent leurs propres règles.
+Stockage : `goalong.jev.surveillance.v1` (`JevSurveillanceStore`, JSON `schema: 1`). Illisible :
+aucune surveillance jusqu’au prochain enregistrement. Sans règle ni séance active, Jev affiche
+« En attente : aucune règle ni séance avec Surveillance en cours » et revérifie toutes les 30 s.
+
+Migration, une seule fois au lancement : avec le consentement, `.always` (ou réglage absent)
+devient une règle « Toujours » avec Surveillance, arrêt « Libre », mêmes réglages ;
+`.sessionsOnly` coche Surveillance par défaut dans les nouvelles séances. Sans consentement
+ou avec un ancien réglage illisible, rien n’est créé. Les anciennes clés restent ; rien ne
+démarre ni ne s’arrête à cause de la migration.
 
 Les transitions de séance et de scope annulent la requête en vol, retirent les effets, remettent
 la série à zéro et vident les échantillons. Les réponses revalident aussi l'identité de séance :
@@ -138,10 +141,9 @@ illisible, hors limites ou d’une version inconnue ne permet aucun effet.
 
 ## Deux actions clairement distinctes
 
-**Faire une pause**, dans la barre latérale et le menu Surveillance, suspend
-uniquement les appels Jev, les rappels et les effets. Une reprise automatique est
-prévue à la fin du décompte. L’historique continue selon le consentement et l’état
-de l’enregistrement ; une pause Jev n’active ni ne reprend une source arrêtée.
+**Décocher « Surveillance »** dans la règle ou la séance arrête seulement les appels Jev,
+les rappels et les effets. L’historique continue selon le consentement et l’état de
+l’enregistrement. Avec un arrêt autre que « Libre », ce retrait passe par le même arrêt.
 
 **Confidentialité · tout suspendre**, dans Réglages ou le sous-menu Confidentialité,
 est un arrêt exceptionnel du suivi et des envois. Une confirmation explique les

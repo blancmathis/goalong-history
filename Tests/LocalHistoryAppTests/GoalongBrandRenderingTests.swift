@@ -478,7 +478,8 @@ final class GoalongBrandRenderingTests: XCTestCase {
         let originalInterventions = preferences.settings
         defer { preferences.update { $0 = originalInterventions } }
         let interventionHost = NSHostingController(rootView: ScrollView {
-            JevInterventionControls().padding(28)
+            JevInterventionControls(settings: Binding(get: { preferences.settings },
+                                                      set: { value in preferences.update { $0 = value } })).padding(28)
         }.background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent))
         // « Fermer » uses the link up: the page is the plain « Blocages » again and does not reopen the rule.
         XCTAssertEqual(model.navigationStore.selectedSection, .monitoring)

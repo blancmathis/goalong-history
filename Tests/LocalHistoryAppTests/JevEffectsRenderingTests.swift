@@ -62,19 +62,18 @@ final class JevEffectsRenderingTests: XCTestCase {
             }
         }
         XCTAssertEqual(closeCount, 2)
-        let controls = NSHostingController(rootView: JevInterventionControls(preferences: preferences)
+        // The strength presets live in the « Surveillance » block of the rule editor (T-050 B1).
+        var strong = preferences.settings
+        strong.applyStrength(.veryStrong)
+        XCTAssertEqual(strong.stages.map(\.intensity), [65, 85])
+        preferences.update { $0 = strong }
+        let controls = NSHostingController(rootView: JevInterventionControls(settings: Binding(get: { preferences.settings },
+                                                                                               set: { value in preferences.update { $0 = value } }))
             .padding(24).frame(width: 760).fixedSize(horizontal: false, vertical: true)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent))
         window.contentViewController = controls
         window.setContentSize(NSSize(width: 760, height: 1000))
         pump()
-        let preset = try XCTUnwrap(accessibilityNodes(in: controls.view).first {
-            $0.string("accessibilityIdentifier") == "jev-strength-veryStrong"
-        })
-        XCTAssertTrue(preset.press())
-        pump()
-        XCTAssertEqual(preferences.settings.stages.map(\.intensity), [65, 85])
-        XCTAssertFalse(preferences.settings.effectsEnabled, "Choosing a stronger preset must not turn on effects")
         for dark in [true, false] {
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             window.appearance = app.appearance

@@ -2,74 +2,33 @@
 import SwiftUI
 import LocalHistoryCore
 
+/// « Personnaliser » of a « Surveillance » block (T-050 B1): the rows of one rule or session. It edits a draft; the
+/// editor saves it with the rule. The strength sits outside, as three choices.
 @MainActor struct JevInterventionControls: View {
-    @ObservedObject private var preferences: JevInterventionPreferences
-    init(preferences: JevInterventionPreferences = .shared) { self.preferences = preferences }
+    @Binding var settings: JevInterventionSettings
+
     var body: some View {
-        GoalongSettingsGroup(title: "Rappels et paliers") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Dès la première détection fiable, premier rappel").font(.system(size: 14, weight: .semibold))
-                Text("« Arrête de procrastiner. »")
-                    .font(.callout).foregroundStyle(LHTheme.secondaryText)
-                Text("La durée ne s’affiche qu’à partir de 10 minutes. Fermer masque seulement le pop-up jusqu’à la prochaine détection ; le suivi interne et les effets continuent.")
-                    .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Toggle("Changer de position à chaque nouveau rappel", isOn: binding(\.moveAfterSecondAppearance))
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Changer de position à chaque nouveau rappel", isOn: $settings.moveAfterSecondAppearance)
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-move-warning")
-            Divider()
-            Toggle("Activer les effets progressifs", isOn: binding(\.effectsEnabled))
+            Toggle("Voiles progressifs", isOn: $settings.effectsEnabled)
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-effects-enabled")
-            Text("Optionnel. Par défaut : assombrissement à 2 min, puis assombrissement + rouge dès 5 min. Ensuite, ce dernier effet et les rappels continuent sans nouveau palier. Retour productif, pause ou arrêt de Jev dans Goalong : tout disparaît.")
+            Text("Un voile sur l’écran, sans toucher à la luminosité du Mac ni bloquer les clics.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
-            strengthPresets
-            ForEach(0..<preferences.settings.stages.count, id: \.self) { index in
-                stageRow(index)
-                if index < preferences.settings.stages.count - 1 { Divider() }
+            ForEach(0..<settings.stages.count, id: \.self) { index in
+                stageRow(index).disabled(!settings.effectsEnabled)
+                if index < settings.stages.count - 1 { Divider() }
             }
-            Text("Assombrissement = voile visuel, pas modification de la luminosité du Mac. Aucun clignotement ni blocage des clics. L’intensité peut aller jusqu’à 85 %, sans noir total. Au-delà de 60 %, la lecture de l’écran devient nettement plus difficile. Les rappels restent au-dessus du voile et les commandes de pause et d’arrêt restent dans Goalong. Si Jev ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
-                .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Le compteur additionne des fenêtres de 15 s contenant une distraction ; il ne prouve pas que chaque seconde était hors travail. Inactivité, contexte privé, erreur ou résultat indéterminé remettent la série à zéro.")
-                .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            if let error = preferences.error { Text(error).foregroundStyle(LHTheme.warning).font(.caption) }
         }
-    }
-    private var strengthPresets: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Intensité des effets").font(.system(size: 14, weight: .semibold))
-            HStack(spacing: 10) {
-                ForEach(JevEffectStrength.allCases, id: \.self) { strength in
-                    Button {
-                        preferences.update { $0.applyStrength(strength) }
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(strength.title).fontWeight(.semibold)
-                            Text("\(GoalongUIFormat.percent(strength.intensities[0])) puis \(GoalongUIFormat.percent(strength.intensities[1]))")
-                                .font(.caption)
-                        }.frame(maxWidth: .infinity).padding(.vertical, 5)
-                    }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .accessibilityIdentifier("jev-strength-\(strength.rawValue)")
-                    .accessibilityLabel("\(strength.title) : palier 1 à \(GoalongUIFormat.percent(strength.intensities[0])), palier 2 à \(GoalongUIFormat.percent(strength.intensities[1]))")
-                }
-            }
-            Text("Ces préréglages changent uniquement les intensités. Les délais et vos choix d’activation sont conservés. Vous pouvez les préparer avant d’activer les effets.")
-                .font(.caption).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-    private func binding(_ path: WritableKeyPath<JevInterventionSettings, Bool>) -> Binding<Bool> {
-        Binding(get: { preferences.settings[keyPath: path] }, set: { value in preferences.update { $0[keyPath: path] = value } })
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("jev-intervention-settings")
     }
     private func stageBinding<T>(_ index: Int, _ path: WritableKeyPath<JevInterventionStage, T>) -> Binding<T> {
-        Binding(get: { preferences.settings.stages[index][keyPath: path] },
-                set: { value in preferences.update { $0.stages[index][keyPath: path] = value } })
+        Binding(get: { settings.stages[index][keyPath: path] }, set: { settings.stages[index][keyPath: path] = $0 })
     }
     private func stageRow(_ index: Int) -> some View {
-        let stages = preferences.settings.stages
+        let stages = settings.stages
         let lower = index == 0 ? 1 : stages[index - 1].afterMinutes + 1
         let upper = index == stages.count - 1 ? 60 : stages[index + 1].afterMinutes - 1
         return VStack(alignment: .leading, spacing: 10) {
@@ -97,48 +56,16 @@ import LocalHistoryCore
                     .accessibilityLabel("Intensité du palier \(index + 1) : \(GoalongUIFormat.percent(stages[index].intensity))")
             }.disabled(!stages[index].enabled)
             Slider(value: Binding(
-                get: { Double(preferences.settings.stages[index].intensity) },
+                get: { Double(settings.stages[index].intensity) },
                 set: { value in
                     let intensity = Int(value.rounded())
-                    guard intensity != preferences.settings.stages[index].intensity else { return }
-                    preferences.update { $0.stages[index].intensity = intensity }
+                    guard intensity != settings.stages[index].intensity else { return }
+                    settings.stages[index].intensity = intensity
                 }), in: Double(JevInterventionSettings.intensityRange.lowerBound)...Double(JevInterventionSettings.intensityRange.upperBound), step: 5)
                 .accessibilityLabel("Intensité du palier \(index + 1)")
                 .accessibilityValue(GoalongUIFormat.percent(stages[index].intensity))
                 .accessibilityIdentifier("jev-stage-\(index)-intensity")
                 .disabled(!stages[index].enabled)
-        }
-    }
-}
-
-/// Everyday break: affects only Jev. Deliberately has no recorder or global-pause action.
-@MainActor struct JevQuickPauseControl: View {
-    @ObservedObject private var monitor = JevMonitor.shared
-    @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
-    /// With Jev off, "Pause de N min" does nothing (startBreak needs monitoring on): only "Reprendre" stays.
-    nonisolated static func menuItems(enabled: Bool, breakRunning: Bool) -> (resume: Bool, durations: [Int]) {
-        (breakRunning, enabled ? [5, 10, 15, 30] : [])
-    }
-    var body: some View {
-        let items = Self.menuItems(enabled: consents.isEnabled(.jevMonitoring), breakRunning: monitor.timedBreak != nil)
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Jev").font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-            Menu {
-                if items.resume {
-                    Button("Reprendre Jev") { monitor.endBreak() }
-                }
-                ForEach(items.durations, id: \.self) { minutes in
-                    Button("Pause de \(minutes) min") { monitor.startBreak(minutes: minutes) }
-                }
-            } label: {
-                Label(monitor.timedBreak == nil ? "Faire une pause" : "Pause · " + GoalongUIFormat.remaining(TimeInterval(monitor.remainingSeconds)),
-                      systemImage: "cup.and.saucer")
-                    .font(.system(size: 12, weight: .medium))
-            }.menuStyle(.borderlessButton)
-                .accessibilityIdentifier("jev-quick-pause")
-                .disabled(!consents.isEnabled(.jevMonitoring) && monitor.timedBreak == nil)
-            Text("Sans arrêter l’historique")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
         }
     }
 }

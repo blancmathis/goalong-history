@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import LocalHistoryCore
 
 /// One rule of the page « Blocages »: a weekly range (when), what it runs (lists, red screen, held
 /// brightness) and one safety. A rule is a view of the engines' state: nothing here is stored. The lists'
@@ -56,6 +57,13 @@ struct BlockRule: Identifiable, Equatable {
         var state: State
     }
 
+    /// The « Surveillance » block of the rule (T-050 B1): Jev's reminders during its hours.
+    struct JevPart: Equatable {
+        var rangeID: UUID
+        var settings: JevInterventionSettings
+        var state: State
+    }
+
     var id: String
     var key: Key
     var lists: [ListPart]
@@ -63,8 +71,9 @@ struct BlockRule: Identifiable, Equatable {
     /// The lock as the engines apply it: « Mot de passe » without a usable password is « Verrouillé ».
     var lock: BlockLock
     var state: State
+    var jev: JevPart? = nil
 
-    var isRedOnly: Bool { lists.isEmpty }
+    var isRedOnly: Bool { lists.isEmpty && red != nil }
 }
 
 /// The rules, computed from what the engines hold. Pure: the same input gives the same rules.
@@ -80,6 +89,8 @@ enum BlockRules {
         /// Red ranges in progress with their end (`BraiseController.windows`).
         var redWindows: [UUID: Date] = [:]
         var hasPassword = false
+        /// The « Surveillance » blocks (`JevSurveillanceStore`).
+        var jev: [JevSurveillanceRange] = []
         var now: Date
         var calendar: Calendar = .current
     }
@@ -126,20 +137,45 @@ enum BlockRules {
                 }
             }
         }
-        let shared = keys.map { key -> BlockRule in
+        var shared = keys.map { key -> BlockRule in
             let lists = parts[key] ?? []
             let red = joined[key]
             return BlockRule(id: key.text, key: key, lists: lists, red: red,
                              lock: applied(key.lock, hasPassword: input.hasPassword),
                              state: combined(lists.map(\.state) + (red.map { [$0.state] } ?? [])))
         }
+        // A « Surveillance » block joins the rule with its days, hours and stop (lists first, then a red rule alone);
+        // otherwise it is a rule by itself.
+        for range in input.jev {
+            let part = BlockRule.JevPart(rangeID: range.id, settings: range.settings,
+                                         state: jevState(range, now: input.now, calendar: input.calendar))
+            func join(_ rule: inout BlockRule) {
+                rule.jev = part; rule.state = combined([rule.state, part.state])
+            }
+            if let index = shared.firstIndex(where: { $0.key == range.key && $0.jev == nil }) {
+                join(&shared[index])
+            } else if let index = alone.firstIndex(where: { $0.key == range.key && $0.jev == nil && $0.red?.enabled == true }) {
+                join(&alone[index])
+            } else {
+                alone.append(BlockRule(id: "jev-\(range.id.uuidString)", key: range.key, lists: [], red: nil,
+                                       lock: applied(range.lock, hasPassword: input.hasPassword), state: part.state, jev: part))
+            }
+        }
         return (shared + alone).sorted { order($0) < order($1) }
     }
 
+    private static func jevState(_ range: JevSurveillanceRange, now: Date, calendar: Calendar) -> BlockRule.State {
+        let windows = BlockingSchedule.windows(of: BlockProgram(ranges: [range.program]), at: now, calendar: calendar)
+        if let live = windows.first(where: { $0.start <= now && now < $0.end }) { return .running(until: live.end) }
+        if let start = windows.first(where: { $0.start > now })?.start { return .next(start) }
+        return .idle
+    }
+
     /// The rules of the live engines. A nil controller = its module is off or did not start. Reads only.
-    @MainActor static func current(blocking: BlockingController?, braise: BraiseController?, now: Date,
+    @MainActor static func current(blocking: BlockingController?, braise: BraiseController?,
+                                   jev: [JevSurveillanceRange] = [], now: Date,
                                    calendar: Calendar = .current) -> [BlockRule] {
-        var input = Input(now: now, calendar: calendar)
+        var input = Input(jev: jev, now: now, calendar: calendar)
         if let blocking {
             input.lists = blocking.lists
             input.runningRanges = Set(blocking.activeBlocks.compactMap { block -> UUID? in
@@ -233,6 +269,7 @@ extension BlockRule {
             if let level = red.brightness { screen.append("luminosité à \(GoalongUIFormat.percent(level * 100))") }
             parts.append(screen.joined(separator: ", "))
         }
+        if jev != nil { parts.append("surveillance") }
         guard let first = parts.first else { return "Rien à appliquer" }
         return ([first.prefix(1).uppercased() + first.dropFirst()] + parts.dropFirst()).joined(separator: " · ")
     }

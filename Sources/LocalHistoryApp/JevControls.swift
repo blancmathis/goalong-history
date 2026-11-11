@@ -65,18 +65,18 @@ struct JevRecentChecksView: View {
     }
 }
 
+/// A pause of Jev can no longer be started (T-050 B1 point 6): a rule or a session says when Jev watches. This group
+/// only shows a pause started before the update (it ends by itself) and the repair of an unreadable timer.
 @MainActor struct JevBreakControls: View {
     @ObservedObject private var monitor = JevMonitor.shared
-    @State private var minutes = 10
     var body: some View {
-        // UI-11A (5): with reminders off there is nothing to pause, and nothing to say about it.
-        if monitor.breakStorageInvalid || monitor.timedBreak != nil || monitor.enabled {
+        if monitor.breakStorageInvalid || monitor.timedBreak != nil {
             group
         }
     }
 
     private var group: some View {
-        GoalongSettingsGroup(title: "Faire une pause") {
+        GoalongSettingsGroup(title: "Pause en cours") {
             if monitor.breakStorageInvalid {
                 Text(JevMonitor.unreadableBreakNotice).foregroundStyle(LHTheme.secondaryText)
                 Button("Réinitialiser la pause") { monitor.endBreak() }
@@ -88,26 +88,11 @@ struct JevRecentChecksView: View {
                     Button("Reprendre Jev") { monitor.endBreak() }
                         .accessibilityIdentifier("jev-end-break")
                 }
-            } else if monitor.enabled {
-                HStack {
-                    ForEach([5, 10, 15, 30], id: \.self) { duration in
-                        Button("\(duration) min") { monitor.startBreak(minutes: duration) }
-                            .accessibilityIdentifier("jev-break-\(duration)")
-                    }
-                }
-                GoalongDisclosureGroup("Autre durée") {
-                    HStack {
-                        Stepper("Durée : \(minutes) min", value: $minutes, in: 1...120)
-                        Button("Mettre en pause") { monitor.startBreak(minutes: minutes) }
-                    }.padding(.top, 8)
-                }
             }
-            Text(monitor.timedBreak != nil
-                 ? "Jev et ses rappels sont en pause. L’historique continue s’il est activé. Reprise automatique à la fin."
-                 : monitor.enabled
-                 ? "Une pause arrête Jev et ses rappels pendant la durée choisie. L’historique continue s’il est activé."
-                 : "Jev est désactivé : il n’y a aucun rappel à mettre en pause.")
-                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            if monitor.timedBreak != nil {
+                Text("Jev et ses rappels sont en pause. Reprise automatique à la fin.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+            }
         }
     }
 }
@@ -132,13 +117,6 @@ struct JevRecentChecksView: View {
             let item = NSMenuItem(title: "Reprendre Jev", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
             menu.addItem(.separator())
-        } else if monitor.enabled {
-            // A break is only offered while monitoring runs; otherwise it would pause nothing.
-            for minutes in [5, 10, 15, 30] {
-                let item = NSMenuItem(title: "Pause de \(minutes) min (historique inchangé)", action: #selector(startBreak(_:)), keyEquivalent: "")
-                item.tag = minutes; item.target = self; menu.addItem(item)
-            }
-            menu.addItem(.separator())
         }
         let open = NSMenuItem(title: "Ouvrir Jev…", action: #selector(openMonitoring), keyEquivalent: "")
         open.target = self; menu.addItem(open)
@@ -148,7 +126,6 @@ struct JevRecentChecksView: View {
         }
     }
     @objc private func openMonitoring() { onOpenMonitoring() }
-    @objc private func startBreak(_ sender: NSMenuItem) { JevMonitor.shared.startBreak(minutes: sender.tag) }
     @objc private func endBreak() { JevMonitor.shared.endBreak() }
     @objc private func disable() { JevMonitor.shared.setEnabled(false) }
 }
