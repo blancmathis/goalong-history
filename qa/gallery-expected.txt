@@ -2995,3 +2995,6 @@ blocages/mot-de-passe--   # Blocages lot B1 (T-050) : ligne Jev renommée
 blocages/seance-en-cours--   # Blocages lot B1 (T-050) : ligne Jev renommée
 concentration/page--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la page voisine
 braise/page-fenetre--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la page voisine
+ambiance/barre-telechargement--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+distractions/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+programme/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
