@@ -383,7 +383,7 @@
                         Image(systemName: "xmark.circle.fill").foregroundStyle(LHTheme.secondaryText)
                             .frame(width: GoalongHitTarget.clearButton, height: GoalongHitTarget.clearButton)
                             .contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("Effacer la recherche")
+                    }.buttonStyle(.plain).accessibilityLabel("Effacer la recherche").help("Effacer la recherche (Échap)")
                         // The target is 24 pt; the field keeps its height.
                         .padding(-(GoalongHitTarget.clearButton - 14) / 2)
                 }

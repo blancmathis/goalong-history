@@ -543,6 +543,7 @@ private struct AmbianceFileRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Retirer \(title)")
+            .help("Retirer \(title)")
         }
         .padding(.horizontal, LHTheme.cardInset).frame(minHeight: 44)
         .background(playing ? LHTheme.selectionBackground : Color.clear)

@@ -203,6 +203,7 @@ struct GoalongAttentionBanner: View {
                 }
                 .buttonStyle(LHQuietButtonStyle())
                 .accessibilityLabel("Masquer")
+                .help("Masquer")
             }
         }
     }

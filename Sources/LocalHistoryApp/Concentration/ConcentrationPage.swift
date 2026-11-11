@@ -842,6 +842,7 @@ struct FocusThreadModel: Equatable {
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .tint(LHTheme.secondaryText)
             .accessibilityLabel("Actions pour \(item.title)")
+            .help("Actions pour \(item.title)")
         }
         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 8).frame(minHeight: 52)
         .accessibilityIdentifier("concentration-plan-item")
