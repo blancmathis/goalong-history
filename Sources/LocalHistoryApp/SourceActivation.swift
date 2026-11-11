@@ -372,7 +372,10 @@ import LocalHistoryCore
                 get: { consents.isEnabled(capability) },
                 set: { enabled in
                     if enabled { beginActivation() }
-                    else { saveFailed = !consents.set(capability, enabled: false, surface: surface) }
+                    // T-050 B1 correction 3: without recording Jev stops; the running surveillance's stop first.
+                    else if capability != .localComputerHistory || JevStopGate.confirm(action: "Désactiver l’enregistrement") {
+                        saveFailed = !consents.set(capability, enabled: false, surface: surface)
+                    }
                 }
             )) { Text(capability.title) }
             .labelsHidden()

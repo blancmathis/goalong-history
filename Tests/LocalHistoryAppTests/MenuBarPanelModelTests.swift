@@ -247,6 +247,20 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertEqual(model.focusRun?.elapsed, 37)
     }
 
+    /// T-050 B1 correction 2: « Arrêter » in the panel asks the stop of the session's « Surveillance ».
+    @MainActor func testPanelStopAsksTheSurveillanceStop() throws {
+        let f = fixture(); try f.startFocusController()
+        f.focus!.surveillanceLock = { _ in .password }
+        try f.focus!.startSession(intent: "Écrire", mode: FocusMode(minutes: 25))
+        let model = f.model(); var asked = 0
+        model.confirmSurveillanceStop = { asked += 1; return false }
+        model.stopFocus()
+        XCTAssertNotNil(f.focus?.currentSession, "stop refused: the session and its surveillance go on")
+        model.confirmSurveillanceStop = { asked += 1; return true }
+        model.stopFocus()
+        XCTAssertNil(f.focus?.currentSession); XCTAssertEqual(asked, 2)
+    }
+
     @MainActor func testLockedSessionStopCannotBypassController() throws {
         let f = fixture(), list = LocalHistoryApp.BlockList(name: "Protégée")
         f.blocking = BlockingController(document: BlockingDocument(lists: [list]), clock: { f.now },

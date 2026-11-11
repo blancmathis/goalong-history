@@ -42,15 +42,29 @@ import LocalHistoryQueryCLI
     }
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
-        modules.concentrationDisableCheck = { [weak self] in self?.controller?.refresh(); return self?.controller?.hasLockedBlock != true }
+        modules.concentrationDisableCheck = { [weak self] in
+            guard let self, let controller = self.controller else { return true }
+            controller.refresh(); return !self.refusesTurningOff(controller)
+        }
         modules.onConcentrationEnabledChange = { [weak self] in self?.apply(enabled: $0) }
         apply(enabled: modules.isEnabled(.concentration))
+    }
+    /// T-050 B1: the settings switch passed the stop of the session's protected « Surveillance » (one shot).
+    var surveillanceOffConfirmed = false
+    /// Turning the module off is refused while a block is locked, or while the session carries a protected « Surveillance »
+    /// whose stop was not passed.
+    func refusesTurningOff(_ controller: ConcentrationController) -> Bool {
+        controller.hasLockedBlock || (controller.surveillanceProtected && !surveillanceOffConfirmed)
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
             do {
                 let store = storeFactory()
                 let value = try factory?(store) ?? ConcentrationController(store: store, clock: clock, calendar: calendar, blocking: blockingProvider, audio: audio, runsTimers: true)
+                value.surveillanceLock = { id in
+                    GoalongCapabilityConsentStore.shared.isEnabled(.jevMonitoring)
+                        ? JevSurveillanceStore.shared.sessionLock(kind: .focus, ids: [id]) : .free
+                }
                 controller = value; error = nil
                 refreshHasData()
                 NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: self)
@@ -78,7 +92,7 @@ import LocalHistoryQueryCLI
             } catch { self.error = FocusUIError.message(error) }
         } else if !enabled, let controller {
             controller.refresh()
-            if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
+            if refusesTurningOff(controller) { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
             measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID()
             controller.shutdown(); monitor?.concentrationSink = nil
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)
@@ -132,6 +146,8 @@ import LocalHistoryQueryCLI
         error = nil
         controller?.refresh()
         if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
+        // The running session carries a protected « Surveillance »: stop it first, through its stop (T-050 B1).
+        if controller?.surveillanceProtected == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
         apply(enabled: false)
         // The commitments are gone (or partly): tell the kept task verdicts now, not at the next launch (T-045 D-156a).

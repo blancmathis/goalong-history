@@ -27,10 +27,14 @@ struct JevRecentCheck: Identifiable {
     @Published private(set) var lastPayload = ""
     @Published private(set) var recentChecks: [JevRecentCheck] = []
     @Published private(set) var error: String?
-    @Published private(set) var scope: JevMonitoringScope = .always
+    /// The settings of the strongest rule or session that carries « Surveillance » now (T-050 B1 point 3).
+    @Published private(set) var activeSettings: JevInterventionSettings?
     private let scopePreferences: JevMonitoringPreferences
+    private let surveillance: JevSurveillanceStore
     private let consents: GoalongCapabilityConsentStore
     private let sessionProvider: () -> UUID?
+    private let blocksProvider: () -> Set<UUID>
+    private let legacySettings: () -> JevInterventionSettings
     private var apiKey = ""
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -64,15 +68,22 @@ struct JevRecentCheck: Identifiable {
     }
     /// One name for an unreadable break.json, in the monitor error and in the pause controls.
     static let unreadableBreakNotice = "Minuterie illisible : Jev suspendu, historique inchangé."
-    init(scopePreferences: JevMonitoringPreferences? = nil, consents: GoalongCapabilityConsentStore? = nil,
-         sessionProvider: (() -> UUID?)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
+    /// `scopePreferences` and `legacySettings` are read once, by the migration (point 4).
+    init(scopePreferences: JevMonitoringPreferences? = nil, surveillance: JevSurveillanceStore? = nil,
+         consents: GoalongCapabilityConsentStore? = nil,
+         sessionProvider: (() -> UUID?)? = nil, blocksProvider: (() -> Set<UUID>)? = nil,
+         legacySettings: (() -> JevInterventionSettings)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
          localRoot: URL? = nil) {
         self.scopePreferences = scopePreferences ?? .shared
+        self.surveillance = surveillance ?? .shared
         self.consents = consents ?? .shared
         self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
+        self.blocksProvider = blocksProvider ?? {
+            Self.runningBlockIDs(BlockingRuntime.shared.controller?.activeBlocks ?? [], now: Date()) // wall: the controller's block dates
+        }
+        self.legacySettings = legacySettings ?? { JevInterventionPreferences.shared.settings }
         self.inbox = inbox ?? .shared
         self.localRoot = localRoot ?? AppPaths.applicationSupportDirectory
-        scope = self.scopePreferences.scope
         guard loadLocalSettings else { return }
         loadLocalFiles()
     }
@@ -108,9 +119,10 @@ struct JevRecentCheck: Identifiable {
     }
     func start() {
         guard !started else { return }; started = true
+        migrateSurveillance()
         let center = NotificationCenter.default
         // These notifications are posted on the main actor. End/disable cancels synchronously.
-        for name in [Notification.Name.goalongFocusSessionDidChange, .jevMonitoringScopeDidChange] {
+        for name in [Notification.Name.goalongFocusSessionDidChange, .jevSurveillanceDidChange] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reconfigure() }
             })
@@ -150,14 +162,32 @@ struct JevRecentCheck: Identifiable {
         reconfigure()
     }
     private var signature: String {
-        "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)|\(scopePreferences.scope.rawValue)"
+        "\(enabled)|\(consents.isEnabled(.localComputerHistory))|\(BackgroundContinuityPreferences().manuallyPaused)|\(includeText)"
     }
     private var focusSessionID: UUID? { sessionProvider() }
+    /// A block programmed later is not running yet. Pure.
+    static func runningBlockIDs(_ blocks: [BlockingActiveBlock], now: Date) -> Set<UUID> {
+        Set(blocks.filter { $0.start <= now }.map(\.id))
+    }
+    /// The sessions that still exist, a later block included: their « Surveillance » marks are kept (correction 4).
+    static func aliveSessions() -> JevRunningSessions {
+        JevRunningSessions(focus: ConcentrationRuntime.shared.controller?.currentSession?.id,
+                           blocks: Set(BlockingRuntime.shared.controller?.activeBlocks.map(\.id) ?? []))
+    }
+    static let waitingText = "En attente : aucune règle ni séance avec Surveillance en cours"
+    /// Once per Mac, before the first gate: the old scope becomes a rule or the session default. Nothing starts or stops.
+    @discardableResult func migrateSurveillance() -> JevSurveillanceStore.Migration {
+        surveillance.migrateIfNeeded(consent: enabled, scope: scopePreferences, settings: legacySettings())
+    }
+    /// The rules and sessions that carry « Surveillance » now.
+    func currentActivity(now: Date = Date()) -> [JevSurveillanceActivity] {
+        surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider()), now: now)
+    }
     private var gate: String? {
         if timedBreak != nil || breakStorageInvalid { return "Jev en pause : aucun appel ni rappel" }
         if !enabled { return "Jev désactivé" }
-        if let issue = scopePreferences.error { return issue }
-        if !scopePreferences.scope.permits(sessionActive: focusSessionID != nil) { return "En attente d’une séance" }
+        if let issue = surveillance.error { return issue }
+        if activeSettings == nil { return Self.waitingText }
         if let issue = JevWorkContextStore.shared.error { return issue }
         if keyStorageInvalid { return "Clé d’accès Jev illisible : Jev suspendu" }
         if !hasKey { return "Configurez la connexion à Jev pour l’activer" }
@@ -179,10 +209,6 @@ struct JevRecentCheck: Identifiable {
     func setIncludeText(_ value: Bool) {
         GoalongDefaults.standard.set(value, forKey: Self.excerptKey)
         reconfigure()
-    }
-    func setScope(_ value: JevMonitoringScope) {
-        scopePreferences.setScope(value)
-        if !started { reconfigure() }
     }
     func saveKey(_ value: String) {
         let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -254,10 +280,22 @@ struct JevRecentCheck: Identifiable {
         epoch = UUID(); request?.cancel(); request = nil; resetInterventions()
         lastPayload = ""; JevWarningPanel.shared.hide()
     }
+    /// Whether a protected surveillance ran at the last look; nil until the first one (T-050 B1, question 2).
+    private var wasProtected: Bool?
+    /// A recording pause set before a protected surveillance began: the app resumes the recording (`AppDelegate`).
+    private func liftPauseIfProtectionBegins(now: Date) {
+        let step = JevStopGate.step(currentActivity(now: now), jevEnabled: enabled, challenge: { "" })
+        let lifts = JevStopGate.liftsManualPause(paused: BackgroundContinuityPreferences().manuallyPaused, step: step,
+                                                 wasProtected: wasProtected)
+        wasProtected = step != .allow
+        guard lifts else { return }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .goalongProtectedSurveillanceStarted, object: nil) }
+    }
     func reconfigure() {
+        liftPauseIfProtectionBegins(now: Date())
         cancelPending(); timer?.invalidate(); timer = nil
-        scope = scopePreferences.scope
         settingsSignature = signature
+        activeSettings = JevSurveillanceStore.strongest(currentActivity().map(\.settings))
         boundary = Date(); previousWall = boundary; previousUptime = ProcessInfo.processInfo.systemUptime
         let available = gate == nil
         inbox.configure(enabled: available, includeText: includeText, collectDistractions: focusSessionID != nil)
@@ -265,12 +303,14 @@ struct JevRecentCheck: Identifiable {
         if timedBreak != nil && !breakStorageInvalid {
             scheduleTimer(seconds: 1)
         } else if available { scheduleTimer(seconds: 15) }
+        // The recording pause too: a protected surveillance that begins lifts it (T-050 B1, question 2).
+        else if gate == Self.waitingText || BackgroundContinuityPreferences().manuallyPaused { scheduleTimer(seconds: 30) }
     }
     private func scheduleTimer(seconds: TimeInterval) {
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
-        timer.tolerance = seconds == 15 ? 1.5 : 0.2
+        timer.tolerance = seconds >= 15 ? 1.5 : 0.2
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
     private func tick() {
@@ -280,6 +320,7 @@ struct JevRecentCheck: Identifiable {
             if remainingSeconds == 0, !breakStorageInvalid { endBreak() }
             return
         }
+        if JevSurveillanceStore.strongest(currentActivity(now: now).map(\.settings)) != activeSettings { reconfigure(); return }
         guard gate == nil else { reconfigure(); return }
         let uptime = ProcessInfo.processInfo.systemUptime
         let clockJump = abs(now.timeIntervalSince(previousWall) - (uptime - previousUptime)) > 2
@@ -351,7 +392,7 @@ struct JevRecentCheck: Identifiable {
                 if verdict == .procrastination {
                     JevWarningPanel.shared.update(seconds: self.streak.observedSeconds,
                         appearance: self.streak.appearanceCount, present: warn,
-                        settings: JevInterventionPreferences.shared.settings)
+                        settings: self.activeSettings ?? self.legacySettings())
                 }
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .monitoring)
@@ -381,5 +422,9 @@ struct JevRecentCheck: Identifiable {
         JevWarningPanel.shared.hide(resetPosition: true)
         cancelPending(); timer?.invalidate(); timer = nil; inbox.configure(enabled: false)
     }
+}
+extension Notification.Name {
+    /// A protected « Surveillance » began while the recording was paused by hand (T-050 B1, question 2).
+    static let goalongProtectedSurveillanceStarted = Notification.Name("ai.goalong.jev.protectedSurveillanceStarted")
 }
 #endif

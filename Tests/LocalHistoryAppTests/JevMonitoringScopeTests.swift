@@ -27,29 +27,29 @@ final class JevMonitoringScopeTests: XCTestCase {
             p.setScope(.always); XCTAssertNil(p.error)
         }
     }
-    @MainActor func testWaitingDisablesIngressImmediatelyAndScopeChangesGrantNoConsent() throws {
+    @MainActor func testWaitingDisablesIngressImmediatelyAndSessionDefaultGrantsNoConsent() throws {
         let root = URL(fileURLWithPath: "/private/tmp/jev-scope-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let consents = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("consents.json"))
-        let p = JevMonitoringPreferences(defaults: defaults()), inbox = JevIngress(notificationCenter: NotificationCenter())
+        let d = defaults(), p = JevMonitoringPreferences(defaults: d), store = JevSurveillanceStore(defaults: d)
+        p.setScope(.sessionsOnly)
+        let inbox = JevIngress(notificationCenter: NotificationCenter())
         var session: UUID?
-        let monitor = JevMonitor(scopePreferences: p, consents: consents, sessionProvider: { session },
+        let monitor = JevMonitor(scopePreferences: p, surveillance: store, consents: consents, sessionProvider: { session },
+                                 blocksProvider: { [] }, legacySettings: { JevInterventionSettings() },
                                  inbox: inbox, loadLocalSettings: false)
-        monitor.setScope(.sessionsOnly)
         XCTAssertFalse(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(consents.isEnabled(.localComputerHistory))
-        XCTAssertEqual(monitor.status, "Jev désactivé")
         XCTAssertTrue(consents.set(.jevMonitoring, enabled: true, surface: .settings))
         monitor.start()
-        XCTAssertEqual(monitor.status, "En attente d’une séance"); XCTAssertFalse(inbox.isEnabled)
+        XCTAssertTrue(store.document.sessionDefault, "« Pendant mes séances » becomes the session default")
+        XCTAssertEqual(monitor.status, JevMonitor.waitingText); XCTAssertFalse(inbox.isEnabled)
         session = UUID(); NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: nil)
-        XCTAssertTrue(monitor.status.contains("connexion à Jev"), "Session scope still respects the missing key")
+        XCTAssertTrue(monitor.status.contains("connexion à Jev"), "Session surveillance still respects the missing key")
         inbox.configure(enabled: true); let generation = inbox.generation
         session = nil; NotificationCenter.default.post(name: .goalongFocusSessionDidChange, object: nil)
-        XCTAssertEqual(monitor.status, "En attente d’une séance"); XCTAssertFalse(inbox.isEnabled)
+        XCTAssertEqual(monitor.status, JevMonitor.waitingText); XCTAssertFalse(inbox.isEnabled)
         XCTAssertNotEqual(inbox.generation, generation); XCTAssertEqual(monitor.procrastinationSeconds, 0)
-        monitor.setScope(.always)
-        XCTAssertTrue(consents.isEnabled(.jevMonitoring)); XCTAssertFalse(consents.isEnabled(.localComputerHistory))
-        XCTAssertFalse(inbox.isEnabled)
+        XCTAssertFalse(consents.isEnabled(.localComputerHistory), "The migration grants no consent")
     }
     @MainActor func testUnreadableKeyIsReportedAsKeyAndRetryRereadsFiles() throws {
         let root = URL(fileURLWithPath: "/private/tmp/jev-files-" + UUID().uuidString)

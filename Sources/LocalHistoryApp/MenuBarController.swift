@@ -485,7 +485,7 @@
 
         @objc private func toggleGlobalPause() {
             if GoalongGlobalPause.load().invalid { repairGlobalPause(); return }
-            if !GoalongGlobalPause.isPaused(), !confirmRecordingStop(allSources: true) { return }
+            if !GoalongGlobalPause.isPaused(), !MainActor.assumeIsolated({ JevStopGate.confirm(action: "Tout suspendre") }) || !confirmRecordingStop(allSources: true) { return }
             do {
                 try GoalongGlobalPause.setPaused(!GoalongGlobalPause.isPaused(), recordingWasPaused: state.isManuallyPaused)
                 updateStatus()
@@ -518,7 +518,7 @@
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = allSources ? "Suspendre tout le suivi ?" : "Mettre l’enregistrement en pause ?"
-            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour suspendre seulement les rappels de Jev, utilisez plutôt « Faire une pause » : l’historique continue."
+            alert.informativeText = "Votre historique ne sera plus enregistré jusqu’à la reprise. Pour arrêter seulement les rappels de Jev, décochez « Surveillance » dans la règle ou la séance : l’historique continue."
             alert.addButton(withTitle: "Annuler")
             alert.addButton(withTitle: allSources ? "Suspendre le suivi" : "Mettre en pause")
             return alert.runModal() == .alertSecondButtonReturn
@@ -526,6 +526,7 @@
         @objc private func retryKeychain() { onRetryKeychain() }
 
         @objc private func togglePause() {
+            // The surveillance stop is asked by `toggleManualPause`, once for every place that pauses.
             if state.isCapturing, !confirmRecordingStop(allSources: false) { return }
             onTogglePause()
             updateStatus()

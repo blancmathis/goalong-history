@@ -209,6 +209,8 @@ enum SupportSourceAllowlist {
         "JevMonitor.swift",
         "JevMonitoringPage.swift",
         "JevMonitoringPreferences.swift",
+        "JevStopGate.swift",
+        "JevSurveillance.swift",
         "JevTransport.swift",
         "JevVisibleContextSampler.swift",
         "JevWarningPanel.swift",

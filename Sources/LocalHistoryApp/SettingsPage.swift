@@ -122,7 +122,7 @@ import AppKit
                     GoalongRowDivider()
                     GoalongDisclosureGroup("Tout suspendre, pour une activité sensible") {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour une simple pause des rappels, utilisez « Faire une pause » dans Blocages › Jev : l’historique continue.")
+                            Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour arrêter seulement les rappels, décochez « Surveillance » dans la règle ou la séance : l’historique continue.")
                                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                             GoalongGlobalPauseControl(model: model)

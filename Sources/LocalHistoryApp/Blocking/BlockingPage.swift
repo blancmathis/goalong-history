@@ -782,10 +782,12 @@ struct BlockingMeter: View {
 enum BlockingNowStart {
     @MainActor static func run(_ promised: BlockingNowPlan, listIDs ids: [UUID], lock: BlockLock, controller: BlockingController,
                                braise holds: BraiseController?, red: Bool, intensity: Double, brightness: Double?,
-                               refusal: String) -> Bool {
+                               refusal: String, started onSession: (UUID) -> Void = { _ in }) -> Bool {
         guard let plan = promised.confirmed(at: Date()) else { controller.error = refusal; return false } // wall: page input; the controller moves it to its trusted frame
         if plan.startsLater {
-            return controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil
+            guard let id = controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) else { return false }
+            onSession(id)
+            return true
         }
         let level = red ? intensity : 0
         if let refused = holds?.holdRefusal(intensity: level, brightness: brightness, until: plan.end, lock: lock) {
@@ -793,7 +795,8 @@ enum BlockingNowStart {
         }
         var started = false
         if !ids.isEmpty || holds == nil {
-            guard controller.start(listIDs: ids, until: plan.end, lock: lock) else { return false }
+            guard let id = controller.startSession(listIDs: ids, until: plan.end, lock: lock) else { return false }
+            onSession(id)
             started = true
         }
         if let holds {

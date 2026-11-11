@@ -625,7 +625,13 @@ import LocalHistoryQueryCLI
     /// True when the block started; a refusal is in `error`.
     @discardableResult
     func start(listIDs: [UUID], until end: Date, lock: BlockLock) -> Bool {
-        createSession(listIDs: listIDs, start: nil, end: end, lock: lock) != nil
+        startSession(listIDs: listIDs, until: end, lock: lock) != nil
+    }
+
+    /// The same start, with the session's identifier: « Surveillance » follows this session (T-050 B1).
+    @discardableResult
+    func startSession(listIDs: [UUID], until end: Date, lock: BlockLock) -> UUID? {
+        createSession(listIDs: listIDs, start: nil, end: end, lock: lock)
     }
 
     @discardableResult

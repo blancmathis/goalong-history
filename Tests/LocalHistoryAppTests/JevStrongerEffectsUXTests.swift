@@ -103,7 +103,8 @@ final class JevStrongerEffectsUXTests: XCTestCase {
         XCTAssertFalse(popup.contains("JevInterventionSettings.duration(content.seconds)"))
         XCTAssertFalse(monitor.contains("JevInterventionSettings.duration(self.streak.observedSeconds)"))
         let controls = try source("JevInterventionControls.swift")
-        XCTAssertTrue(controls.contains("JevEffectStrength.allCases"))
+        // T-050 B1: the three strengths sit on the « Surveillance » row of the editor, the stages behind « Personnaliser ».
+        XCTAssertTrue(try source("Blocages/BlockRuleEditor.swift").contains("JevEffectStrength.allCases"))
         XCTAssertTrue(controls.contains("JevInterventionSettings.intensityRange.upperBound"))
         XCTAssertFalse(controls.contains("Ça fait 15 secondes"))
         XCTAssertFalse(controls.contains(".disabled(!preferences.settings.effectsEnabled)"))

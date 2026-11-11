@@ -156,13 +156,12 @@ final class JevInterventionUXTests: XCTestCase {
     }
     func testEverydayBreakDoesNotStopHistoryAndFullStopRequiresConfirmation() throws {
         let root = try source("DashboardRootView.swift")
-        XCTAssertTrue(root.contains("JevQuickPauseControl()"))
+        // T-050 B1: no quick pause of Jev any more; « Surveillance » unchecked stops the reminders, history goes on.
+        XCTAssertFalse(root.contains("JevQuickPauseControl()"))
         XCTAssertFalse(root.contains("GoalongGlobalPauseControl(model: model, compact: true)"))
-        let quick = try source("JevInterventionControls.swift").components(separatedBy: "struct JevQuickPauseControl")[1]
-        XCTAssertFalse(quick.contains("setPaused(")); XCTAssertFalse(quick.contains("onTogglePause"))
-        XCTAssertTrue(quick.contains("monitor.startBreak(minutes:"))
         let global = try source("GoalongGlobalPauseControl.swift")
-        XCTAssertTrue(global.contains("else { confirming = true }"))
+        // B1 point 7: the stop of a running surveillance comes first, then the confirmation.
+        XCTAssertTrue(global.contains("else if JevStopGate.confirm(action: \"Tout suspendre\") { confirming = true }"))
         XCTAssertTrue(global.contains("Suspendre aussi l’historique ?"))
         XCTAssertTrue(try source("SettingsPage.swift").contains("settings-privacy-stop"))
     }

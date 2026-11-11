@@ -526,7 +526,11 @@ struct FocusPlanChip: View {
                         Button(phase.isWork ? "Passer à la pause" : "Reprendre le travail") { act { try controller.skipPhase() } }
                             .accessibilityIdentifier("concentration-skip")
                     }
-                    Button("Arrêter") { act { try controller.stopSession() } }
+                    Button("Arrêter") {
+                        // T-050 B1 correction 2: a session that carries a protected « Surveillance » asks its stop.
+                        guard JevStopGate.confirm(action: "Arrêter la séance", step: JevStopGate.focusStep()) else { return }
+                        act { try controller.stopSession(surveillanceConfirmed: true) }
+                    }
                         .accessibilityIdentifier("concentration-stop")
                 }
             }

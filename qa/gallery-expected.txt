@@ -2985,3 +2985,16 @@ settings/   # T-049 B1 : statut ChatGPT lu sur le consentement d'arrière-plan, 
 agenda/jour-avec-donnees--   # T-049 B2/B3 : la page Activité de l'agenda montre la carte des états du classement
 agenda/acces-refuse--   # T-049 B2/B3 : idem, Activité de l'agenda avec la carte des états du classement
 settings-sheets/analyse-   # T-049 B3 : la note du jour sert « au classement automatique » (le mot « agent » disparaît)
+blocages/editeur-   # Blocages lot B1 (T-050) : « Planifié » remplace « Horaires », « Quand » perd « Jev », bloc « Surveillance » dans « Quoi » ; feuille Jev = réglages communs seulement
+blocages/regles--   # Blocages lot B1 (T-050) : ligne Jev devient « Réglages de la surveillance » (réglages communs)
+blocages/vide--   # Blocages lot B1 (T-050) : ligne Jev devient « Réglages de la surveillance » (réglages communs)
+blocages/depliants--   # Blocages lot B1 (T-050) : ligne Jev devient « Réglages de la surveillance » (réglages communs)
+blocages/blocage-en-cours--   # Blocages lot B1 (T-050) : ligne Jev renommée
+blocages/modules-coupes--   # Blocages lot B1 (T-050) : ligne Jev renommée
+blocages/mot-de-passe--   # Blocages lot B1 (T-050) : ligne Jev renommée
+blocages/seance-en-cours--   # Blocages lot B1 (T-050) : ligne Jev renommée
+concentration/page--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la page voisine
+braise/page-fenetre--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la page voisine
+ambiance/barre-telechargement--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+distractions/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+programme/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)

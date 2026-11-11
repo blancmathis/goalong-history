@@ -13,9 +13,9 @@ struct JevActivationAvailability: Equatable {
 @MainActor struct JevMonitoringPage: View {
     var onOpenRecording: () -> Void
     var onOpenWork: () -> Void = {}
-    /// Inside the Jev rule of « Blocages » (T-050 A1): the editor brings the title, the boxes and the scrolling.
-    /// `.when` = the settings, as rows of « Quand »; `.what` = the reminder, as the « Quoi » of the rule.
-    enum Part { case page, when, what }
+    /// Inside the « Jev » sheet of « Blocages »: the editor brings the title, the box and the scrolling. Only global
+    /// things live here (T-050 B1 point 8): consent, connection, work context. Each rule carries its own reminders.
+    enum Part { case page, when }
     var part: Part = .page
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
@@ -32,7 +32,6 @@ struct JevActivationAvailability: Equatable {
         Group {
             switch part {
             case .when: whenRows
-            case .what: JevInterventionControls().accessibilityIdentifier("jev-intervention-settings")
             case .page:
                 ScrollView {
                     content
@@ -47,24 +46,26 @@ struct JevActivationAvailability: Equatable {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("jev-monitoring-page")
         .sheet(isPresented: $showingConnection) { JevConnectionSheet().goalongControls() }
-        .alert("Activer Jev ?", isPresented: $confirming) {
+        .alert(Self.consentTitle, isPresented: $confirming) {
             Button("Annuler", role: .cancel) {}
-            Button("Autoriser les envois à Jev") { monitor.setEnabled(true) }
+            Button(Self.consentButton) { monitor.setEnabled(true) }
         } message: {
-            Text("Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples hors travail enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées.")
+            Text(Self.consentMessage)
         }
     }
 
+    /// The one consent request of Jev, also asked by the « Surveillance » switch of a rule (T-050 B1 point 5).
+    static let consentTitle = "Activer Jev ?"
+    static let consentButton = "Autoriser les envois à Jev"
+    static let consentMessage = "Toutes les 15 secondes avec activité observable, Goalong transmet les critères de travail et exemples hors travail enregistrés, ainsi qu’un extrait compact (applications, domaines, titres et interactions) à api.typesafe.ai. Ces données peuvent être personnelles. L’API est payante. Une détection suffisamment fiable affiche un rappel, sans attendre une deuxième fenêtre. Les autres sources restent inchangées."
+
     private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Des rappels pour rester sur vos projets de travail.")
+                Text("Des rappels pour rester sur vos projets de travail. Choisissez quand dans une règle ou une séance, avec « Surveillance ».")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
-                GoalongDisclosureGroup("Configurer les rappels et les effets") {
-                    JevInterventionControls().padding(.top, 12)
-                }.accessibilityIdentifier("jev-intervention-settings")
                 if !monitor.recentChecks.isEmpty {
                     GoalongDisclosureGroup("Dernières vérifications, cette session") {
                         JevRecentChecksView(checks: Array(monitor.recentChecks.prefix(6)))
@@ -102,7 +103,6 @@ struct JevActivationAvailability: Equatable {
                         .accessibilityIdentifier("jev-status")
                 }
             }
-            JevScopeControl(showsTitle: false).disabled(!enabled || !availability.hasKey)
             connectionRow
             if !availability.localHistoryEnabled {
                 HStack(alignment: .top, spacing: 12) {
@@ -125,7 +125,7 @@ struct JevActivationAvailability: Equatable {
     }
 
     private var enabledBinding: Binding<Bool> {
-        Binding(get: { enabled }, set: { if $0 { confirming = true } else { monitor.setEnabled(false) } })
+        Binding(get: { enabled }, set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } })
     }
 
     private var monitoringCard: some View {
@@ -142,7 +142,7 @@ struct JevActivationAvailability: Equatable {
                     VStack(alignment: .trailing, spacing: 4) {
                         Toggle("Activer", isOn: Binding(
                             get: { enabled },
-                            set: { if $0 { confirming = true } else { monitor.setEnabled(false) } }))
+                            set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } }))
                             .toggleStyle(.goalongSwitchOnly).fixedSize()
                             .disabled(!availability.canToggle(isEnabled: enabled))
                             .accessibilityHint(availability.canToggle(isEnabled: enabled) || availability.hasKey ? "" : "Connectez d’abord Jev, plus bas.")
@@ -163,9 +163,6 @@ struct JevActivationAvailability: Equatable {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("jev-status")
                 }
-                Rectangle().fill(LHTheme.separator).frame(height: 1)
-                // UI-56: « Quand » only matters once Jev is on (UI-11A: and connected).
-                JevScopeControl().disabled(!enabled || !availability.hasKey)
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
                 if !availability.localHistoryEnabled {

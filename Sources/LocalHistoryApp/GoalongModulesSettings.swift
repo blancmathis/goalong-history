@@ -54,6 +54,14 @@ import SwiftUI
         } message: { Text(Self.concentrationDeleteMessage) }
     }
 
+    static func surveillanceStep(_ module: GoalongModule) -> JevStopGate.Step? {
+        switch module {
+        case .concentration: return JevStopGate.focusStep()
+        case .blocking: return JevStopGate.blockStep()
+        default: return nil
+        }
+    }
+
     private func row(_ module: GoalongModule) -> some View {
         let on = modules.isEnabled(module)
         let locked = (module == .blocking && (blockingController ?? blocking.controller)?.moduleOffRefusal != nil) || (module == .concentration && concentration.controller?.hasLockedBlock == true)
@@ -93,7 +101,13 @@ import SwiftUI
                     .accessibilityIdentifier("settings-module-open-\(module.rawValue)")
             }
             Toggle(module.title, isOn: Binding(get: { on }, set: { value in
+                // T-050 B1: turning off the module of a session that carries a protected « Surveillance » ends it: its stop first.
+                if !value, let step = Self.surveillanceStep(module),
+                   !JevStopGate.confirm(action: "Désactiver \(module.title)", step: step) { return }
+                // The stop was passed (or nothing to ask): the runtime's own check lets this one off through.
+                concentration.surveillanceOffConfirmed = !value && module == .concentration
                 modules.setEnabled(module, value)
+                concentration.surveillanceOffConfirmed = false
                 onChange(module, value)
             }))
                 .toggleStyle(.goalongSwitchOnly).fixedSize()

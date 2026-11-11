@@ -45,6 +45,8 @@ import SwiftUI
                 Button("Fermer") { key = ""; dismiss() }
                     .keyboardShortcut(.cancelAction).accessibilityIdentifier("jev-connection-close")
                 Button("Enregistrer") {
+                    // T-050 B1: a wrong key would cut Jev; replacing one goes through the running surveillance's stop.
+                    if monitor.hasKey, !JevStopGate.confirm(action: "Remplacer la clé") { return }
                     monitor.saveKey(key)
                     // Do not discard the typed value when validation or storage failed.
                     keyError = monitor.error
@@ -60,7 +62,11 @@ import SwiftUI
         .onDisappear { key = "" }
         .alert("Supprimer la clé Jev ?", isPresented: $confirmingRemoval) {
             Button("Annuler", role: .cancel) {}
-            Button("Supprimer la clé", role: .destructive) { monitor.removeKey(); keyError = monitor.error }
+            Button("Supprimer la clé", role: .destructive) {
+                // T-050 B1 correction 3: without a key Jev stops; the running surveillance's stop first.
+                guard JevStopGate.confirm(action: "Supprimer la clé") else { return }
+                monitor.removeKey(); keyError = monitor.error
+            }
         } message: {
             Text("Jev ne pourra plus rien analyser sans une nouvelle clé. Votre historique et vos autres réglages restent inchangés.")
         }

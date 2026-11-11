@@ -100,6 +100,10 @@ struct FocusPanel: Equatable {
     private var sessionCache: [String: [FocusSession]] = [:]
     var hasTimer: Bool { timer != nil }
     var hasLockedSessionBlock: Bool { hasLockedPhaseBlock }
+    /// T-050 B1 correction 2: the stop of the « Surveillance » a session carries (Libre without one, or with Jev off).
+    var surveillanceLock: @MainActor (UUID) -> BlockLock = { _ in .free }
+    /// The current session carries a protected « Surveillance »: stopping it goes through that stop first.
+    var surveillanceProtected: Bool { currentSession.map { surveillanceLock($0.id) != .free } ?? false }
     var hasLockedBlock: Bool {
         guard !hasLockedPhaseBlock else { return true }
         guard let b = blocking() else { return false }
@@ -278,7 +282,10 @@ struct FocusPanel: Equatable {
         value.events.append(.init(kind: .skip, at: clock())); value.plannedEndAt = FocusPhases.plannedEnd(value)
         try persist(value); currentSession = value; refresh()
     }
-    func stopSession(outcome: FocusSession.Outcome? = nil, note: String? = nil) throws {
+    /// `surveillanceConfirmed` = the caller passed the stop of the session's « Surveillance » (`JevStopGate`). Without
+    /// it (the CLI, any other caller), a protected surveillance refuses the stop.
+    func stopSession(outcome: FocusSession.Outcome? = nil, note: String? = nil, surveillanceConfirmed: Bool = false) throws {
+        if !surveillanceConfirmed, surveillanceProtected { throw FocusFailure.locked }
         if storageFailed, currentSession != nil {
             // Nothing can be written: end the session in memory only. A retry, or the stop tombstone at quit, closes it on disk.
             if hasLockedPhaseBlock { throw FocusFailure.locked }
