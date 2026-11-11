@@ -161,6 +161,8 @@ import XCTest
             let text = plan.watchLockMessage(lock, calendar: paris)
             XCTAssertTrue(text.contains("surveillance"), text)
             XCTAssertFalse(text.contains("listes") || text.contains("blocage"), text)
+            // No guard holds the watch: no promise about a restart.
+            XCTAssertFalse(text.contains("redémarrer"), text)
         }
     }
 }

@@ -220,11 +220,12 @@ private extension BlockRule {
 
 extension BlockingNowPlan {
     /// The lock alert of a session with « Surveillance » only: it speaks of the watch, not of lists.
+    /// No guard holds the watch: it promises what Goalong does (it refuses to quit), not a restart it cannot survive.
     func watchLockMessage(_ lock: BlockLock, calendar: Calendar = .current) -> String {
         let deadline = BlockingFormat.deadline(end, now: now, calendar: calendar)
         return lock == .password
             ? "Sans le mot de passe, la surveillance reste active \(BlockingFormat.untilPhrase(deadline))."
-            : "Personne ne pourra arrêter la surveillance avant \(deadline). Quitter Goalong ou redémarrer ne l’arrête pas."
+            : "Personne ne pourra arrêter la surveillance avant \(deadline). Goalong reste ouvert jusqu’à sa fin."
     }
 }
 #endif
