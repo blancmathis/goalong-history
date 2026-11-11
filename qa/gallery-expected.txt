@@ -3143,3 +3143,116 @@ braise/page-fenetre--   # T-052 lot 4 (13) : page Blocages voisine (« Nouvelle 
 ambiance/barre-telechargement--   # T-052 lot 4 (13) : page Blocages voisine (« Nouvelle règle » dans l'en-tête, section « Règles » sans bouton)
 distractions/page--   # T-052 lot 4 (13) : page Blocages voisine (« Nouvelle règle » dans l'en-tête, section « Règles » sans bouton)
 programme/page--   # T-052 lot 4 (13) : page Blocages voisine (« Nouvelle règle » dans l'en-tête, section « Règles » sans bouton)
+activite/28-jours--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/7-jours--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/apercu-developpeur--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-code--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-coverage--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-reports--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-rhythm--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-sessions--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-sommeil--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-temps-ecran--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-texture--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/detail-usage--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/enregistrement-desactive--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/etat-a-preciser--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/etat-classe--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/etat-en-attente--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/jour-realiste--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/journee-vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/mode-developpeur--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/non-classe--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/permission-manquante--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+activite/traces-isolees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/acces-refuse--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/detail-acces-refuse--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/detail-avec-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/detail-non-demande--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/detail-vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/jour-avec-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/reglages-acces-non-demande--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+agenda/reglages-acces-refuse--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+ambiance/barre-telechargement--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+ambiance/page-fenetre--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+bilan/chargement--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+bilan/erreur--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+bilan/non-connecte--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+bilan/rapport--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+blocages/blocage-en-cours--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/depliants--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-horaire--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-horaire-sans-ecran-rouge--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-regle--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-regle-verrouillee--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-seance--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/editeur-toujours--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/modules-coupes--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/mot-de-passe--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/regles--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/seance-en-cours--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/seances-preparees--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocages/vide--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+blocking-surfaces/gel-du-mac--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+braise/page-fenetre--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+compte/acces-refuse--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+compte/relie--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+concentration-maintenant/module-coupe--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+concentration-maintenant/pomodoro-en-cours--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+concentration-panneaux/phase-pause--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+concentration-panneaux/revue-sans-mesure--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+concentration/page--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+confidentialite/choix-par-defaut--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+confidentialite/pause-globale--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+confidentialite/suivi-actif--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+conversations-ia/gestion-remplie--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+conversations-ia/indexees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+conversations-ia/vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+distractions/page--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+fenetre/espace-faible--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+fenetre/interactions-indisponibles--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+fenetre/pause-globale--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+fenetre/stockage-plein--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+fenetre/stockage-refuse--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+historique/chronologie--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+historique/journee-passee-vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+historique/journee-vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+historique/vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+menubar/seance--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+mises-a-jour/a-jour--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mises-a-jour/disponible--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mises-a-jour/erreur--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mises-a-jour/non-configure--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mises-a-jour/recherche--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mon-travail/classement-avec-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mon-travail/definition-enregistree--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mon-travail/definition-et-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mon-travail/reponses-et-usage--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+mon-travail/vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+partage/avec-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+partage/vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+programme/page--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+settings/accueil--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/accueil-etat-inconnu--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/accueil-ouverture-desactivee--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/applications--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/avance--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/avance-developpeur--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/chatgpt--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/chatgpt-consentement--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/connexions--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+settings/enregistrement--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/enregistrement-actif--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/modules--   # T-050 lot C : vocabulaire S8 (« Garde-fous », « Repos », « suspendu », « Désactivée ») + barre latérale
+settings/non-enregistre--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/outils--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/permission-manquante--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/permissions--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/site--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/stockage--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+settings/stockage-avec-donnees--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+temps-ecran/vide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+terminal/aide--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+terminal/installe--   # T-050 lot C : barre latérale « Garde-fous », sous-titre du logo retiré
+modules/actifs-verrouille--   # T-050 lot C : un seul module « Garde-fous » (une ligne de moins)
+modules/reglages--   # T-050 lot C : un seul module « Garde-fous » (une ligne de moins)
