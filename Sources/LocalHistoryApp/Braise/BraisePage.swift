@@ -496,7 +496,7 @@ private struct RedScreenChallenge: Identifiable {
             }
         }.font(.system(size: 13)).padding(28).frame(width: 460)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
-            .onAppear { passwordFocused = true }
+            .onAppear { passwordFocused = true } // own layout
     }
     private func submit() {
         let result = stop?(password) ?? controller.stopActiveRanges(password: password)

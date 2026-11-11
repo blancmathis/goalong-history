@@ -91,10 +91,9 @@ private struct GoalongDismissOnOutsideClick: ViewModifier {
     @State private var confirming = false
 
     func body(content: Content) -> some View {
-        content
+        configure() // the watcher is a plain object: refreshing its closures on every body keeps them current
+        return content
             .background(GoalongSheetDismissal.Probe(watcher: watcher).frame(width: 0, height: 0).allowsHitTesting(false))
-            .onAppear(perform: configure)
-            .onChange(of: confirming) { _ in configure() }
             .alert("Abandonner les modifications ?", isPresented: $confirming) {
                 Button("Continuer", role: .cancel) {}
                 Button("Abandonner", role: .destructive) { cancel() }
