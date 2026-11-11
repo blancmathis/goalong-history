@@ -3135,3 +3135,4 @@ settings/permissions--   # T-052 lot 3a (18) : Réglages prend la largeur de pag
 settings/site--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 settings/stockage--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 settings/stockage-avec-donnees--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+historique/chronologie--   # T-052 lot 3b (S7) : les tranches voisines identiques sont fusionnées (la page est plus courte)

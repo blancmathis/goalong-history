@@ -865,6 +865,7 @@ struct BlockingItemChip: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Retirer \(title)")
+                .help("Retirer \(title)")
             }
         }
         .padding(.leading, 6).padding(.trailing, removable ? 4 : 9).frame(height: 26)

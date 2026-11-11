@@ -489,6 +489,7 @@
                 .foregroundStyle(LHTheme.secondaryText)
                 .frame(width: 30)
                 .accessibilityLabel("Actions sur la conversation")
+                .help("Actions sur la conversation")
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 11)

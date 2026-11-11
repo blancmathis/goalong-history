@@ -60,11 +60,7 @@
                             styled(page(for: navigationStore.selectedSection))
                         }
                             .safeAreaInset(edge: .top, spacing: 0) {
-                                VStack(spacing: 0) {
-                                    GoalongGlobalPauseBanner(model: model)
-                                    GoalongAttentionBanner(model: model)
-                                    GoalongMenuBarVisibilityBanner(watch: .shared)
-                                }
+                                GoalongTopBanners(model: model)
                             }
                             .safeAreaInset(edge: .bottom, spacing: 0) { DashboardPendingChangesBar(model: model) }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
