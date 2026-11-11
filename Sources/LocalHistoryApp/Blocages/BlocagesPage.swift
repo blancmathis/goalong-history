@@ -398,6 +398,14 @@ struct BlocagesFoldView<Content: View>: View {
             BlockingPasswordSheet(controller: controller, purpose: .extraBreak(request.id, what: request.what)) { controller.extraBreakRequest = nil }
                 .goalongControls()
         }
+        .sheet(item: Binding(get: { controller.pauseTypingRequest.flatMap(controller.list) },
+                             set: { if $0 == nil { controller.pauseTypingRequest = nil } })) { list in
+            BlockingTypingChallengeSheet(text: controller.pauseTypingChallenge(listID: list.id), purpose: .pause) { typed in
+                controller.takeBreak(listID: list.id, typed: typed)
+                controller.pauseTypingRequest = nil
+            } onCancel: { controller.pauseTypingRequest = nil }
+            .goalongControls()
+        }
         .sheet(item: $stopping) { block in
             BlockingTypingChallengeSheet(text: controller.typingChallenge(for: block.id)) { typed in
                 controller.stop(block.id, typed: typed)
@@ -408,7 +416,7 @@ struct BlocagesFoldView<Content: View>: View {
     }
 
     private func extraBreakRequest(_ list: BlockList) -> BlockingStopRequest {
-        BlockingStopRequest(id: list.id, what: "Toutes les pauses de « \(list.name) » sont prises aujourd’hui. Le mot de passe en accorde une de \(list.breaks?.minutes ?? 0) min de plus.")
+        BlockingStopRequest(id: list.id, what: controller.pausePasswordText(listID: list.id))
     }
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {

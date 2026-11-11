@@ -74,6 +74,8 @@ struct BlockProgramRange: Codable, Hashable, Identifiable {
     var endMinute: Int
     /// Absent in older documents: an independently stoppable free range.
     var lock: BlockLock?
+    /// The rule's pauses (T-050 D1). Absent = no pause during this range.
+    var pause: PausePolicy?
 
     var effectiveLock: BlockLock { lock ?? .free }
 
@@ -110,6 +112,8 @@ struct BlockSession: Codable, Identifiable, Hashable {
     var end: Date
     var lock: BlockLock
     var origin: Origin = .manual
+    /// The session's pauses (T-050 D1). Absent = the former pauses of each list (`BlockList.breaks`).
+    var pause: PausePolicy?
 }
 
 struct BlockDayUsage: Codable, Hashable {
@@ -147,9 +151,14 @@ struct BlockingDocument: Codable, Equatable {
     var heldPrograms: [BlockSession]?
     var usageHistory: [String: BlockDayUsage]?
     var passwordLock: BlockPasswordLock?
+    /// Use of the rules' pause budgets, by `PausePolicy.id` (T-050 D1). The former list pauses stay in `usage`.
+    var pauses: [UUID: PauseUsage]?
+    /// 1 once the lists' `BlockBreaks` were copied onto their ranges (T-050 D1, point 10).
+    var pauseMigration: Int?
 
     enum CodingKeys: String, CodingKey {
         case version, lists, sessions, usage, freeze, clock, programSkips, heldPrograms, usageHistory, passwordLock
+        case pauses, pauseMigration
     }
     init(version: Int = currentVersion, lists: [BlockList] = [], sessions: [BlockSession] = [],
          usage: BlockDayUsage? = nil, freeze: BlockFreeze? = nil, clock: BlockingClockState? = nil,
@@ -172,6 +181,8 @@ struct BlockingDocument: Codable, Equatable {
         usageHistory = try c.decodeIfPresent([String: BlockDayUsage].self, forKey: .usageHistory)
         // A damaged credential must not make the store recover an older, weaker document.
         passwordLock = try? c.decodeIfPresent(BlockPasswordLock.self, forKey: .passwordLock)
+        pauses = try c.decodeIfPresent([UUID: PauseUsage].self, forKey: .pauses)
+        pauseMigration = try c.decodeIfPresent(Int.self, forKey: .pauseMigration)
     }
 }
 
@@ -187,6 +198,8 @@ struct BlockingActiveBlock: Identifiable, Hashable {
     var breaksLeft: [UUID: Int] = [:]
     var breakEnds: [UUID: Date] = [:]
     var quotaSecondsLeft: [UUID: Double] = [:]
+    /// Per list: the pauses this block allows (T-050 D1). Absent = no pause.
+    var pauses: [UUID: PausePolicy] = [:]
     /// Feedback for the particular list selected by enforcement, including multi-list sessions.
     var feedback: BlockingListFeedback?
 }

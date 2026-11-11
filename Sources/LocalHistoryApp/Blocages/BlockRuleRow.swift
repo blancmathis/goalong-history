@@ -197,7 +197,8 @@ enum BlockRuleSentence {
                 stop = "Vous ne pourrez pas l’arrêter pendant ses horaires."
             }
         }
-        return ([what] + when).joined(separator: ", ") + ". " + stop
+        let pauses = lock == .locked && draft.pause != nil ? " Les pauses du budget restent permises, sans pause en plus." : ""
+        return ([what] + when).joined(separator: ", ") + ". " + stop + pauses
     }
 }
 

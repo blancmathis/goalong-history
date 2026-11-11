@@ -135,7 +135,8 @@ import LocalHistoryQueryCLI
                 }
             } catch { failStore() }
         }
-        if migrateLegacyDayKeys(), let store, !storeFailed {
+        let migratedDays = migrateLegacyDayKeys()
+        if migratePauses() || migratedDays, let store, !storeFailed {
             do { try store.save(self.document) } catch { failStore() }
         }
         lastGood = self.document
@@ -148,7 +149,7 @@ import LocalHistoryQueryCLI
             return self.lists.contains { list in
                 list.effectiveAction == .block &&
                 self.activeBlocks.contains { $0.listIDs.contains(list.id) }
-                    && usage.breakEnds[list.id].map({ $0 > now }) != true
+                    && self.pauseEnd(of: list.id, at: now) == nil
                     && (BlockingRules.effectiveQuotaSeconds(list, usage: usage).map { (usage.quotaSecondsUsed[list.id] ?? 0) >= $0 } ?? true)
                     && BlockingRules.wouldBlock(target, list: list)
             }
@@ -385,6 +386,11 @@ import LocalHistoryQueryCLI
             let new = programCoverage(BlockProgram(ranges: next.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
             if !old.isSubset(of: new) { return "le verrou d’une plage peut seulement monter." }
         }
+        // T-050 D1: a range keeps or lowers its pauses.
+        for range in next.ranges {
+            guard let old = current.ranges.first(where: { $0.id == range.id }) else { continue }
+            if old.pause != range.pause, let refusal = PauseEngine.weakening(old.pause, range.pause) { return refusal }
+        }
         return nil
     }
 
@@ -419,7 +425,7 @@ import LocalHistoryQueryCLI
     /// One list checked and cleaned up (reason, sites, exceptions, keywords), without writing anything.
     private func normalized(_ value: BlockList) -> Result<BlockList, EditRefusal> {
         func refuse(_ reason: String) -> Result<BlockList, EditRefusal> { .failure(EditRefusal(reason: reason)) }
-        var next = value
+        var next = Self.followListBreaks(value, current: document.lists.first { $0.id == value.id })
         if let reason = next.reason {
             let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.isEmpty || BlockingRules.normalizeReason(trimmed) != nil else {
@@ -672,15 +678,15 @@ import LocalHistoryQueryCLI
 
     /// The same start, with the session's identifier: « Surveillance » follows this session (T-050 B1).
     @discardableResult
-    func startSession(listIDs: [UUID], until end: Date, lock: BlockLock) -> UUID? {
-        createSession(listIDs: listIDs, start: nil, end: end, lock: lock)
+    func startSession(listIDs: [UUID], until end: Date, lock: BlockLock, pause: PausePolicy? = nil) -> UUID? {
+        createSession(listIDs: listIDs, start: nil, end: end, lock: lock, pause: pause)
     }
 
     @discardableResult
-    func schedule(listIDs: [UUID], start: Date, end: Date, lock: BlockLock) -> UUID? {
-        createSession(listIDs: listIDs, start: start, end: end, lock: lock)
+    func schedule(listIDs: [UUID], start: Date, end: Date, lock: BlockLock, pause: PausePolicy? = nil) -> UUID? {
+        createSession(listIDs: listIDs, start: start, end: end, lock: lock, pause: pause)
     }
-    private func createSession(listIDs: [UUID], start: Date?, end: Date, lock: BlockLock) -> UUID? {
+    private func createSession(listIDs: [UUID], start: Date?, end: Date, lock: BlockLock, pause: PausePolicy? = nil) -> UUID? {
         guard admitEdit() else { return nil }
         let now = clock(), end = trusted(end)
         let start = start.map(trusted) ?? now
@@ -689,7 +695,7 @@ import LocalHistoryQueryCLI
             error = "Choisissez une liste, un début présent ou futur et une fin après le début."; return nil
         }
         guard lock != .password || hasPassword else { error = "Définissez d’abord le mot de passe de blocage."; return nil }
-        let session = BlockSession(listIDs: listIDs, start: start, end: end, lock: lock)
+        let session = BlockSession(listIDs: listIDs, start: start, end: end, lock: lock, pause: pause)
         document.sessions.append(session)
         commit()
         return storeFailed ? nil : session.id
@@ -904,33 +910,182 @@ import LocalHistoryQueryCLI
         return verifyPassword(password)
     }
 
-    /// The password lets one break more pass once the day's breaks are used: never under a hard lock or a freeze.
-    func offersExtraBreak(listID: UUID) -> Bool {
-        guard freeze == nil, hasPassword, let breaks = list(listID)?.breaks else { return false }
-        let usage = todayUsage()
-        guard usage.breakEnds[listID].map({ $0 > clock() }) != true, (usage.breaksTaken[listID] ?? 0) >= breaks.count else { return false }
-        let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
-        return locks.contains(.password) && !locks.contains(.locked)
+    // MARK: Pauses (T-050 D1)
+
+    /// The pauses one block allows for one list: a program window carries its range's, a session its own or else
+    /// the list's former pauses (`BlockList.breaks`, pool = the list's id, counted in the day usage as before).
+    private func pausePolicy(origin: BlockSession.Origin, session: BlockSession?, listID: UUID, lock: BlockLock) -> PausePolicy? {
+        if case .program(let rangeID) = origin {
+            return list(listID)?.program.ranges.first { $0.id == rangeID }?.pause
+        }
+        if let pause = session?.pause { return pause }
+        return list(listID)?.breaks.map { PausePolicy.migrated($0, listID: listID, lock: lock) }
     }
 
-    /// The list whose extra break waits for the password sheet of the Blocking page.
+    /// The list's former pauses: same pool, same counter, same rules as before T-050 D1.
+    private func isLegacy(_ policy: PausePolicy, listID: UUID) -> Bool { policy.id == listID }
+
+    /// Pause state written on a block: what is left and the running pause's end.
+    private func applyPause(_ policy: PausePolicy?, to block: inout BlockingActiveBlock, listID: UUID, usage: BlockDayUsage, now: Date) {
+        guard let policy else {
+            // No pause of its own: a former list pause still running keeps this session open (as before).
+            if case .program = block.origin { return }
+            if let end = usage.breakEnds[listID], end > now { block.breakEnds[listID] = end }
+            return
+        }
+        block.pauses[listID] = policy
+        if isLegacy(policy, listID: listID) {
+            block.breaksLeft[listID] = max(0, (policy.maxPauses ?? 0) - (usage.breaksTaken[listID] ?? 0))
+            if let end = usage.breakEnds[listID], end > now { block.breakEnds[listID] = end }
+        } else {
+            let pool = PauseEngine.current(document.pauses?[policy.id], policy: policy, now: now, calendar: calendar)
+            block.breaksLeft[listID] = PauseEngine.pausesLeft(policy, usage: pool, now: now)
+            if let end = PauseEngine.runningEnd(pool, now: now) { block.breakEnds[listID] = end }
+        }
+    }
+
+    /// A list is on a pause only when every active block over it is (point 5): another rule that blocks the same
+    /// thing keeps it blocked. The earliest end wins.
+    nonisolated static func pauseEnd(of listID: UUID, blocks: [BlockingActiveBlock], at date: Date) -> Date? {
+        let over = blocks.filter { $0.listIDs.contains(listID) }
+        guard !over.isEmpty else { return nil }
+        var end: Date?
+        for block in over {
+            guard let blockEnd = block.breakEnds[listID], blockEnd > date else { return nil }
+            end = min(end ?? blockEnd, blockEnd)
+        }
+        return end
+    }
+    func pauseEnd(of listID: UUID, at date: Date) -> Date? { Self.pauseEnd(of: listID, blocks: activeBlocks, at: date) }
+
+    /// The paused pools, for « Surveillance » ranges that carry the same rule's pauses.
+    var runningPausePools: Set<UUID> {
+        let now = clock()
+        return Set((document.pauses ?? [:]).filter { $0.value.end.map { $0 > now } == true }.keys)
+    }
+
+    /// The pool a pause asked from list `listID` takes: the ruling block's. Nil = no pause here.
+    private func pausePool(for listID: UUID) -> (policy: PausePolicy, lock: BlockLock)? {
+        // A rule's pause stays usable when a stronger rule without pause covers the same list: that rule keeps blocking.
+        guard let ruling = activeBlocks.filter({ $0.listIDs.contains(listID) && $0.pauses[listID] != nil })
+                .max(by: { ($0.lock.strength, $0.end) < ($1.lock.strength, $1.end) }),
+              var policy = ruling.pauses[listID] else { return nil }
+        // The strongest lock among the blocks that share this pool decides « Pause en plus ».
+        let locks = activeBlocks.filter { $0.listIDs.contains(listID) && $0.pauses[listID]?.id == policy.id }.map(\.lock)
+        let lock = locks.max { $0.strength < $1.strength } ?? ruling.lock
+        if isLegacy(policy, listID: listID) {
+            policy = PausePolicy.migrated(BlockBreaks(count: policy.maxPauses ?? 0, minutes: policy.maxPauseMinutes ?? 0), listID: listID,
+                                          lock: activeBlocks.contains { $0.listIDs.contains(listID) && $0.lock == .password } ? .password : lock)
+        }
+        return (policy, lock)
+    }
+
+    /// What a pause asked now would need. Read by the veil and the page: never changes anything.
+    private func pauseDecision(listID: UUID, proof: PauseProof) -> PauseDecision? {
+        guard freeze == nil, let (policy, lock) = pausePool(for: listID) else { return nil }
+        if isLegacy(policy, listID: listID) {
+            let usage = todayUsage()
+            if usage.breakEnds[listID].map({ $0 > clock() }) == true { return .refused("Une pause est déjà en cours.") }
+            if (usage.breaksTaken[listID] ?? 0) < (policy.maxPauses ?? 0) { return .granted(end: clock(), extra: false) }
+            let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
+            guard locks.contains(.password), !locks.contains(.locked) else {
+                return .refused("Toutes les pauses du jour sont utilisées. Un mot de passe est exigé pour une pause supplémentaire.")
+            }
+            return proof == .passed ? .granted(end: clock(), extra: true) : .needsExtraPassword
+        }
+        return PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
+                                   proof: proof, now: clock(), calendar: calendar).0
+    }
+
+    /// The password lets one break more pass once the period's pauses are used: never under « Verrouillé » or a freeze.
+    func offersExtraBreak(listID: UUID) -> Bool {
+        guard hasPassword, pauseEnd(of: listID, at: clock()) == nil else { return false }
+        return pauseDecision(listID: listID, proof: .none) == .needsExtraPassword
+    }
+
+    /// Minutes of the next pause from list `listID`, for the buttons. Nil = none.
+    func pauseMinutes(listID: UUID) -> Int? {
+        guard let (policy, _) = pausePool(for: listID) else { return nil }
+        if isLegacy(policy, listID: listID) { return policy.maxPauseMinutes }
+        let pool = PauseEngine.current(document.pauses?[policy.id], policy: policy, now: clock(), calendar: calendar)
+        let left = Int(PauseEngine.secondsLeft(policy, usage: pool, now: clock()) / 60)
+        return policy.maxPauseMinutes.map { min($0, left) } ?? left
+    }
+
+    /// The text of the password sheet for a pause.
+    func pausePasswordText(listID: UUID) -> String {
+        let name = list(listID)?.name ?? "cette liste"
+        if offersExtraBreak(listID: listID), let (policy, _) = pausePool(for: listID) {
+            return "Toutes les pauses de « \(name) » sont prises pour ce \(policy.period.title). Le mot de passe en accorde une de \(policy.extraMinutes) min de plus."
+        }
+        return "Une pause de « \(name) » demande le mot de passe de blocage."
+    }
+
+    /// The list whose pause waits for the password sheet of the Blocking page (gate or « Pause en plus »).
     @Published var extraBreakRequest: UUID?
+    /// The list whose pause waits for the text to retype.
+    @Published var pauseTypingRequest: UUID?
     /// Brings the Blocking page to the front (set by the app).
     var onOpen: (() -> Void)?
 
-    /// The veil's button: a planned break is taken at once; an extra one asks for the password in Goalong.
+    /// The veil's and the page's button: a pause without a condition is taken at once; one behind a text or a
+    /// password opens its sheet in Goalong; a wait starts (or tells when it ends).
     func breakFromVeil(listID: UUID) {
-        if offersExtraBreak(listID: listID) { extraBreakRequest = listID; onOpen?() } else { takeBreak(listID: listID) }
+        switch pauseDecision(listID: listID, proof: .none) {
+        case .needsExtraPassword?, .needsGate(.password)?: extraBreakRequest = listID; onOpen?()
+        case .needsGate(.typing)?: pauseTypingRequest = listID; onOpen?()
+        default: takeBreak(listID: listID)
+        }
     }
 
-    @discardableResult func takeBreak(listID: UUID, password: String? = nil) -> BlockingPasswordResult {
+    /// The text to retype before a pause of list `listID`: one per pool, kept until the pause is taken.
+    func pauseTypingChallenge(listID: UUID) -> String {
+        typingChallenge(for: pausePool(for: listID)?.policy.id ?? listID)
+    }
+
+    @discardableResult func takeBreak(listID: UUID, password: String? = nil, typed: String? = nil) -> BlockingPasswordResult {
         guard admitEdit() else { return refusePassword("Le fichier de blocage est illisible. Relancez Goalong pour le recharger.") }
         guard freeze == nil else { return refusePassword("Aucune pause pendant le blocage de tout le Mac.") }
-        guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let breaks = list(listID)?.breaks else { return refusePassword("Cette liste n’a pas de pause disponible.") }
+        guard activeBlocks.contains(where: { $0.listIDs.contains(listID) }), let (policy, lock) = pausePool(for: listID) else {
+            return refusePassword("Cette liste n’a pas de pause disponible.")
+        }
+        if isLegacy(policy, listID: listID) { return takeLegacyBreak(listID: listID, minutes: policy.maxPauseMinutes ?? 0, count: policy.maxPauses ?? 0, password: password) }
+        let now = clock()
+        // The gate is checked before the budget is touched; a wrong password is counted as for a stop.
+        var proof = PauseProof.none
+        let ask = PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
+                                      proof: .none, now: now, calendar: calendar).0
+        switch ask {
+        case .needsGate(.typing):
+            guard let typed, typed == typingChallenge(for: policy.id) else { return refusePassword("Le texte ne correspond pas.") }
+            proof = .passed
+        case .needsGate(.password), .needsExtraPassword:
+            guard let password else { return refusePassword("Le mot de passe de blocage est exigé pour cette pause.") }
+            let result = verifyPassword(password)
+            guard result == .ok else { return result }
+            proof = .passed
+        default: break
+        }
+        let (decision, usage) = PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
+                                                     proof: proof, now: now, calendar: calendar)
+        document.pauses = document.pauses ?? [:]
+        document.pauses?[policy.id] = usage
+        challenges[policy.id] = nil
+        commit()
+        switch decision {
+        case .granted: return storeFailed ? .refused(reason: error ?? "La pause n’a pas pu être enregistrée.") : .ok
+        case .waiting(let until): return refusePassword("Pause possible \(BlockingFormat.moment(wallFrame(until))), pendant 5 min.")
+        case .refused(let reason): return refusePassword(reason)
+        case .needsGate, .needsExtraPassword: return refusePassword("Le mot de passe de blocage est exigé pour cette pause.")
+        }
+    }
+
+    /// The former list pauses, unchanged (count × minutes a day, one more with the password under « Mot de passe »).
+    private func takeLegacyBreak(listID: UUID, minutes: Int, count: Int, password: String?) -> BlockingPasswordResult {
         var usage = todayUsage()
         guard usage.breakEnds[listID].map({ $0 > clock() }) != true else { return refusePassword("Une pause est déjà en cours.") }
         let taken = usage.breaksTaken[listID] ?? 0
-        if taken >= breaks.count {
+        if taken >= count {
             let locks = activeBlocks.filter { $0.listIDs.contains(listID) }.map(\.lock)
             guard locks.contains(.password), !locks.contains(.locked), let password else {
                 return refusePassword("Toutes les pauses du jour sont utilisées. Un mot de passe est exigé pour une pause supplémentaire.")
@@ -939,18 +1094,58 @@ import LocalHistoryQueryCLI
             guard result == .ok else { return result }
         }
         usage.breaksTaken[listID] = taken + 1
-        usage.breakEnds[listID] = min(usageDayBounds(at: clock()).end, clock().addingTimeInterval(TimeInterval(breaks.minutes * 60)))
+        usage.breakEnds[listID] = min(usageDayBounds(at: clock()).end, clock().addingTimeInterval(TimeInterval(minutes * 60)))
         document.usage = usage
         commit()
         return storeFailed ? .refused(reason: error ?? "La pause n’a pas pu être enregistrée.") : .ok
     }
 
+    /// « Reprendre »: ends the pauses that open this list now, only the time used counts.
     func endBreak(listID: UUID) {
         guard admitEdit() else { return }
+        let now = clock()
         var usage = todayUsage()
         usage.breakEnds[listID] = nil
         document.usage = usage
+        for block in activeBlocks where block.listIDs.contains(listID) {
+            guard let policy = block.pauses[listID], !isLegacy(policy, listID: listID), let pool = document.pauses?[policy.id] else { continue }
+            document.pauses?[policy.id] = PauseEngine.ended(pool, now: now)
+        }
         commit()
+    }
+
+    /// Point 10, once: a list's `BlockBreaks` become the pauses of each of its ranges, same limits, same counter.
+    /// Returns whether the document changed.
+    private func migratePauses() -> Bool {
+        guard document.pauseMigration == nil else { return false }
+        for index in document.lists.indices {
+            guard let breaks = document.lists[index].breaks else { continue }
+            let listID = document.lists[index].id
+            for r in document.lists[index].program.ranges.indices where document.lists[index].program.ranges[r].pause == nil {
+                let lock = document.lists[index].program.ranges[r].effectiveLock
+                document.lists[index].program.ranges[r].pause = PausePolicy.migrated(breaks, listID: listID, lock: lock)
+            }
+        }
+        document.pauseMigration = 1
+        // An empty document keeps no file: the mark is written with the first saved list.
+        return !document.lists.isEmpty
+    }
+
+    /// The list row « Autoriser des pauses » keeps driving its own ranges: a new range gets the list's pauses, and a
+    /// range still on the former pauses follows their new count and length.
+    nonisolated static func followListBreaks(_ next: BlockList, current: BlockList?) -> BlockList {
+        guard next.breaks != current?.breaks else { return next }
+        var next = next
+        let switchedOn = current?.breaks == nil
+        for index in next.program.ranges.indices {
+            let range = next.program.ranges[index]
+            guard range.pause?.id == next.id || (switchedOn && range.pause == nil) else { continue }
+            var pause = next.breaks.map { PausePolicy.migrated($0, listID: next.id, lock: range.effectiveLock) }
+            // The « Pause en plus » of the former pauses follows the lock at the time of the pause, not this copy.
+            if let kept = range.pause { pause?.extraPerPeriod = kept.extraPerPeriod }
+            next.program.ranges[index].pause = pause
+        }
+        return next
     }
 
     // MARK: Freeze
@@ -1027,8 +1222,7 @@ import LocalHistoryQueryCLI
                                             end: session.end, lock: lock, origin: session.origin)
             for id in session.listIDs {
                 guard let list = list(id) else { continue }
-                if let breaks = list.breaks { block.breaksLeft[id] = max(0, breaks.count - (usage.breaksTaken[id] ?? 0)) }
-                if let end = usage.breakEnds[id], end > now { block.breakEnds[id] = end }
+                applyPause(pausePolicy(origin: session.origin, session: session, listID: id, lock: lock), to: &block, listID: id, usage: usage, now: now)
                 if let quota = BlockingRules.effectiveQuotaSeconds(list, usage: usage) {
                     block.quotaSecondsLeft[id] = max(0, quota - (usage.quotaSecondsUsed[id] ?? 0))
                 }
@@ -1117,7 +1311,8 @@ import LocalHistoryQueryCLI
                 BlockingSchedule.nextStart(of: list.program, after: now, calendar: calendar).map { .init(listID: list.id, date: $0) }
             }
         }
-        return BlockingTimerInput(lists: lists, activeBlocks: activeBlocks, usage: todayUsage(),
+        let pauseEnds = Dictionary(uniqueKeysWithValues: lists.compactMap { list in pauseEnd(of: list.id, at: now).map { (list.id, $0) } })
+        return BlockingTimerInput(lists: lists, activeBlocks: activeBlocks, usage: todayUsage(), pauseEnds: pauseEnds,
                                   allowances: frictionAllowances.filter { $0.value > now }, upcomingStarts: starts, target: lastObservation)
     }
 
@@ -1173,6 +1368,8 @@ import LocalHistoryQueryCLI
         if let until = document.passwordLock?.retryAfter { boundaries.append(until) }
         boundaries += lists.compactMap { $0.program.lockedUntil }
         boundaries += (document.usage?.breakEnds.values).map(Array.init) ?? []
+        boundaries += activeBlocks.flatMap { $0.breakEnds.values }
+        boundaries += (document.pauses ?? [:]).values.compactMap { $0.waitStartedAt }
         if let end = freeze?.end { boundaries.append(end) }
         if let start = nextProgramStart?.date { boundaries += [start, start.addingTimeInterval(-60)] }
         let exactBoundaries = boundaries
@@ -1242,6 +1439,12 @@ import LocalHistoryQueryCLI
         // A break keeps its real length too: one in progress must not outlive a reboot behind (C7-02), and a
         // finished one, moved back with the clock, must not run again (r2).
         for (id, end) in document.usage?.breakEnds ?? [:] where jump < 0 || end > oldWall { document.usage?.breakEnds[id] = end.addingTimeInterval(jump) }
+        for (id, pool) in document.pauses ?? [:] {
+            var moved = pool
+            if let end = pool.end, jump < 0 || end > oldWall { moved.end = end.addingTimeInterval(jump); moved.start = pool.start?.addingTimeInterval(jump) }
+            if let wait = pool.waitStartedAt { moved.waitStartedAt = wait.addingTimeInterval(jump) }
+            document.pauses?[id] = moved
+        }
     }
     /// Turns each protected program window in progress at `wall` into a held session, so a later
     /// recomputation (clock jump, zone change) cannot end it early. A zone change also holds a
@@ -1306,7 +1509,7 @@ import LocalHistoryQueryCLI
             var usage = todayUsage()
             for list in lists where list.quotaMinutesPerDay != nil && BlockingRules.wouldBlock(previous, list: list) {
                 guard activeBlocks.contains(where: { $0.listIDs.contains(list.id) && $0.start <= previous.at }),
-                      usage.breakEnds[list.id].map({ $0 > previous.at }) != true else { continue }
+                      pauseEnd(of: list.id, at: previous.at) == nil else { continue }
                 usage.quotaSecondsUsed[list.id] = min(BlockingRules.effectiveQuotaSeconds(list, usage: usage)!, (usage.quotaSecondsUsed[list.id] ?? 0) + seconds)
             }
             if document.usage != usage && !usage.quotaSecondsUsed.isEmpty {
@@ -1331,7 +1534,7 @@ import LocalHistoryQueryCLI
         for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
             guard let block = rulingBlock(for: list.id) else { continue }
             let usage = todayUsage()
-            if usage.breakEnds[list.id].map({ $0 > target.at }) == true { continue }
+            if pauseEnd(of: list.id, at: target.at) != nil { continue }
             if target.isBrowser, !target.isForeground,
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
@@ -1363,7 +1566,7 @@ import LocalHistoryQueryCLI
             } else {
                 let reason = special ?? list.quotaMinutesPerDay.map { BlockingVeilPresentation.Reason.quotaUsed(target.url ?? "", minutes: $0) } ?? .site(target.url ?? "")
                 let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: wallFrame(block.start), end: wallFrame(block.end),
-                    lock: block.lock, breakMinutes: list.breaks?.minutes, breaksLeft: block.breaksLeft[list.id] ?? 0,
+                    lock: block.lock, breakMinutes: pauseMinutes(listID: list.id), breaksLeft: block.breaksLeft[list.id] ?? 0,
                     feedback: feedback(for: list.id), extraBreak: offersExtraBreak(listID: list.id))
                 backend.blockSite(target, presentation: presentation) { [weak self] in self?.breakFromVeil(listID: list.id) }
             }
@@ -1398,7 +1601,7 @@ import LocalHistoryQueryCLI
         var deadline: Date?
         for list in lists {
             guard let end = activeBlocks.filter({ $0.listIDs.contains(list.id) && $0.start <= now && $0.end > now }).map(\.end).max(),
-                  usage.breakEnds[list.id].map({ $0 > now }) != true else { continue }
+                  pauseEnd(of: list.id, at: now) == nil else { continue }
             let special = BlockingRules.hasSites(list) && !target.isInternalPage && target.url == nil && (!siteBlockingAvailable
                 || unreadableSince[target.pid].map({ now.throttleElapsed(since: $0) >= 3 }) == true)
             let required = special || (BlockingRules.wouldBlock(target, list: list)
@@ -1471,7 +1674,7 @@ import LocalHistoryQueryCLI
         refresh(enforceLast: false)
         guard freeze == nil, activeBlocks.contains(where: { $0.listIDs.contains(list.id) }),
             !lists.contains(where: { candidate in candidate.effectiveAction == .block && activeBlocks.contains { $0.listIDs.contains(candidate.id) }
-                && todayUsage().breakEnds[candidate.id].map { $0 > clock() } != true
+                && pauseEnd(of: candidate.id, at: clock()) == nil
                 && (BlockingRules.effectiveQuotaSeconds(candidate, usage: todayUsage()).map { (todayUsage().quotaSecondsUsed[candidate.id] ?? 0) >= $0 } ?? true)
                 && BlockingRules.wouldBlock(target, list: candidate) }) else { clearFriction(); return }
         var usage = todayUsage(); usage.continued = usage.continued ?? [:]; usage.continued?[list.id, default: 0] += 1
@@ -1553,8 +1756,7 @@ import LocalHistoryQueryCLI
             var block = BlockingActiveBlock(id: window.rangeID, listIDs: [list.id], start: window.start, end: window.end,
                                             lock: list.program.isLocked(at: now) ? .locked : rangeLock,
                                             origin: .program(window.rangeID))
-            if let breaks = list.breaks { block.breaksLeft[list.id] = max(0, breaks.count - (usage.breaksTaken[list.id] ?? 0)) }
-            if let end = usage.breakEnds[list.id], end > now { block.breakEnds[list.id] = end }
+            applyPause(list.program.ranges.first { $0.id == window.rangeID }?.pause, to: &block, listID: list.id, usage: usage, now: now)
             if let quota = BlockingRules.effectiveQuotaSeconds(list, usage: usage) {
                 block.quotaSecondsLeft[list.id] = max(0, quota - (usage.quotaSecondsUsed[list.id] ?? 0))
             }

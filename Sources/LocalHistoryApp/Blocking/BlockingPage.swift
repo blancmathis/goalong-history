@@ -118,6 +118,14 @@ import LocalHistoryCore
             BlockingPasswordSheet(controller: controller, purpose: .extraBreak(request.id, what: request.what)) { controller.extraBreakRequest = nil }
                 .goalongControls()
         }
+        .sheet(item: Binding(get: { controller.pauseTypingRequest.flatMap(controller.list) },
+                             set: { if $0 == nil { controller.pauseTypingRequest = nil } })) { list in
+            BlockingTypingChallengeSheet(text: controller.pauseTypingChallenge(listID: list.id), purpose: .pause) { typed in
+                controller.takeBreak(listID: list.id, typed: typed)
+                controller.pauseTypingRequest = nil
+            } onCancel: { controller.pauseTypingRequest = nil }
+            .goalongControls()
+        }
         .sheet(item: $stopping) { block in
             BlockingTypingChallengeSheet(text: controller.typingChallenge(for: block.id)) { typed in
                 controller.stop(block.id, typed: typed)
@@ -134,7 +142,7 @@ import LocalHistoryCore
     }
 
     private func extraBreakRequest(_ list: BlockList) -> BlockingStopRequest {
-        BlockingStopRequest(id: list.id, what: "Toutes les pauses de « \(list.name) » sont prises aujourd’hui. Le mot de passe en accorde une de \(list.breaks?.minutes ?? 0) min de plus.")
+        BlockingStopRequest(id: list.id, what: controller.pausePasswordText(listID: list.id))
     }
 
     private func unlockText(_ origin: BlockSession.Origin, end: Date) -> String {
@@ -304,7 +312,7 @@ struct BlockingStopRequest: Identifiable {
 
     @ViewBuilder private func actions(_ block: BlockingActiveBlock, lists: [BlockList], breaks: Bool = false) -> some View {
         // Breaks belong to lists: offered once, on the leading block.
-        let breakList = breaks ? lists.first { (block.breaksLeft[$0.id] ?? 0) > 0 && block.breakEnds[$0.id] == nil } : nil
+        let breakList = breaks ? lists.first { (block.breaksLeft[$0.id] ?? 0) > 0 && block.breakEnds[$0.id] == nil && block.pauses[$0.id] != nil } : nil
         let extraList = breaks && breakList == nil ? lists.first { controller.offersExtraBreak(listID: $0.id) } : nil
         HStack(spacing: 8) {
             if let list = extraList {
@@ -312,11 +320,11 @@ struct BlockingStopRequest: Identifiable {
                     .help("Pauses du jour prises. Le mot de passe en accorde une de plus.")
                     .accessibilityIdentifier("blocking-extra-break")
             }
-            if let list = breakList, let breaks = list.breaks {
-                Button { controller.takeBreak(listID: list.id) } label: {
-                    Label("Pause de \(breaks.minutes) min", systemImage: "cup.and.saucer")
+            if let list = breakList, let minutes = controller.pauseMinutes(listID: list.id) {
+                Button { controller.breakFromVeil(listID: list.id) } label: {
+                    Label("Pause de \(minutes) min", systemImage: "cup.and.saucer")
                 }
-                .help("\(FrenchCount.count(block.breaksLeft[list.id] ?? 0, "pause restante", "pauses restantes")) sur \(breaks.count) aujourd’hui")
+                .help(FrenchCount.count(block.breaksLeft[list.id] ?? 0, "pause restante", "pauses restantes"))
                 .accessibilityIdentifier("blocking-take-break")
             }
             switch block.lock {
@@ -780,12 +788,13 @@ struct BlockingMeter: View {
 /// already reached is refused, never moved to the next day. Both parts are checked before one is written: a refused red
 /// screen starts no block, and the reverse. True = started or scheduled: the caller closes.
 enum BlockingNowStart {
-    @MainActor static func run(_ promised: BlockingNowPlan, listIDs ids: [UUID], lock: BlockLock, controller: BlockingController,
+    @MainActor static func run(_ promised: BlockingNowPlan, listIDs ids: [UUID], lock: BlockLock, pause: PausePolicy? = nil,
+                               controller: BlockingController,
                                braise holds: BraiseController?, red: Bool, intensity: Double, brightness: Double?,
                                refusal: String, started onSession: (UUID) -> Void = { _ in }) -> Bool {
         guard let plan = promised.confirmed(at: Date()) else { controller.error = refusal; return false } // wall: page input; the controller moves it to its trusted frame
         if plan.startsLater {
-            guard let id = controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) else { return false }
+            guard let id = controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock, pause: pause) else { return false }
             onSession(id)
             return true
         }
@@ -795,7 +804,7 @@ enum BlockingNowStart {
         }
         var started = false
         if !ids.isEmpty || holds == nil {
-            guard let id = controller.startSession(listIDs: ids, until: plan.end, lock: lock) else { return false }
+            guard let id = controller.startSession(listIDs: ids, until: plan.end, lock: lock, pause: pause) else { return false }
             onSession(id)
             started = true
         }
@@ -1214,7 +1223,9 @@ struct BlockingLockExplainer: View {
 
 /// « Difficile »: retype the text, character by character. Pasting is refused.
 struct BlockingTypingChallengeSheet: View {
+    enum Purpose { case stop, pause }
     let text: String
+    var purpose: Purpose = .stop
     var onSubmit: (String) -> Void
     var onCancel: () -> Void
     @State private var typed = ""
@@ -1227,8 +1238,9 @@ struct BlockingTypingChallengeSheet: View {
             GoalongSheetScroll(cap: 420) {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Recopier pour arrêter").font(LHTheme.sheetTitleFont).tracking(-0.4)
-                        Text("Le blocage s’arrête quand le texte est identique. Le collage est refusé.")
+                        Text(purpose == .stop ? "Recopier pour arrêter" : "Recopier pour une pause").font(LHTheme.sheetTitleFont).tracking(-0.4)
+                        Text(purpose == .stop ? "Le blocage s’arrête quand le texte est identique. Le collage est refusé."
+                             : "La pause commence quand le texte est identique. Le collage est refusé.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Text(groups(text, matched: matched))
@@ -1257,7 +1269,7 @@ struct BlockingTypingChallengeSheet: View {
             GoalongSheetFooter(inset: 28) {
                 Spacer()
                 Button("Continuer le blocage", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Arrêter") { onSubmit(typed) }
+                Button(purpose == .stop ? "Arrêter" : "Prendre la pause") { onSubmit(typed) }
                     .buttonStyle(LHPrimaryButtonStyle())
                     .disabled(typed != text)
             }
