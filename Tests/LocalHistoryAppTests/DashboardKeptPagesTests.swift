@@ -366,7 +366,7 @@ import XCTest
 
     /// B1 + N1: the real dashboard, reopened on Réglages with a past day J chosen in Activité. The main pages are built
     /// at rest: the day stays J, the chosen session stays, no permission guide is announced. Activité's first real
-    /// showing then runs its appear logic (it follows today, as a visit did before pages were kept).
+    /// showing then keeps that day J (T-052 lot 3a: one day shared with Historique, Activité no longer starts on today).
     func testPagesBuiltAtRestActOnNothingOutsideThemselves() throws {
         try GalleryRenderer.withPreparedApplication {
             let ctx = GalleryContext()
@@ -407,8 +407,7 @@ import XCTest
             // First real showing of Activité: its appear logic runs now.
             model.selectSection(.overview)
             spin(host, 0.3)
-            XCTAssertTrue(calendar.isDate(model.navigationStore.selectedDay, inSameDayAs: model.now()),
-                          "Activité's appear logic did not run on its first showing")
+            XCTAssertEqual(model.navigationStore.selectedDay, pastDay, "Activité's first showing moved the shared day")
         }
     }
 

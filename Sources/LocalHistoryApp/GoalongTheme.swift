@@ -94,6 +94,8 @@
         static let cardRadius: CGFloat = 12
         static let cardCorner: CGFloat = 12
         static let readableWidth: CGFloat = 760
+        /// T-052 (18): the width of the pages that fill the window, Activité and Réglages alike.
+        static let pageWidth: CGFloat = 1080
 
         /// One family, San Francisco. Character comes from scale and tight tracking, as on the site.
         static let heroFont = Font.system(size: 56, weight: .bold)

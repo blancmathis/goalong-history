@@ -61,7 +61,7 @@ import AppKit
                 // the agreements are in the consent store).
                 content.disabled(settingsStore.configLocked && pane != .home && pane != .work)
             }
-            .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
+            .frame(maxWidth: LHTheme.pageWidth, alignment: .leading)
             .padding(.horizontal, LHTheme.pageInset).padding(.top, 28).padding(.bottom, LHTheme.pageBottomInset)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }

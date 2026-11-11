@@ -3097,3 +3097,35 @@ blocages/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Rel
 blocages/editeur-seance-preparee   # Blocages lot B2a (T-050) : nouvelle image, une séance préparée rouverte (nom, « Quand » seul, Enregistrer)
 menubar/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer » et « Lancer » dans le panneau
 blocages/editeur-   # Blocages lot B2a (T-050) : « Enregistrer pour plus tard… » sous « Séance » ; « Quand » d’une règle existante réduit à son choix ; niveaux d’arrêt impossibles d’une séance masqués
+agenda/reglages-acces-non-demande--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+agenda/reglages-acces-refuse--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+compte/acces-refuse--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+compte/relie--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mises-a-jour/a-jour--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mises-a-jour/disponible--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mises-a-jour/erreur--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mises-a-jour/non-configure--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mises-a-jour/recherche--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mon-travail/classement-avec-donnees--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mon-travail/definition-enregistree--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mon-travail/definition-et-donnees--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mon-travail/reponses-et-usage--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+mon-travail/vide--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/accueil--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/accueil-etat-inconnu--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/accueil-ouverture-desactivee--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/applications--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/avance--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/avance-developpeur--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/chatgpt--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/chatgpt-consentement--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/connexions--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/enregistrement--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/enregistrement-actif--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/modules--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/outils--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/permission-manquante--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/permissions--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/site--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/stockage--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
+settings/stockage-avec-donnees--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
