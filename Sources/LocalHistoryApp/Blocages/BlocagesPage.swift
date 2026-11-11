@@ -379,6 +379,8 @@ struct BlocagesFoldView<Content: View>: View {
                                   })
             if let error = controller.error, showsError {
                 BlockingNoteButton(note: GoalongNote(error, tone: .warning), hint: "Fermer l’erreur") { controller.error = nil }
+                    // The whole notice is the close button: VoiceOver says the error and what a press does.
+                    .accessibilityLabel("\(error). Fermer l’erreur")
                     .accessibilityIdentifier("blocking-error")
             }
         }

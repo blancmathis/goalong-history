@@ -3136,3 +3136,4 @@ settings/site--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Act
 settings/stockage--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 settings/stockage-avec-donnees--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 historique/chronologie--   # T-052 lot 3b (S7) : les tranches voisines identiques sont fusionnées (la page est plus courte)
+menubar/   # T-050 B2c (S5, point 13) : « En ce moment » (séance + règles en cours, arrêt de la page) puis « Lancer » ; Ambiance sur une ligne ; listes du panneau retirées

@@ -2,8 +2,8 @@
     import Ambiance
     import SwiftUI
 
-    /// The menu bar panel: tracking, today's thread, then the three daily actions
-    /// (Concentration, Ambiance, Blocage). See docs/MENUBAR-PANEL-20261011.md.
+    /// The menu bar panel (T-050 B2c, S5): what runs now with its stop or pause, then launch in one click, then the
+    /// day's figure. Ambiance folds to one line. See docs/MENUBAR-PANEL-20261011.md.
     struct MenuBarPanelView: View {
         @ObservedObject var model: MenuBarPanelModel
         /// Reports the content's natural height so the popover can animate its own size
@@ -17,14 +17,11 @@
                 GoalongDevBanner()
                 PanelHeader(model: model)
                 PanelDivider()
+                NowSection(model: model)
+                LaunchSection(model: model, store: model.prepared)
                 TodaySection(model: model)
                 PanelDivider()
-                FocusSection(model: model)
-                PreparedSection(model: model, store: model.prepared)
-                PanelDivider()
                 AmbianceSection(model: model)
-                PanelDivider()
-                BlockingSection(model: model)
                 if model.hasRedScreen {
                     PanelDivider()
                     RedScreenSection(model: model)
@@ -89,6 +86,7 @@
         var prominent = false
         let action: () -> Void
         @State private var hovered = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             Button(action: action) {
@@ -110,7 +108,7 @@
             }
             .buttonStyle(.plain)
             .onHover { hovered = $0 }
-            .animation(LHTheme.hover, value: hovered)
+            .animation(reduceMotion ? nil : LHTheme.hover, value: hovered)
             .help(label)
             .accessibilityLabel(label)
         }
@@ -299,26 +297,132 @@
         }
     }
 
-    // MARK: - Concentration
+    // MARK: - En ce moment (S5: the active state and its stop come first)
 
-    private struct FocusSection: View {
+    /// The running session and the rules that block now: the page « Blocages »'s own objects (point 13). Absent while
+    /// nothing runs.
+    private struct NowSection: View {
         @ObservedObject var model: MenuBarPanelModel
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
-            PanelSection(title: "Concentration") {
-                Group {
-                    if let run = model.focusRun {
-                        FocusRunning(run: run, model: model).transition(.opacity.combined(with: .move(edge: .trailing)))
-                    } else if !model.concentrationEnabled {
-                        InactiveRow(text: "Séances libres ou Pomodoro, avec blocage.",
-                                    action: "Activer dans Réglages", perform: model.openModulesSettings)
-                            .transition(.opacity)
-                    } else {
-                        FocusSetup(model: model).transition(.opacity.combined(with: .move(edge: .leading)))
+            if model.focusRun != nil || !model.live.isEmpty {
+                PanelSection(title: "En ce moment") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let run = model.focusRun {
+                            FocusRunning(run: run, model: model)
+                                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .trailing)))
+                        }
+                        VStack(spacing: 0) {
+                            ForEach(Array(model.live.enumerated()), id: \.element.id) { index, item in
+                                if index > 0 { Rectangle().fill(LHTheme.separator).frame(height: 1).padding(.leading, 24) }
+                                LiveRow(item: item, model: model)
+                            }
+                        }
                     }
+                    .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusRun == nil)
                 }
-                .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusRun == nil)
+                PanelDivider()
+            }
+        }
+    }
+
+    /// One rule or block that runs now. Its stop follows the page: « Libre » stops here, a proof is asked in the page,
+    /// « Verrouillé » shows no stop (P3, P4).
+    private struct LiveRow: View {
+        let item: MenuBarPanelModel.LiveItem
+        @ObservedObject var model: MenuBarPanelModel
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Image(systemName: item.lock.symbol)
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.text)
+                    .frame(width: 14)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(item.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(item.title). \(item.detail). Sécurité : \(item.lock.title)")
+                Spacer(minLength: 8)
+                switch item.stop {
+                case .now:
+                    Button("Arrêter") { model.stopLive(item.id) }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                        .help("Arrêter cette règle")
+                        .accessibilityLabel("Arrêter : \(item.title)")
+                case .page:
+                    Button("Arrêter…") { model.stopLive(item.id) }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                        .help("L’arrêt se demande dans Blocages (\(item.lock.title))")
+                        .accessibilityLabel("Demander l’arrêt : \(item.title)")
+                case .none:
+                    EmptyView()
+                }
+            }
+            .frame(minHeight: 36)
+            .help(item.stop == .none ? "Verrouillé : s’arrête à la fin prévue" : "")
+        }
+    }
+
+    // MARK: - Lancer (S5: launch in one click)
+
+    private struct LaunchSection: View {
+        @ObservedObject var model: MenuBarPanelModel
+        @ObservedObject var store: PreparedSessionStore
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        private var hasPrepared: Bool { store.document.last != nil || !store.document.sessions.isEmpty }
+
+        var body: some View {
+            if model.focusRun == nil || hasPrepared {
+                PanelSection(title: "Lancer", trailing: {
+                    if hasPrepared && store.document.shortcut != .none {
+                        Text(store.document.shortcut.title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityLabel("Raccourci de Relancer")
+                    }
+                }, content: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if model.focusRun == nil {
+                            if !model.concentrationEnabled {
+                                InactiveRow(text: "Séances libres ou Pomodoro, avec blocage.",
+                                            action: "Activer dans Réglages", perform: model.openModulesSettings)
+                                    .transition(.opacity)
+                            } else {
+                                FocusSetup(model: model)
+                                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .leading)))
+                            }
+                        }
+                        if hasPrepared { prepared }
+                    }
+                    .animation(reduceMotion ? nil : LHTheme.settle, value: model.focusRun == nil)
+                })
+                PanelDivider()
+            }
+        }
+
+        /// « Relancer la dernière séance » and the prepared sessions (T-050 B2 point 4), same objects as the page.
+        private var prepared: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                if let last = store.document.last {
+                    Button { model.launchPrepared(last) } label: {
+                        Label("Relancer la dernière séance", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("menubar-relaunch")
+                }
+                ForEach(store.document.sessions.prefix(4)) { session in
+                    HStack(spacing: 10) {
+                        Text(session.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Button("Lancer") { model.launchPrepared(session) }
+                            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                            .accessibilityLabel("Lancer \(session.name)")
+                    }
+                    .frame(minHeight: 28)
+                }
             }
         }
     }
@@ -375,6 +479,7 @@
     private struct FocusRunning: View {
         let run: MenuBarPanelModel.FocusRun
         @ObservedObject var model: MenuBarPanelModel
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         private var meta: String {
             // Decision 15: the big clock says what it counts.
@@ -410,7 +515,7 @@
                         .frame(maxHeight: .infinity)
                     }
                     .frame(height: 4)
-                    .animation(.linear(duration: 1), value: progress)
+                    .animation(reduceMotion ? nil : .linear(duration: 1), value: progress)
                     .accessibilityHidden(true)
                 }
                 HStack(spacing: 8) {
@@ -457,41 +562,38 @@
             MenuBarPanelModel.AmbianceTab.allCases.filter { t in model.ambianceSources.contains { $0.kind == kind(of: t) } }
         }
 
-        private var showsGrid: Bool { expanded || model.ambiancePlaying }
-
         var body: some View {
-            PanelSection(title: "Ambiance") {
-                if model.ambianceEnabled {
-                    Button(showsGrid ? "Réduire" : "Choisir un son") {
-                        withAnimation(reduceMotion ? nil : LHTheme.settle) { expanded.toggle() }
-                    }
-                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                    .opacity(model.ambiancePlaying ? 0 : 1)
-                    .disabled(model.ambiancePlaying)
-                }
-            } content: {
-                if !model.ambianceEnabled {
+            if !model.ambianceEnabled {
+                PanelSection(title: "Ambiance") {
                     InactiveRow(text: "Musique générative pour travailler ou se reposer.",
                                 action: "Activer dans Réglages", perform: model.enableAmbiance)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        player
-                        volume
-                        if let error = model.ambianceError {
-                            Text(error.replacingOccurrences(of: " Réessayez.", with: "")).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
-                                .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                // S5: one line, play and name. The volume and the sounds open on the chevron.
+                VStack(alignment: .leading, spacing: 10) {
+                    player
+                    if let error = model.ambianceError {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(error.replacingOccurrences(of: " Réessayez.", with: "")).font(.system(size: 12))
+                                .foregroundStyle(LHTheme.danger).fixedSize(horizontal: false, vertical: true)
                             if let current = model.ambianceCurrent {
-                                Button("Réessayer") { model.play(current) }.buttonStyle(LHSecondaryButtonStyle())
+                                Spacer(minLength: 8)
+                                Button("Réessayer") { model.play(current) }.buttonStyle(LHQuietButtonStyle())
+                                    .font(.system(size: 12, weight: .medium))
                             }
                         }
-                        if showsGrid { grid.transition(.opacity) }
                     }
-                    .padding(EdgeInsets(top: 10, leading: 12, bottom: 12, trailing: 12))
-                    .background(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous).fill(LHTheme.cardBackground))
-                    .overlay(RoundedRectangle(cornerRadius: LHTheme.cardRadius, style: .continuous).strokeBorder(LHTheme.separator))
-                    .animation(reduceMotion ? nil : LHTheme.settle, value: showsGrid)
-                    .onAppearWhenShown { if let current = model.ambianceCurrent { tab = tabFor(current.kind) } }
+                    if expanded {
+                        VStack(alignment: .leading, spacing: 10) {
+                            volume
+                            grid
+                        }
+                        .transition(.opacity)
+                    }
                 }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .animation(reduceMotion ? nil : LHTheme.settle, value: expanded)
+                .onAppearWhenShown { if let current = model.ambianceCurrent { tab = tabFor(current.kind) } }
             }
         }
 
@@ -499,60 +601,60 @@
             switch kind { case .focus: return .focus; case .relax: return .relax; case .texture: return .texture; case .ownFile: return .ownFile }
         }
 
+        private func toggleExpanded() {
+            withAnimation(reduceMotion ? nil : LHTheme.settle) { expanded.toggle() }
+        }
+
         private var player: some View {
             HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).fill(LHTheme.fieldBackground)
-                    RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.separator)
-                    if let current = model.ambianceCurrent {
-                        AmbianceWave(seed: current.id, character: AmbianceWaveCharacter(current),
-                                     // A neutral tile: ink while playing, never lime (DESIGN §12, no tinted icon tile).
-                                     look: model.ambiancePlaying && !model.ambianceLoading ? .playing : .idle)  // R-73: same vignette while loading
-                            .padding(.horizontal, 6).padding(.vertical, 10)
-                    }
+                // No sound chosen yet: the button opens the sounds, never a dead control (P4).
+                Button(action: model.ambianceCurrent == nil ? toggleExpanded : model.togglePlay) {
+                    Image(systemName: model.ambiancePlaying ? "stop.fill" : "play.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(LHTheme.elevatedBackground))
+                        .overlay(Circle().strokeBorder(LHTheme.separator))
+                        .contentShape(Circle())
                 }
-                .frame(width: 40, height: 40)
-                .accessibilityHidden(true)
+                .buttonStyle(.plain)
+                .disabled(model.ambianceLoading)
+                .help(playLabel)
+                .accessibilityLabel(playLabel)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(model.ambianceCurrent?.title ?? "Aucun son choisi")
+                    Text(model.ambianceCurrent?.title ?? "Ambiance")
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 4)
                 if model.ambiancePlaying {
                     PanelIconButton(symbol: "forward.fill", label: "Son suivant", quiet: true, action: model.playNext)
                 }
-                Button(action: model.togglePlay) {
-                    Image(systemName: model.ambiancePlaying ? "stop.fill" : "play.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(LHTheme.elevatedBackground))
-                        .overlay(Circle().strokeBorder(LHTheme.separator))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(model.ambianceCurrent == nil || model.ambianceLoading)
-                .help(model.ambiancePlaying ? "Arrêter" : "Lire")
-                .accessibilityLabel(model.ambiancePlaying ? "Arrêter l’Ambiance" : "Lire l’Ambiance")
+                PanelIconButton(symbol: expanded ? "chevron.up" : "chevron.down",
+                                label: expanded ? "Masquer les sons" : "Choisir un son", quiet: true, action: toggleExpanded)
+                    .accessibilityIdentifier("menubar-ambiance-expand")
             }
         }
 
+        private var playLabel: String {
+            if model.ambianceCurrent == nil { return "Choisir un son" }
+            return model.ambiancePlaying ? "Arrêter l’Ambiance" : "Lire l’Ambiance"
+        }
+
         private var subtitle: String {
-            guard let current = model.ambianceCurrent else { return "Choisissez un son ci-dessous" }
+            guard let current = model.ambianceCurrent else { return "Ambiance, aucun son choisi" }
             if model.ambianceLoading { return "Chargement du son…" }  // R-73 (R9A-24)
-            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "Dernier son écouté"
+            return model.ambiancePlaying ? "\(kindTitle(current.kind)), en cours" : "Ambiance, dernier son écouté"
         }
 
         private var volume: some View {
             HStack(spacing: 8) {
-                Image(systemName: "speaker.fill").font(.system(size: 10))
+                Image(systemName: "speaker.fill").font(.system(size: 10)).accessibilityHidden(true)
                 Slider(value: $model.ambianceVolume, in: 0...1)
                     .controlSize(.small)
                     .tint(LHTheme.secondaryText)
                     .accessibilityLabel("Volume de l’Ambiance")
-                Image(systemName: "speaker.wave.2.fill").font(.system(size: 10))
+                Image(systemName: "speaker.wave.2.fill").font(.system(size: 10)).accessibilityHidden(true)
             }
             .foregroundStyle(LHTheme.secondaryText)
         }
@@ -608,13 +710,16 @@
         let pill: Namespace.ID
         let action: () -> Void
         @State private var hovered = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             Button(action: action) {
                 HStack(spacing: 4) {
                     Text(source.title).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 0)
-                    if !source.isAvailable { Image(systemName: "arrow.down.circle").font(.system(size: 10)) }
+                    if !source.isAvailable {
+                        Image(systemName: "arrow.down.circle").font(.system(size: 10)).accessibilityHidden(true)
+                    }
                 }
                 .font(.system(size: 12, weight: selected ? .semibold : .medium))
                 .foregroundStyle(source.isAvailable ? LHTheme.text : LHTheme.secondaryText)
@@ -633,72 +738,10 @@
             .buttonStyle(.plain)
             .disabled(!source.isAvailable)
             .onHover { hovered = $0 }
-            .animation(LHTheme.hover, value: hovered)
+            .animation(reduceMotion ? nil : LHTheme.hover, value: hovered)
             .help(source.isAvailable ? source.title : "\(source.title) : à télécharger dans Ambiance")
+            .accessibilityLabel(source.isAvailable ? source.title : "\(source.title), à télécharger dans Ambiance")
             .accessibilityAddTraits(selected ? .isSelected : [])
-        }
-    }
-
-    // MARK: - Blocage
-
-    /// « Relancer la dernière séance » and the prepared sessions in one click (T-050 B2 point 4). Absent while
-    /// there is nothing to launch.
-    private struct PreparedSection: View {
-        @ObservedObject var model: MenuBarPanelModel
-        @ObservedObject var store: PreparedSessionStore
-
-        var body: some View {
-            if store.document.last != nil || !store.document.sessions.isEmpty {
-                PanelDivider()
-                PanelSection(title: "Séances", trailing: {
-                    if store.document.shortcut != .none {
-                        Text(store.document.shortcut.title).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                            .accessibilityLabel("Raccourci de Relancer")
-                    }
-                }, content: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let last = store.document.last {
-                            Button { model.launchPrepared(last) } label: {
-                                Label("Relancer la dernière séance", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(LHSecondaryButtonStyle())
-                            .accessibilityIdentifier("menubar-relaunch")
-                        }
-                        ForEach(store.document.sessions.prefix(4)) { session in
-                            HStack(spacing: 10) {
-                                Text(session.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Spacer(minLength: 8)
-                                Button("Lancer") { model.launchPrepared(session) }
-                                    .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                                    .accessibilityLabel("Lancer \(session.name)")
-                            }
-                            .frame(minHeight: 28)
-                        }
-                    }
-                })
-            }
-        }
-    }
-
-    private struct BlockingSection: View {
-        @ObservedObject var model: MenuBarPanelModel
-
-        var body: some View {
-            PanelSection(title: "Blocage") {
-                if !model.blockingEnabled {
-                    InactiveRow(text: "Bloquez les sites et apps qui vous distraient.",
-                                action: "Activer dans Réglages", perform: model.openModulesSettings)
-                } else if model.blockLists.isEmpty {
-                    InactiveRow(text: "Aucune liste pour l’instant.", action: "Créer une liste", perform: model.openApp)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(model.blockLists.enumerated()), id: \.element.id) { index, list in
-                            if index > 0 { Rectangle().fill(LHTheme.separator).frame(height: 1).padding(.leading, 24) }
-                            BlockRow(list: list, model: model)
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -764,40 +807,6 @@
                         .accessibilityIdentifier("menubar-red-screen-ranges")
                 }
             }
-        }
-    }
-
-    private struct BlockRow: View {
-        let list: MenuBarPanelModel.BlockList
-        @ObservedObject var model: MenuBarPanelModel
-
-        var body: some View {
-            HStack(spacing: 10) {
-                Image(systemName: list.isLocked ? "lock.fill" : "shield")
-                    .font(.system(size: 12))
-                    .foregroundStyle(list.isLocked || list.isActive ? LHTheme.text : LHTheme.secondaryText)
-                    .frame(width: 14)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(list.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                    Text(list.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 8)
-                if list.isLocked {
-                    Button("Arrêter le blocage…") { model.requestStopBlocking(list.id) }
-                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                        .accessibilityLabel("Demander l’arrêt de \(list.title)")
-                } else {
-                    Toggle("Bloquer \(list.title)", isOn: Binding(get: { list.isActive }, set: { model.setBlockList(list.id, active: $0) }))
-                        .toggleStyle(GoalongSwitchStyle(layout: .switchOnly))
-                        .controlSize(.small)
-                        .help(list.isActive ? "Arrêter ce blocage" : "Bloquer jusqu’à minuit")
-                }
-            }
-            .frame(minHeight: 40)
-            .padding(.vertical, 2)
         }
     }
 
