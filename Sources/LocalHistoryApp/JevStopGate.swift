@@ -68,8 +68,9 @@ import LocalHistoryCore
 
     /// The stop of the surveillance the Blocage sessions carry.
     static func blockStep(monitor: JevMonitor? = nil) -> Step {
-        blockStep(store: .shared, blocks: BlockingRuntime.shared.controller?.activeBlocks ?? [], now: Date(), // wall: the controller's block dates
-                  jevEnabled: (monitor ?? .shared).enabled)
+        let wall = Date() // wall: the controller's block dates
+        return blockStep(store: .shared, blocks: BlockingRuntime.shared.controller?.activeBlocks ?? [], now: wall,
+                         jevEnabled: (monitor ?? .shared).enabled)
     }
 
     /// Only the blocks already started carry their surveillance: a block programmed later asks nothing yet. Pure.
