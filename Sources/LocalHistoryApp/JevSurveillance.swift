@@ -57,6 +57,8 @@ struct JevRunningSessions: Equatable {
     var blocks: Set<UUID> = []
     /// Pause pools running now (`PausePolicy.id`, T-050 D1): a rule on a pause does not watch.
     var pausedPools: Set<UUID> = []
+    /// Sessions (Blocage or focus) whose own pause runs now (T-050 D1b): their « Surveillance » mark rests too.
+    var pausedSessions: Set<UUID> = []
 }
 
 /// One rule or session that carries « Surveillance » now.
@@ -161,7 +163,7 @@ enum JevRangeWrite: Equatable {
             if let pool = range.pause?.id, sessions.pausedPools.contains(pool) { continue }
             result.append(JevSurveillanceActivity(settings: range.settings, lock: range.lock))
         }
-        if let focus = sessions.focus {
+        if let focus = sessions.focus, !sessions.pausedSessions.contains(focus) {
             if let mark = document.marks.last(where: { $0.kind == .focus && $0.id == focus }) {
                 if mark.on { result.append(JevSurveillanceActivity(settings: mark.settings, lock: mark.lock)) }
             } else if document.sessionDefault {
@@ -171,7 +173,7 @@ enum JevRangeWrite: Equatable {
         for mark in document.marks where mark.on {
             switch mark.kind {
             case .focus: continue
-            case .block: if sessions.blocks.contains(mark.id) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
+            case .block: if sessions.blocks.contains(mark.id), !sessions.pausedSessions.contains(mark.id) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
             case .own: if ownRuns(mark, now: now) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
             }
         }

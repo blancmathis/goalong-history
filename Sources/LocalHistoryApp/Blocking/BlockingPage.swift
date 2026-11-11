@@ -324,8 +324,14 @@ struct BlockingStopRequest: Identifiable {
                 Button { controller.breakFromVeil(listID: list.id) } label: {
                     Label("Pause de \(minutes) min", systemImage: "cup.and.saucer")
                 }
-                .help(FrenchCount.count(block.breaksLeft[list.id] ?? 0, "pause restante", "pauses restantes"))
+                .help(controller.pauseBudget(listID: list.id) ?? FrenchCount.count(block.breaksLeft[list.id] ?? 0, "pause restante", "pauses restantes"))
                 .accessibilityIdentifier("blocking-take-break")
+            }
+            if controller.canExtend(block.id) {
+                // D1b: one click, stricter (P3), so no condition.
+                Button { controller.extendSession(block.id) } label: { Label("+ 15 min", systemImage: "clock") }
+                    .help("Prolonge cette séance de 15 minutes.")
+                    .accessibilityIdentifier("blocking-extend")
             }
             switch block.lock {
             case .free:
@@ -353,7 +359,14 @@ struct BlockingStopRequest: Identifiable {
         HStack(spacing: 10) {
             if let end = block.breakEnds[list.id] {
                 Image(systemName: "cup.and.saucer").foregroundStyle(LHTheme.secondaryText).frame(width: 16)
-                Text("\(list.name) en pause jusqu’à \(BlockingFormat.endTime(end))")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(list.name) en pause jusqu’à \(BlockingFormat.endTime(end))")
+                    if let held = controller.pauseHolder(listID: list.id) {
+                        Text(held).foregroundStyle(LHTheme.secondaryText).accessibilityIdentifier("blocking-pause-held")
+                    } else if let budget = controller.pauseBudget(listID: list.id) {
+                        Text(budget).foregroundStyle(LHTheme.secondaryText)
+                    }
+                }
                 Spacer(minLength: 8)
                 Button("Reprendre") { controller.endBreak(listID: list.id) }.buttonStyle(LHQuietButtonStyle())
             } else if let left = block.quotaSecondsLeft[list.id], let quota = list.quotaMinutesPerDay {

@@ -112,6 +112,9 @@ import SwiftUI
         return "à ces sites et apps"
     }
 
+    /// « Pauses de séance : 3 × 5 min » (the list's former pauses, D1b).
+    static func legacyBreaksTitle(_ breaks: BlockBreaks) -> String { "Pauses de séance : \(breaks.count) × \(breaks.minutes) min" }
+
     static func behaviour(_ list: BlockList) -> String {
         // R4d-26 (tour 2): a block list with nothing in it blocks nothing yet; it must not claim « ces sites et apps ».
         let empty = list.sites.isEmpty && list.apps.isEmpty && (list.keywords?.isEmpty ?? true)
@@ -313,20 +316,21 @@ import SwiftUI
                         value: { EmptyView() }
                         .accessibilityIdentifier("blocking-list-earn")
                     }
-                    limitRow(on: list.breaks != nil, title: "Autoriser des pauses",
-                             detail: "Choisies à l’avance, possibles même verrouillé.") { on in
-                        var next = list; next.breaks = on ? BlockBreaks(count: 3, minutes: 5) : nil; controller.save(next)
-                    } value: {
-                        if let breaks = list.breaks {
-                            HStack(spacing: 6) {
-                                Stepper(value: Binding(get: { breaks.count }, set: { value in
-                                    var next = list; next.breaks?.count = value; controller.save(next)
-                                }), in: Self.breakCountRange(current: breaks.count, stricterOnly: stricterOnly)) { Text("\(breaks.count) ×").monospacedDigit() }.fixedSize()
-                                Stepper(value: Binding(get: { breaks.minutes }, set: { value in
-                                    var next = list; next.breaks?.minutes = value; controller.save(next)
-                                }), in: Self.breakMinutesRange(current: breaks.minutes, stricterOnly: stricterOnly)) { Text("\(breaks.minutes) min").monospacedDigit() }.fixedSize()
+                    if let breaks = list.breaks {
+                        // D1b: pauses belong to rules and sessions now. The former list line stays readable; it can
+                        // only be removed (stricter), never turned on or raised here.
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(BlockingListsSection.legacyBreaksTitle(breaks)).font(.system(size: 13, weight: .medium))
+                                Text("Ancien réglage. Les pauses se règlent dans chaque règle ou séance.")
+                                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
+                            Spacer(minLength: 8)
+                            Button("Retirer") { var next = list; next.breaks = nil; controller.save(next) }
+                                .buttonStyle(LHQuietButtonStyle())
                         }
+                        .accessibilityIdentifier("blocking-list-breaks")
                     }
                 }
                 .padding(.top, 12)
@@ -510,8 +514,6 @@ import SwiftUI
 
     /// Under a lock a stepper stops at the current value: the controller would refuse any rise.
     static func quotaRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 5...(stricterOnly ? max(5, current) : 720) }
-    static func breakCountRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 1...(stricterOnly ? max(1, current) : 12) }
-    static func breakMinutesRange(current: Int, stricterOnly: Bool) -> ClosedRange<Int> { 1...(stricterOnly ? max(1, current) : 30) }
 
     private func saveName() {
         let entry = Self.commitName(nameDraft, of: list, controller: controller)

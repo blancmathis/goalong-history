@@ -46,6 +46,8 @@ struct FocusSession: Codable, Equatable, Identifiable {
     var note: String?
     /// Absent in sessions written before per-session Jev suggestions.
     var distractions: FocusDistractionRecord?
+    /// The session's pauses (T-050 D1b), carried by each phase's block. Absent = the lists' former pauses, as before.
+    var pause: PausePolicy?
     var endedAt: Date? { events.first { $0.kind == .stop }?.at }
     var valid: Bool {
         FocusValidation.text(intent, maximum: 140, required: true) && mode.valid

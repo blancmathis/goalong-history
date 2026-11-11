@@ -10,6 +10,10 @@ struct PausePolicy: Codable, Hashable, Identifiable {
         var title: String {
             switch self { case .day: return "jour"; case .week: return "semaine"; case .month: return "mois" }
         }
+        /// « aujourd’hui », « cette semaine », « ce mois-ci ».
+        var thisPeriod: String {
+            switch self { case .day: return "aujourd’hui"; case .week: return "cette semaine"; case .month: return "ce mois-ci" }
+        }
     }
 
     /// What comes before each pause.
@@ -204,6 +208,19 @@ enum PauseEngine {
         let end = min(now.addingTimeInterval(TimeInterval(policy.extraMinutes * 60)), midnight)
         usage.extraCount += 1; usage.start = now; usage.end = end; usage.extra = true
         return (.granted(end: end, extra: true), usage)
+    }
+
+    /// D1b (point 5): « Pauses : 7 min sur 10 aujourd’hui · 2 pauses restantes ». Shown on the rule row, the block
+    /// screen and the menu-bar panel; the running pause is counted up to now.
+    static func budgetText(_ policy: PausePolicy, usage stored: PauseUsage?, now: Date, calendar: Calendar) -> String {
+        let usage = current(stored, policy: policy, now: now, calendar: calendar)
+        let left = Int((secondsLeft(policy, usage: usage, now: now) / 60).rounded(.down))
+        var text = "Pauses : \(left) min sur \(policy.budgetMinutes) \(policy.period.thisPeriod)"
+        if let cap = policy.maxPauses {
+            let count = max(0, cap - usage.count)
+            text += count == 0 ? " · plus aucune pause" : " · \(count) pause\(count > 1 ? "s" : "") restante\(count > 1 ? "s" : "")"
+        }
+        return text
     }
 
     /// « Reprendre » before the end: only the time used counts.

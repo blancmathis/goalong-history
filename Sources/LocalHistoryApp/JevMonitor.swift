@@ -181,8 +181,15 @@ struct JevRecentCheck: Identifiable {
     }
     /// The rules and sessions that carry « Surveillance » now.
     func currentActivity(now: Date = Date()) -> [JevSurveillanceActivity] {
-        surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider(),
-                                                         pausedPools: BlockingRuntime.shared.controller?.runningPausePools ?? []), now: now)
+        let blocking = BlockingRuntime.shared.controller
+        var paused = blocking?.pausedSessionIDs ?? []
+        // The focus session rests while its phase's block is on its own pause.
+        if let focus = focusSessionID, let phase = ConcentrationRuntime.shared.controller?.ownedPhaseBlockID, paused.contains(phase) {
+            paused.insert(focus)
+        }
+        return surveillance.active(sessions: JevRunningSessions(focus: focusSessionID, blocks: blocksProvider(),
+                                                                pausedPools: blocking?.runningPausePools ?? [],
+                                                                pausedSessions: paused), now: now)
     }
     private var gate: String? {
         if timedBreak != nil || breakStorageInvalid { return "Jev suspendu : aucun appel ni rappel" }

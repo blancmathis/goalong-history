@@ -293,6 +293,12 @@ extension BlockRule {
         }
     }
 
+    /// D1b (point 5): what is left of the rule's pauses, for its row. Nil = no pause or no Blocage module.
+    @MainActor func pauseBudget(blocking: BlockingController?) -> String? {
+        guard let policy = pause, let blocking else { return nil }
+        return blocking.pauseBudgetText(policy, listID: lists.first { $0.pause?.id == policy.id }?.id)
+    }
+
     /// The whole row for VoiceOver: when, what, the safety, the state.
     func spokenLabel(now: Date) -> String {
         "\(title). \(summary). Sécurité : \(lock.title). \(stateText(now: now))."
