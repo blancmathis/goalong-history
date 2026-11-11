@@ -68,7 +68,8 @@
     final class DashboardWindowController: NSWindowController, NSWindowDelegate {
         let viewModel: DashboardViewModel
 
-        private static let frameAutosaveName = "GoalongHistory.MainWindow.v4"
+        static let frameAutosaveName = "GoalongHistory.MainWindow.v4"
+        private(set) var keyRouter: DashboardKeyRouter?
         private static let legacyFrameAutosaveName = "LocalHistory.MainWindow.v3"
         private var applicationVisibilityObservers: [NSObjectProtocol] = []
         private var sessionObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
@@ -203,10 +204,31 @@
 
             self.window = window
             window.delegate = self
+            keyRouter?.remove()
+            keyRouter = DashboardKeyRouter(window: window, model: viewModel)
             SoftwareUpdateManager.shared.registerDashboardWindow(window)
         }
 
-        func show(section: DashboardSection = .overview) {
+        /// Lot 2a (11): the page a plain « open Goalong » shows. A window already on a page keeps it; a window that was
+        /// closed reopens on the last main page (Activité when none, or when Ambiance is off).
+        func resumeSection() -> DashboardSection {
+            if window != nil { return viewModel.navigationStore.selectedSection }
+            return viewModel.lastMainSection(ambianceAvailable: GoalongModuleStore.shared.isEnabled(.ambiance))
+        }
+
+        /// Lot 2a (4): ⌘F. Only while the dashboard window is the key one and no sheet is open.
+        var canFocusSearch: Bool {
+            guard isWindowLoaded, let window, window.isKeyWindow, window.attachedSheet == nil else { return false }
+            return !DashboardKeyboard.searchFields(in: window).isEmpty
+        }
+
+        func focusSearch() {
+            guard isWindowLoaded, let window, window.isKeyWindow else { return }
+            DashboardKeyboard.focusSearchField(in: window)
+        }
+
+        func show(section requested: DashboardSection? = nil) {
+            let section = requested ?? resumeSection()
             // Re-showing the current page (Dock click, ⌘, or a relaunch restore) keeps its
             // navigation, e.g. the Settings pane that was open.
             if viewModel.navigationStore.selectedSection != section { viewModel.selectSection(section) }
@@ -272,6 +294,8 @@
         }
 
         func windowWillClose(_ notification: Notification) {
+            keyRouter?.remove()
+            keyRouter = nil
             visibilityCoordinator.update(.hidden)
             viewModel.dashboardWillClose()
             let closingWindow = notification.object as? NSWindow

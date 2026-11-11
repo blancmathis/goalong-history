@@ -537,6 +537,18 @@ import AppleScreenTime
             settingsPane = pane
         }
 
+        /// Lot 2a (11): the last main page, read again when the window reopens.
+        static let lastPageKey = "goalong.dashboard.lastPage"
+
+        /// The main page the window reopens on: the last one shown, else Activité. Ambiance only while its module is on.
+        func lastMainSection(ambianceAvailable: Bool) -> DashboardSection {
+            guard let raw = defaults.string(forKey: Self.lastPageKey), let section = DashboardSection(rawValue: raw),
+                  !section.isSecondary, section != .work, section != .monitoring, section != .analytics
+            else { return .overview }
+            if section == .ambiance, !ambianceAvailable { return .overview }
+            return section
+        }
+
         func selectSection(_ section: DashboardSection) {
             // « Mon travail » is no page any more: the definition is the pane « Définition du travail » of Réglages.
             // Jev (`.monitoring`) is a rule of the page « Blocages », which opens its editor.
@@ -553,13 +565,15 @@ import AppleScreenTime
             } else {
                 secondaryReturn = nil
             }
-            if section == .settings { settingsPane = .home }
+            // Lot 2a (7): « Réglages » keeps the open pane; only a click on Réglages while already there goes home.
+            if section == .settings, previousSection == .settings { settingsPane = .home }
             if section != previousSection {
                 // R13c: a measure left open never closes on another page's read.
                 GoalongSwitchTiming.cancel(previousSection.rawValue)
                 GoalongSwitchTiming.begin(section.rawValue)
             }
             selectedSection = section
+            if !section.isSecondary { defaults.set(section.sidebarParent.rawValue, forKey: Self.lastPageKey) }
             navigationStore.sectionRequests.send(section)
             if dashboardIsVisible, section == .agentActivity {
                 agentActivityRuntime.scanNow(

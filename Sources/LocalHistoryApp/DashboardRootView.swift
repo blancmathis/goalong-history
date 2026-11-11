@@ -302,6 +302,7 @@
                     .accessibilityHidden(true)
                 }
             }
+            .help(section.sidebarTooltip)
             .accessibilityIdentifier("sidebar-\(section.rawValue)")
             .accessibilityLabel([section.simpleTitle, section.sidebarPill(ambianceDownloading: ambianceDownload.downloading
                 && modules.enabled.contains(.ambiance))].compactMap { $0 }.joined(separator: ", "))
@@ -323,15 +324,35 @@
                 globallyPaused: globalPause.blocksActivity, section: navigationStore.selectedSection) == .storage
         }
 
+        /// Lot 2a (12): where the status dot leads, said before the click.
+        enum StatusDestination: Equatable {
+            case recordingSettings, permissions, storage, activity
+
+            var tooltip: String {
+                switch self {
+                case .recordingSettings: return "Ouvrir les réglages d’enregistrement"
+                case .permissions: return "Ouvrir Réglages › Permissions"
+                case .storage: return "Ouvrir Réglages › Stockage"
+                case .activity: return "Ouvrir Activité"
+                }
+            }
+        }
+
+        private var statusDestination: StatusDestination {
+            if !consents.isEnabled(.localComputerHistory) { return .recordingSettings }
+            if runtimeStore.runtime.state == .permissionsMissing || runtimeStore.runtime.state == .inputTapUnavailable { return .permissions }
+            if runtimeStore.runtime.storageFailure != nil { return .storage }
+            return .activity
+        }
+
         private var statusRow: some View {
             Button {
-                if !consents.isEnabled(.localComputerHistory) {
-                    model.openRecordingSettings()
-                } else if runtimeStore.runtime.state == .permissionsMissing || runtimeStore.runtime.state == .inputTapUnavailable {
-                    model.selectSection(.settings); navigationStore.settingsPane = .permissions
-                } else if runtimeStore.runtime.storageFailure != nil {
-                    model.selectSection(.settings); navigationStore.settingsPane = .storage
-                } else { model.selectSection(.overview) }
+                switch statusDestination {
+                case .recordingSettings: model.openRecordingSettings()
+                case .permissions: model.selectSection(.settings); navigationStore.settingsPane = .permissions
+                case .storage: model.selectSection(.settings); navigationStore.settingsPane = .storage
+                case .activity: model.selectSection(.overview)
+                }
             } label: {
                 HStack(spacing: 9) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -358,6 +379,8 @@
                 .frame(minHeight: 32)
             }
             .buttonStyle(LHNavigationButtonStyle())
+            .help(statusDestination.tooltip)
+            .accessibilityHint(statusDestination.tooltip)
             .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in globalPause = .load() }
         }
 

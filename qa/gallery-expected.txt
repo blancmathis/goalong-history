@@ -2998,3 +2998,7 @@ braise/page-fenetre--   # Blocages lot B1 (T-050) : ligne Jev renommée sur la p
 ambiance/barre-telechargement--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
 distractions/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
 programme/page--   # Blocages lot B1 (T-050) : ligne Jev renommée dans la barre latérale (page voisine)
+activite/detail-   # T-052 lot 2a : le retour des pages de détail se nomme « Retour à … » (libellé de 108×12 px en haut à gauche)
+agenda/detail-   # T-052 lot 2a : idem, retour nommé « Retour à … » sur les pages de détail de l'agenda
+bilan/   # T-052 lot 2a : idem, retour nommé « Retour à … » sur le bilan
+temps-ecran/vide--   # T-052 lot 2a : idem, retour nommé « Retour à … » sur Temps d'écran

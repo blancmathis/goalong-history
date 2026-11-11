@@ -66,6 +66,8 @@
         /// Every request to open a section, also the one already shown. It publishes no change of the object: a page
         /// that leads to one of its parts (« Blocages ») listens to it, and nothing else draws again.
         let sectionRequests = PassthroughSubject<DashboardSection, Never>()
+        /// Lot 2a (2): ←, → and T on Activité; the page that owns its own period reads them.
+        let dayKeys = PassthroughSubject<DashboardKeyCommand, Never>()
         /// R14b: writing the shown value again publishes nothing.
         var selectedSection: DashboardSection {
             get { storedSelectedSection }
@@ -119,8 +121,10 @@
             case .settings: return "Retour aux réglages"
             case .history: return "Retour à l’historique"
             case .monitoring: return "Retour à Jev"
-            // Same « ‹ Activité » as the return inside Activity's own detail views (UI-13B).
-            default: return "Activité"
+            case .blocking, .concentration, .distractions, .braise: return "Retour aux blocages"
+            case .ambiance: return "Retour à Ambiance"
+            // Same wording as the return inside Activity's own detail views (UI-13B).
+            default: return "Retour à l’activité"
             }
         }
 

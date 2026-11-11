@@ -150,7 +150,7 @@ struct GoalongAnalyticsPage: View {
                         }
                         if detail != nil && !showsContent {
                             // While reading or after an error, a named view still offers its way back.
-                            Button { detail = nil } label: { Label("Activité", systemImage: "chevron.left") }
+                            Button { detail = nil } label: { Label("Retour à l’activité", systemImage: "chevron.left") }
                                 .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
                         }
                         if let payload = analytics.payload, selection.matches(payload, preview: previewActive) {
@@ -235,6 +235,17 @@ struct GoalongAnalyticsPage: View {
         .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls().goalongDismissOnOutsideClick() }
         .taskWhenShown(id: "\(selectionID)|\(revision)|\(agent.isRunning)|\(work.backgroundConsent)|\(work.revision)|\(work.definition.revision)") {
             if !previewActive { workStates.load(day: selection.day, period: selection.period) }
+        }
+        .onReceive(navigationStore.dayKeys) { command in
+            // Kept pages stay alive: only the page on screen reads the keys.
+            guard navigationStore.selectedSection == .overview || navigationStore.selectedSection == .analytics else { return }
+            switch command {
+            case .previousDay, .nextDay:
+                let direction = command == .previousDay ? -1 : 1
+                updateSelection { analytics.step(&$0, direction, macDays: snapshotStore.snapshot.availableDays, preview: previewActive) }
+            case .today: updateSelection { $0.today() }
+            case .back: break
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
             if !previewActive { workStates.reload() }
