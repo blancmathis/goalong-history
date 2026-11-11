@@ -11,6 +11,8 @@ import Combine
     struct DashboardKeyContext: Equatable {
         var section: DashboardSection
         var textHasFocus = false
+        /// Lot 2b: a non-text AppKit control (segment, slider, date picker, pop-up) holds the focus and keeps ←/→/T.
+        var controlHasFocus = false
         /// A sheet, an alert, a modal or a popover is in front.
         var layerAbove = false
         /// A visible search field holds text.
@@ -44,14 +46,15 @@ import Combine
                                     isRepeat: Bool, context: DashboardKeyContext) -> DashboardKeyCommand? {
         guard modifiers.intersection([.command, .option, .control, .shift]).isEmpty, !isRepeat,
               !context.layerAbove, !context.welcomeShown else { return nil }
+        let typing = context.textHasFocus || context.controlHasFocus
         let dayPage = context.section == .overview || context.section == .analytics || context.section == .history
         switch keyCode {
-        case 123: return dayPage && !context.textHasFocus ? .previousDay : nil
-        case 124: return dayPage && !context.textHasFocus ? .nextDay : nil
+        case 123: return dayPage && !typing ? .previousDay : nil
+        case 124: return dayPage && !typing ? .nextDay : nil
         case 53:
             return context.section.isSecondary && !context.textHasFocus && !context.searchFilled ? .back : nil
         default:
-            if characters?.lowercased() == "t", dayPage, !context.textHasFocus { return .today }
+            if characters?.lowercased() == "t", dayPage, !typing { return .today }
             return nil
         }
     }
@@ -82,11 +85,23 @@ import Combine
     @MainActor static func dashboardKeyContext(window: NSWindow, section: DashboardSection, welcomeShown: Bool) -> DashboardKeyContext {
         let responder = window.firstResponder
         let editing = (responder as? NSText)?.isEditable == true || responder is NSTextInputClient && responder is NSTextField
+        let control = focusedNonTextControl(responder)
         let layer = window.attachedSheet != nil || NSApp.modalWindow != nil
             || (window.childWindows?.contains(where: { $0.isVisible }) ?? false)
         let filled = searchFields(in: window).contains { !$0.stringValue.isEmpty }
-        return DashboardKeyContext(section: section, textHasFocus: editing, layerAbove: layer, searchFilled: filled,
+        return DashboardKeyContext(section: section, textHasFocus: editing, controlHasFocus: control, layerAbove: layer, searchFilled: filled,
                                    welcomeShown: welcomeShown)
+    }
+
+    /// Lot 2b: the focused view is, or sits inside, an AppKit control that is not a text field.
+    static func focusedNonTextControl(_ responder: NSResponder?) -> Bool {
+        var view = responder as? NSView
+        while let current = view {
+            if current is NSTextField || current is NSText { return false }
+            if current is NSControl { return true }
+            view = current.superview
+        }
+        return false
     }
 
     }

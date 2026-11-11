@@ -603,9 +603,6 @@
             }
         }
 
-        /// The count already sits beside « Chronologie »: the banner only says what to do with a period.
-        static let openPeriodHint = "Ouvrez une période de dix minutes pour voir ses détails."
-
         static func retainedEpisodesLabel(_ count: Int) -> String {
             GoalongUIFormat.count(count, "épisode représentatif conservé", plural: "épisodes représentatifs conservés")
         }
@@ -856,7 +853,9 @@
         }
 
         private var showsRecordingSummary: Bool {
-            isPreparingTimeline || !tenMinuteGroups.isEmpty || model.isAnalysisPartial
+            // Lot 2b: a sound day carries no standing instruction; the summary shows only what is not the normal state.
+            if case .available = model.sourceStatus, !isPreparingTimeline, !model.isAnalysisPartial { return false }
+            return isPreparingTimeline || !tenMinuteGroups.isEmpty || model.isAnalysisPartial
                 || !ComputerHistoryPageCopy.timelineExplainsEmptyDay(model.sourceStatus)
         }
 
@@ -885,8 +884,7 @@
             case .available:
                 break
             }
-            let summary = ComputerHistoryPageCopy.openPeriodHint
-            return model.isAnalysisPartial ? partialAnalysisNotice + " " + summary : summary
+            return model.isAnalysisPartial ? partialAnalysisNotice : ""
         }
 
         private var partialAnalysisNotice: String {
@@ -921,13 +919,21 @@
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(LHTheme.secondaryText)
                     }
-                    Button(action: openSourceJSON) {
-                        Label("Ouvrir le journal d’origine", systemImage: "doc.text")
+                    // Lot 2b: the rare action sits in a « … » menu, not in the header of the timeline.
+                    Menu {
+                        Button(action: openSourceJSON) {
+                            Label("Ouvrir le journal d’origine", systemImage: "doc.text")
+                        }
+                        .disabled(!canRevealSourceData)
+                        .help(sourceDataHelp)
+                    } label: {
+                        Image(systemName: "ellipsis.circle").font(.system(size: 14, weight: .medium))
+                            .frame(width: 24, height: 24)
                     }
-                    .buttonStyle(LHSecondaryButtonStyle())
-                    .controlSize(.regular)
-                    .disabled(!canRevealSourceData)
-                    .help(sourceDataHelp)
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel("Plus d’actions")
+                    .accessibilityIdentifier("history-more-actions")
+                    .help("Plus d’actions")
                 }
 
                 HStack(spacing: 12) {

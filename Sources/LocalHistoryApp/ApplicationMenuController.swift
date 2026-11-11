@@ -160,6 +160,9 @@
                 menu.addItem(entry)
             }
             menu.addItem(.separator())
+            // Lot 2b (3): the page's refresh button is gone; ⌘R stays here and reads the page again.
+            menu.addItem(item("Relire la page", action: #selector(refreshPage), keyEquivalent: "r"))
+            menu.addItem(.separator())
             let fullScreen = responderItem(
                 "Passer en plein écran",
                 action: #selector(NSWindow.toggleFullScreen(_:)),
@@ -235,6 +238,10 @@
             onNavigate(section)
         }
 
+        @objc private func refreshPage() {
+            NotificationCenter.default.post(name: .goalongRefreshPageRequested, object: nil)
+        }
+
         @objc private func findInPage() {
             onFindInPage()
         }
@@ -271,5 +278,10 @@
         @objc private func quit() {
             onQuit()
         }
+    }
+
+    extension Notification.Name {
+        /// Lot 2b: ⌘R. The page on screen (Activité, Historique) reads its day again; the privacy boundary of the read is unchanged.
+        static let goalongRefreshPageRequested = Notification.Name("goalongRefreshPageRequested")
     }
 #endif

@@ -245,12 +245,9 @@
 
                 Spacer(minLength: 20)
 
+                // Lot 2b: no version in the foot of the sidebar (it stays in Réglages); only the update button above shows.
                 statusRow
                     .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
-
-                footer
-                    .padding(.horizontal, 26)
                     .padding(.bottom, 16)
             }
             .background(LHTheme.sidebarBackground)
@@ -416,37 +413,6 @@
             .disabled(updates.isPreparingAvailableUpdate)
             .help("Installer la version \(version)")
             .accessibilityLabel("Mise à jour disponible : installer la version \(version)")
-        }
-
-        private var footer: some View {
-            HStack {
-                if updates.isConfigured {
-                    Button {
-                        updates.checkForUpdates()
-                    } label: {
-                        if updates.isPreparingAvailableUpdate {
-                            ProgressView()
-                                .controlSize(.mini)
-                        } else {
-                            Text(Self.version)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(updates.isPreparingAvailableUpdate)
-                    .help("Rechercher les mises à jour")
-                } else {
-                    // UI-13B (13): plain secondary text (≥ 4,5:1), not a dimmed disabled button.
-                    Text(Self.version)
-                        .help("Mises à jour désactivées dans cette version compilée localement")
-                }
-                Spacer()
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(LHTheme.secondaryText)
-        }
-
-        private static var version: String {
-            "\(ProductIdentity.interfaceName) \(ProductIdentity.shortVersion ?? "0.6.0-dev")"
         }
     }
 

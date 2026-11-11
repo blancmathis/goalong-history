@@ -322,6 +322,33 @@
         }
     }
 
+    /// Lot 2b: the least hit sizes of small controls (points 16, 19).
+    enum GoalongHitTarget {
+        static let clearButton: CGFloat = 24
+        static let listLink: CGFloat = 28
+    }
+
+    /// Lot 2b (19): the link under a list (« Voir les 9 usages »): one size, one alignment, a 28 pt target.
+    struct GoalongListLink: View {
+        let title: String
+        let action: () -> Void
+        var identifier: String?
+
+        init(_ title: String, identifier: String? = nil, action: @escaping () -> Void) {
+            self.title = title
+            self.identifier = identifier
+            self.action = action
+        }
+
+        var body: some View {
+            Button(action: action) {
+                Text(title).frame(minHeight: GoalongHitTarget.listLink - 8, alignment: .leading)
+            }
+            .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
+            .accessibilityIdentifier(identifier ?? "")
+        }
+    }
+
     /// Search input: glass, field and a clear button once something is typed.
     struct GoalongSearchField: View {
         let prompt: String
@@ -349,10 +376,16 @@
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(accessibilityLabel ?? prompt)
                     .accessibilityIdentifier(identifier ?? "")
+                    // Lot 2b (16): Échap empties a filled field; with nothing typed the key goes on (back from a page).
+                    .onExitCommand { if !text.isEmpty { text = "" } }
                 if !text.isEmpty {
                     Button { text = "" } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(LHTheme.secondaryText)
+                            .frame(width: GoalongHitTarget.clearButton, height: GoalongHitTarget.clearButton)
+                            .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel("Effacer la recherche")
+                        // The target is 24 pt; the field keeps its height.
+                        .padding(-(GoalongHitTarget.clearButton - 14) / 2)
                 }
                 if let trailing {
                     Text(trailing).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize()
@@ -501,8 +534,11 @@
                         GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 case .row:
-                    HStack(alignment: .center, spacing: 16) {
-                        label.frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .center, spacing: 0) {
+                        // Lot 2b (21): the 16 pt between the label and the switch belongs to the label's click zone.
+                        label.frame(maxWidth: .infinity, alignment: .leading).padding(.trailing, 16)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if isEnabled { configuration.isOn.toggle() } }
                         GoalongSwitch(isOn: configuration.$isOn, speaksLockedValue: false)
                     }
                 }
@@ -764,11 +800,14 @@
         let text: String
         var symbol: String?
         var tone: Tone = .neutral
+        /// Lot 2b (15): a note that can be closed shows a « Fermer » cross (24 pt target).
+        var onDismiss: (() -> Void)?
 
-        init(_ text: String, symbol: String? = nil, tone: Tone = .neutral) {
+        init(_ text: String, symbol: String? = nil, tone: Tone = .neutral, onDismiss: (() -> Void)? = nil) {
             self.text = text
             self.symbol = symbol
             self.tone = tone
+            self.onDismiss = onDismiss
         }
 
         private var tint: Color {
@@ -787,6 +826,16 @@
                 Text(text).font(.system(size: 12)).foregroundStyle(tone == .warning ? LHTheme.text : LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                if let onDismiss {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(LHTheme.secondaryText)
+                            .frame(width: GoalongHitTarget.clearButton, height: GoalongHitTarget.clearButton)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).padding(-6)
+                    .accessibilityLabel("Fermer").help("Fermer")
+                    .accessibilityIdentifier("note-close")
+                }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .modifier(GoalongNoteBackground(warning: tone == .warning))

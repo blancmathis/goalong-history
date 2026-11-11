@@ -622,8 +622,8 @@ struct GoalongAnalyticsContent: View {
     /// Under the list: the rest of the tasks when there are more, then what the section counts and where to change it.
     @ViewBuilder private func tasksFooter(count: Int) -> some View {
         if count > 5 {
-            Button(allTasks ? "Réduire" : "Voir les \(count) tâches") { allTasks.toggle() }
-                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13)).padding(.top, 8)
+            GoalongListLink(allTasks ? "Réduire" : "Voir les \(count) tâches") { allTasks.toggle() }
+                .padding(.top, 8)
         }
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("Votre travail par projet, quelles que soient les applications.")
@@ -958,8 +958,7 @@ struct GoalongAnalyticsContent: View {
                     }
                 }
                 if cards.count > 3 {
-                    Button(allCards ? "Réduire" : "Voir les \(cards.count) éléments") { allCards.toggle() }
-                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13)).padding(.leading, 6)
+                    GoalongListLink(allCards ? "Réduire" : "Voir les \(cards.count) éléments") { allCards.toggle() }
                 }
                 if let notice = payload.archiveNotice {
                     GoalongNote(notice, tone: .warning)

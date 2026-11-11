@@ -60,9 +60,8 @@ struct GoalongActivityUsageList: View {
                     }
                 }
                 if matching.count > 8 && search.isEmpty {
-                    Button(showsAll ? "Réduire la liste" : "Voir les \(matching.count) usages") { showsAll.toggle() }
-                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 13))
-                        .accessibilityIdentifier("activity-usage-show-all")
+                    GoalongListLink(showsAll ? "Réduire la liste" : "Voir les \(matching.count) usages",
+                                    identifier: "activity-usage-show-all") { showsAll.toggle() }
                 }
             }
         }
