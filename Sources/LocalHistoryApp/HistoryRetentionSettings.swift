@@ -187,6 +187,7 @@ extension HistoryRetentionPolicy {
         .frame(width: 700).frame(minHeight: 560, idealHeight: Self.idealHeight, maxHeight: 860)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onChange(of: model.draft) { _ in proofDeletionConfirmed = false }
+        .goalongDismissOnOutsideClick(isDirty: { model.hasChanges })
         .alert("Appliquer la suppression automatique ?", isPresented: $showingConfirmation) {
             Button("Annuler", role: .cancel) {}
             Button("Appliquer ces règles", role: .destructive) {

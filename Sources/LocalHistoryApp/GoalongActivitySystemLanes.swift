@@ -480,6 +480,7 @@ struct GoalongDayNoteSheet: View {
             }
         }
         .padding(24).frame(width: 480)
+        .goalongDismissOnOutsideClick(isDirty: { text != initial })
     }
 
     private func attempt(failure: String, _ change: () throws -> Void) {

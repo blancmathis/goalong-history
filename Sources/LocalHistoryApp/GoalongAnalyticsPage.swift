@@ -230,14 +230,14 @@ struct GoalongAnalyticsPage: View {
         .background(LHTheme.pageBackground)
         .sheet(item: $reviewRequest) { request in GoalongWorkReviewSheet(request: request).goalongControls() }
         .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls() }
-        .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls() }
+        .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls().goalongDismissOnOutsideClick() }
         .taskWhenShown(id: "\(selectionID)|\(revision)|\(agent.isRunning)|\(work.backgroundConsent)|\(work.revision)|\(work.definition.revision)") {
             if !previewActive { workStates.load(day: selection.day, period: selection.period) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .jevWorkContextDidChange)) { _ in
             if !previewActive { workStates.reload() }
         }
-        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
+        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls().goalongDismissOnOutsideClick() }
         .sheet(isPresented: $editingNote) {
             GoalongDayNoteSheet(day: selection.day, initial: systemValue?.note ?? "",
                                 onSave: { try system.setNote($0, day: selection.day); laneRevision += 1 },
