@@ -115,6 +115,9 @@ struct GalleryImage {
         _ = BraiseRuntime.shared
         _ = JevMonitoringPreferences.shared
         _ = GoalongModuleStore.shared
+        // Built by `BlocagesPageContent.init` (Distractions, Programme, Activité…): `launched(defaults:)` reads
+        // `GoalongDefaults.standard` once (T-050 B1).
+        _ = JevSurveillanceStore.shared
         _ = EnvironmentValues().goalongDefaults
     }
 

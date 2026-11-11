@@ -48,6 +48,26 @@ final class GallerySmokeTests: XCTestCase {
         XCTAssertLessThan(cpu, Self.smokeBudget, "smoke CPU budget is \(Int(Self.smokeBudget)) s")
     }
 
+    /// T-050 B1: the first picture of a shard that builds `BlocagesPageContent` built `JevSurveillanceStore.shared`,
+    /// whose initializer reads `GoalongDefaults.standard`, and was marked `leaky` (CI: distractions, programme,
+    /// activite/28-jours, a different one at each run). The prepared application builds it before any picture.
+    @MainActor func testBlocagesPageReadsNoStandardDefaults() throws {
+        try Self.requireWindowServer()
+        try XCTSkipUnless(GoalongGalleryGuardsInstalled(), "gallery guards are off (GOALONG_TESTS_VISIBLE=1)")
+        let entry = try XCTUnwrap(GalleryCatalog.all.first { $0.id == "distractions/page" })
+        try GalleryRenderer.withPreparedApplication {
+            let ctx = GalleryContext()
+            try GalleryStateReset.all(home: ctx.home, resetData: false)
+            GalleryGuardReport.begin()
+            var failure: Error?
+            do { _ = try GalleryRenderer.render(entry, theme: .light, size: entry.sizes[0], ctx: ctx) } catch { failure = error }
+            ctx.finish()
+            let report = GalleryGuardReport.take()
+            if let failure { throw failure }
+            XCTAssertTrue(report.isClean, "\(report.summary)\n\(report.standardStack ?? "")")
+        }
+    }
+
     func testWallBudgetWidensOnlyOnAnOverloadedMac() {
         XCTAssertEqual(Self.wallBudget(load: 70, cores: 12), 15)
         XCTAssertEqual(Self.wallBudget(load: 4, cores: 12), Self.smokeBudget)
