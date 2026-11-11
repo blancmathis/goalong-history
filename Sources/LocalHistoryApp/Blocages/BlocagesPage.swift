@@ -80,12 +80,16 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     @State private var editing: BlockRuleEditor.Subject?
     @State private var editingList: UUID?
     @ObservedObject private var surveillance = JevSurveillanceStore.shared
+    /// The prepared sessions (T-050 B2). Renders give their own store.
+    let preparedStore: PreparedSessionStore
 
     init(blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
          now: Date? = nil, measures: [FocusItemMeasure]? = nil, target: BlocagesTarget = .top, request: Int = 0,
          sessionDraft: FocusComposerDraft? = nil, open: Set<BlocagesFold> = [], editing: BlockRuleEditor.Subject? = nil,
+         preparedStore: PreparedSessionStore = .shared,
          onOpenRecording: @escaping () -> Void = {}, onOpenWork: @escaping () -> Void = {},
          onRuleClosed: @escaping () -> Void = {}) {
+        self.preparedStore = preparedStore
         self.blocking = blocking
         self.braise = braise
         self.focus = focus
@@ -125,13 +129,19 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         }
         .background(LHTheme.pageBackground)
         .accessibilityIdentifier("blocages-page")
+        // « Relancer » from the menu bar or the shortcut, when the session needs the window (a protected stop).
+        .onReceive(preparedStore.$request) { session in
+            guard let session else { return }
+            editing = .prepared(session)
+            DispatchQueue.main.async { preparedStore.request = nil }
+        }
         // « Connecter Jev » inside the page opens the Jev rule, not another page.
         .environment(\.openJevSettings) { editing = .jev }
         // A link that opened a rule (Jev) is used up when the rule closes: the page does not open it again by itself.
         // Told at the close itself, not from `onChange`: a hidden kept page reads its changes late.
         .sheet(item: Binding(get: { editing }, set: { editing = $0; if $0 == nil { onRuleClosed() } })) { subject in
             BlockRuleEditor(subject: subject, blocking: blocking, braise: braise, focus: focus, now: now,
-                            sessionDraft: sessionDraft, onOpenRecording: onOpenRecording, onOpenWork: onOpenWork,
+                            sessionDraft: sessionDraft, preparedStore: preparedStore, onOpenRecording: onOpenRecording, onOpenWork: onOpenWork,
                             onPrepareRed: { _ = BraiseRuntime.shared.ensureController() },
                             onClose: { editing = nil; onRuleClosed() })
                 .goalongControls()
@@ -233,10 +243,19 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     @ViewBuilder private func sessions(now: Date, proxy: ScrollViewProxy) -> some View {
         if let focus {
             BlocagesSessions(controller: focus, now: now, measures: measures, open: $open, proxy: proxy,
-                             draft: sessionDraft, onStart: { editing = .session($0) })
+                             draft: sessionDraft, prepared: prepared, onStart: { editing = .session($0) })
         } else {
-            BlocagesSessionsOff()
+            BlocagesSessionsOff(prepared: prepared)
         }
+    }
+
+    private var prepared: PreparedSessionsList {
+        PreparedSessionsList(store: preparedStore, lists: blocking?.lists ?? [],
+                             launch: { [blocking, braise, focus, preparedStore] in
+                                 PreparedSessionLauncher.launch($0, blocking: blocking, braise: braise, focus: focus,
+                                                                store: preparedStore)
+                             },
+                             onOpen: { editing = .prepared($0) })
     }
 
     // MARK: Protection
@@ -538,6 +557,7 @@ private struct BlocagesRuleRow: View {
     var measures: [FocusItemMeasure]?
     @Binding var open: Set<BlocagesFold>
     let proxy: ScrollViewProxy
+    let prepared: PreparedSessionsList
     let onStart: (FocusComposerDraft) -> Void
     @State private var draft: FocusComposerDraft
     @State private var reviewing = false
@@ -547,8 +567,10 @@ private struct BlocagesRuleRow: View {
 
     /// `draft` nil = the remembered one (the app). A render gives a fixed one: it reads no preference.
     init(controller: ConcentrationController, now: Date, measures: [FocusItemMeasure]?, open: Binding<Set<BlocagesFold>>,
-         proxy: ScrollViewProxy, draft: FocusComposerDraft?, onStart: @escaping (FocusComposerDraft) -> Void) {
+         proxy: ScrollViewProxy, draft: FocusComposerDraft?, prepared: PreparedSessionsList,
+         onStart: @escaping (FocusComposerDraft) -> Void) {
         _controller = ObservedObject(wrappedValue: controller)
+        self.prepared = prepared
         self.now = now
         self.measures = measures
         _open = open
@@ -567,6 +589,7 @@ private struct BlocagesRuleRow: View {
                         .buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("blocages-start-session")
                 }
+                prepared
                 if let error = controller.error {
                     GoalongNote(FocusUIError.message(raw: error), tone: .warning)
                         .onTapGesture { controller.error = nil }
@@ -649,6 +672,7 @@ private struct BlocagesRuleRow: View {
 @MainActor private struct BlocagesSessionsOff: View {
     @ObservedObject private var runtime = ConcentrationRuntime.shared
     @ObservedObject private var modules = GoalongModuleStore.shared
+    let prepared: PreparedSessionsList
 
     var body: some View {
         GoalongSection(title: "Séances") {
@@ -657,6 +681,7 @@ private struct BlocagesRuleRow: View {
                     .accessibilityIdentifier("blocages-sessions-failed")
             } else {
                 VStack(alignment: .leading, spacing: 12) {
+                    prepared
                     Text("Les séances de travail, le plan du jour et le bilan du soir viennent du module Concentration.")
                         .foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)

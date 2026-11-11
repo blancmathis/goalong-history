@@ -141,6 +141,9 @@ import LocalHistoryCore
     /// T-050 B1 correction 2: the stop of the « Surveillance » the Concentration session carries. Tests replace it.
     var confirmSurveillanceStop: @MainActor () -> Bool = { JevStopGate.confirm(action: "Arrêter la séance", step: JevStopGate.focusStep()) }
     private let onOpenSection: (DashboardSection) -> Void
+    /// The prepared sessions (T-050 B2) and the red screen they may hold. Renders give their own store.
+    var prepared: PreparedSessionStore = .shared
+    var braise: @MainActor () -> BraiseController? = { BraiseRuntime.shared.controller }
     private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
     private let onShowClassicMenu: () -> Void
@@ -335,6 +338,18 @@ import LocalHistoryCore
         do { try controller.startSession(intent: "Concentration", mode: mode) }
         catch { controller.error = String(describing: error); onOpenSection(.concentration) }
         refreshFocus()
+    }
+
+    /// One click (P2): the session starts at once, or the page opens its window when its stop asks a confirmation.
+    func launchPrepared(_ session: PreparedSession) {
+        refreshRuntimeState()
+        let focus = modules.isEnabled(.concentration) ? concentration() : nil
+        switch PreparedSessionLauncher.launch(session, blocking: blocking(), braise: braise(), focus: focus, store: prepared) {
+        case .started: refresh()
+        case .needsEditor:
+            prepared.request = session
+            onOpenSection(.concentration)
+        }
     }
 
     func pauseOrResumeFocus() {

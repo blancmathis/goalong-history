@@ -450,6 +450,10 @@ import AppleScreenTime
                     redScreen: BraiseRuntime.shared
                 )
                 menuBarController.configurePanel(model: panel)
+                // « Relancer la dernière séance » from anywhere (T-050 B2): one click, or the window when the stop asks it.
+                RelaunchHotKey.shared.install { [weak panel] in
+                    if let last = PreparedSessionStore.shared.document.last { panel?.launchPrepared(last) }
+                }
                 menuBarController.configureRedScreen(control: BraiseRuntime.shared, onOpenSettings: { [weak self] in
                     self?.dashboardWindowController.show(section: .braise)
                 })
@@ -564,16 +568,17 @@ import AppleScreenTime
 
         /// The lists and red-screen ranges first, then a protected « Surveillance » (T-050 B1): quitting stops Jev too.
         private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
-            confirmListsQuitIfNeeded(consumeAuthorization: consumeAuthorization)
-                && confirmJevQuitIfNeeded(consumeAuthorization: consumeAuthorization)
+            var passwordGiven = false
+            return confirmListsQuitIfNeeded(consumeAuthorization: consumeAuthorization, passwordGiven: &passwordGiven)
+                && confirmJevQuitIfNeeded(consumeAuthorization: consumeAuthorization, passwordGiven: passwordGiven)
         }
 
         /// Same conduct as the lists: « Verrouillé » refuses and offers to close the window, « Taper » and « Mot de passe »
         /// ask once (`JevStopGate.quitStep`); the terminate call after the menu's quit only consumes that answer.
-        private func confirmJevQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
+        private func confirmJevQuitIfNeeded(consumeAuthorization: Bool, passwordGiven: Bool) -> Bool {
             MainActor.assumeIsolated {
                 if consumeAuthorization, jevQuitAuthorized { jevQuitAuthorized = false; return true }
-                let step = JevStopGate.quitStep(JevStopGate.currentStep())
+                let step = JevStopGate.quitStep(JevStopGate.currentStep(), passwordGiven: passwordGiven)
                 guard JevStopGate.needsAsking(step) else { return true }
                 if case .refused(let reason) = step {
                     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -594,7 +599,8 @@ import AppleScreenTime
             }
         }
 
-        private func confirmListsQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
+        /// `passwordGiven` turns true when the blocking password was typed (now, or for the authorization consumed here).
+        private func confirmListsQuitIfNeeded(consumeAuthorization: Bool, passwordGiven: inout Bool) -> Bool {
             MainActor.assumeIsolated {
             switch Self.quitPrompt(runtime: BlockingRuntime.shared) {
             case .quit: return true
@@ -619,7 +625,7 @@ import AppleScreenTime
             case .password: break
             }
             guard let controller = BlockingRuntime.shared.controller else { return true }
-            if consumeAuthorization, controller.consumeQuitAuthorization() { return true }
+            if consumeAuthorization, controller.consumeQuitAuthorization() { passwordGiven = true; return true }
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
@@ -646,6 +652,7 @@ import AppleScreenTime
                 }
                 failure.addButton(withTitle: "OK"); NSApplication.shared.activate(ignoringOtherApps: true); failure.runModal(); return false
             }
+            passwordGiven = true
             return !consumeAuthorization || controller.consumeQuitAuthorization()
             }
         }

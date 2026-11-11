@@ -3093,3 +3093,7 @@ historique/journee-passee-vide--   # T-052 lot 2b (points 14, 16) : ↻ retiré,
 historique/journee-vide--   # T-052 lot 2b (points 14, 16) : ↻ retiré, résumé d'enregistrement sain retiré, « Ouvrir le journal d'origine » dans « … », pied retiré
 historique/vide--   # T-052 lot 2b (points 14, 16) : ↻ retiré, résumé d'enregistrement sain retiré, « Ouvrir le journal d'origine » dans « … », pied retiré
 settings/non-enregistre--   # T-052 lot 2b (point 16) : pied de version retiré de la barre latérale
+blocages/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer la dernière séance », son raccourci et les séances préparées
+blocages/editeur-seance-preparee   # Blocages lot B2a (T-050) : nouvelle image, une séance préparée rouverte (nom, « Quand » seul, Enregistrer)
+menubar/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer » et « Lancer » dans le panneau
+blocages/editeur-   # Blocages lot B2a (T-050) : « Enregistrer pour plus tard… » sous « Séance » ; « Quand » d’une règle existante réduit à son choix ; niveaux d’arrêt impossibles d’une séance masqués

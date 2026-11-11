@@ -82,8 +82,16 @@ import LocalHistoryCore
     /// Quitting Goalong stops Jev until the next launch: the same stop, like the blocking lists. « Verrouillé » says
     /// that the window can be closed. Pure.
     static let quitLockedText = lockedText + " Goalong reste ouvert jusqu’à sa fin. Vous pouvez fermer la fenêtre."
-    static func quitStep(_ step: Step) -> Step {
+    /// `passwordGiven`: the blocking password was just typed to quit (the lists' prompt). It covers « Taper » and
+    /// « Mot de passe » here too: one quit asks the password once (T-050 B2a).
+    static func quitStep(_ step: Step, passwordGiven: Bool = false) -> Step {
         if case .refused(let reason) = step, reason == lockedText { return .refused(quitLockedText) }
+        if passwordGiven {
+            switch step {
+            case .typing, .password: return .allow
+            case .allow, .refused: break
+            }
+        }
         return step
     }
 

@@ -7,6 +7,21 @@ import SwiftUI
 /// The one page « Blocages » and its rule editor (docs/spec-blocages-20261110.md), on the gallery clock.
 /// The lists, the sessions and the red screen come from the fixtures of their old pages.
 extension GalleryCatalog {
+    /// Three prepared sessions (T-050 B2a), in the context's own defaults: the last one relaunched with ⌃⌥⌘R.
+    @MainActor static func preparedSessions(_ ctx: GalleryContext) -> PreparedSessionStore {
+        let F = GalleryFixtures.self, store = ctx.keep(PreparedSessionStore(defaults: ctx.defaults))
+        var morning = PreparedSession(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!, name: "Écriture du matin")
+        morning.span = .minutes(90); morning.listIDs = [F.socialID, F.videoID]; morning.red = true
+        var pomodoro = PreparedSession(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!, name: "Relecture")
+        pomodoro.pomodoro = true; pomodoro.cycles = 4; pomodoro.intent = "Relire les épreuves"
+        pomodoro.listIDs = [F.socialID]; pomodoro.lock = .locked
+        var evening = PreparedSession(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!, name: "Soirée sans écran")
+        evening.span = .until(minute: 22 * 60); evening.wholeMac = true; evening.lock = .locked
+        [morning, pomodoro, evening].forEach(store.save)
+        store.recordLast(morning); store.setShortcut(.controlOptionCommandS)
+        return store
+    }
+
     static var blocagesEntries: [GalleryEntry] {
         let F = GalleryFixtures.self
         func page(_ id: String, height: CGFloat, themes: [GalleryTheme] = GalleryTheme.standard,
@@ -23,7 +38,21 @@ extension GalleryCatalog {
             }
             return rule
         }
+        @MainActor func prepared(_ ctx: GalleryContext) -> PreparedSessionStore { preparedSessions(ctx) }
         return [
+            // T-050 B2a: « Relancer la dernière séance » and the prepared sessions under « Lancer une séance… ».
+            page("blocages/seances-preparees", height: 1_600) { ctx in
+                BlocagesPageContent(blocking: F.blockingIdle(), braise: try braise(ctx),
+                                    focus: try GalleryConcentrationFixtures().empty(), now: F.sunday, measures: [],
+                                    sessionDraft: FocusComposerDraft(), preparedStore: prepared(ctx))
+            },
+            // A prepared session open again: its name, its « Quand » alone, « Supprimer » and « Enregistrer ».
+            sheet("blocages/editeur-seance-preparee") { ctx in
+                let store = prepared(ctx)
+                return BlockRuleEditor(subject: .prepared(store.document.sessions[0]), blocking: F.blockingIdle(),
+                                       braise: try braise(ctx), focus: nil, now: F.sunday, maxHeight: 4_000,
+                                       sessionDraft: FocusComposerDraft(), preparedStore: store, onClose: {})
+            },
             // A new member: no list, no rule, the red screen never used, Concentration off.
             page("blocages/vide", height: 1_000, themes: GalleryTheme.withContrast) { _ in
                 BlocagesPageContent(blocking: F.blockingEmpty(), braise: nil, focus: nil, now: F.blockingNow)
