@@ -67,6 +67,16 @@ struct GoalongActivityNavigation: Equatable {
         selectDay(next, now: now, calendar: calendar)
     }
 
+    /// T-052 (1): the day another page chose (Historique, Vérifier et corriger) becomes this one; the period stays.
+    /// False, and nothing changes, when it already is this day.
+    @discardableResult
+    mutating func followShared(day shared: Date, now: Date = GoalongToday.now, calendar: Calendar = .current) -> Bool {
+        let start = min(calendar.startOfDay(for: shared), calendar.startOfDay(for: now))
+        guard start != day else { return false }
+        selectDay(start, now: now, calendar: calendar)
+        return true
+    }
+
     mutating func today(now: Date = GoalongToday.now, calendar: Calendar = .current) {
         setDay(calendar.startOfDay(for: now), calendar: calendar)
         period = 1
