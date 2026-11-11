@@ -446,9 +446,9 @@ import SwiftUI
                 }
             }
             if group.rows.count > 6 {
-                Button(open ? "Réduire" : "Voir les \(group.rows.count) contextes") {
+                GoalongListLink(open ? "Réduire" : "Voir les \(group.rows.count) contextes") {
                     if open { expanded.remove(group.id) } else { expanded.insert(group.id) }
-                }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12))
+                }
             }
         }.padding(.top, 4)
     }

@@ -34,7 +34,7 @@ final class GoalongAnalyticsRenderingTests: XCTestCase {
                     let root = VStack(alignment: .leading, spacing: 0) {
                         GoalongActivityHeader(selection: selection, isPreview: payload.isPreview, isRefreshing: false,
                             onDay: { _ in }, onPeriod: { _ in }, onStep: { _ in }, onToday: {},
-                            onReturn: {}, onRefresh: {}, onShare: {})
+                            onReturn: {}, onShare: {})
                         Divider()
                         VStack(alignment: .leading, spacing: 20) {
                             if payload.isPreview { GoalongAnalyticsPreviewBanner() }

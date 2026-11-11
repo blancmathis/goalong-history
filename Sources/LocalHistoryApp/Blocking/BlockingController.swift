@@ -26,6 +26,9 @@ import LocalHistoryQueryCLI
     @Published private(set) var browsers: [BlockingBrowserSupport] = []
     @Published private(set) var protection = BlockingProtectionState()
     @Published var error: String?
+    /// The list a harmless deletion just removed, until « Annuler » times out (lot 2b).
+    @Published private(set) var undoableDeletion: BlockList?
+    private var undoTask: Task<Void, Never>?
     @Published private(set) var friction: BlockingFrictionPresentation?
     @Published private(set) var frictionUsage: BlockDayUsage?
     @Published private(set) var attemptsToday: [UUID: Int] = [:]
@@ -606,6 +609,45 @@ import LocalHistoryQueryCLI
             return session.listIDs.isEmpty ? nil : session
         }
         commit()
+    }
+
+    // MARK: Undo of a harmless deletion (T-052 lot 2b)
+
+    /// How long « Annuler » stays offered after a deletion that removed no protection.
+    var undoWindow: TimeInterval = 5
+
+    /// True when deleting the list removes no protection at all: a block list with nothing in it, no program, and in
+    /// no scheduled or running block. Anything else keeps the confirmation (the program or the block stops with it).
+    func deletionRemovesNoProtection(_ id: UUID) -> Bool {
+        guard let value = list(id), value.mode == .block, value.sites.isEmpty, value.apps.isEmpty,
+              value.keywords?.isEmpty ?? true, value.program.ranges.isEmpty, value.program.lockedUntil == nil else { return false }
+        if document.sessions.contains(where: { $0.listIDs.contains(id) }) { return false }
+        if activeBlocks.contains(where: { $0.listIDs.contains(id) }) { return false }
+        return !focusSessionUsesList(id) && !isStricterOnly(id)
+    }
+
+    /// Deletes a harmless list at once and offers `undoDeletion()` for `undoWindow` seconds.
+    /// False (nothing deleted) when the deletion would remove protection: the caller asks for confirmation.
+    @discardableResult func deleteWithUndo(_ id: UUID) -> Bool {
+        guard deletionRemovesNoProtection(id), let value = list(id) else { return false }
+        delete(id)
+        guard list(id) == nil else { return false }
+        undoableDeletion = value
+        undoTask?.cancel()
+        let window = undoWindow
+        undoTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.undoableDeletion = nil
+        }
+        return true
+    }
+
+    func undoDeletion() {
+        undoTask?.cancel()
+        guard let value = undoableDeletion else { return }
+        undoableDeletion = nil
+        save(value)
     }
 
     func lockProgram(listID: UUID, until date: Date) {

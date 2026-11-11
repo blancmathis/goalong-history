@@ -8,7 +8,6 @@
         let isRefreshing: Bool
         let onSelectDay: (Date) -> Void
         let onShare: () -> Void
-        let onRefresh: () -> Void
         var sharingEnabled = true
         /// Why sharing is grey; nil keeps the preview wording.
         var sharingDisabledReason: String? = nil
@@ -41,25 +40,31 @@
         }
 
         private var actions: some View {
-            HStack(spacing: 8) {
-                Button(action: onRefresh) {
-                    Group {
-                        if isRefreshing { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.clockwise") }
-                    }
-                    .frame(width: 16, height: 16)
-                }
-                .modifier(GoalongHeaderButtonState(enabled: !isRefreshing))
-                .accessibilityLabel("Actualiser la journée")
-                .help(isRefreshing ? "Actualisation…" : "Actualiser la journée")
+            // Lot 2b (3, 14): no refresh button (the page reads again on activation, ⌘R stays in the menu);
+            // the reason the share button is grey is written under it.
+            VStack(alignment: .trailing, spacing: 6) {
                 Button(action: onShare) {
                     Label("Partager cette journée…", systemImage: "square.and.arrow.up")
                 }
                 .modifier(GoalongHeaderButtonState(enabled: sharingEnabled))
                 .help(sharingEnabled ? "Partager cette journée. Rien n’est envoyé sans votre validation."
                       : sharingDisabledReason ?? "Les données fictives ne peuvent pas être partagées")
+                if !sharingEnabled {
+                    GoalongDisabledReason(text: sharingDisabledReason ?? "Les données fictives ne peuvent pas être partagées")
+                        .accessibilityIdentifier("history-share-reason")
+                }
             }
             .controlSize(.regular)
+        }
+    }
+
+    /// Lot 2b (14): the short reason written beside a grey button, readable without hovering.
+    struct GoalongDisabledReason: View {
+        let text: String
+        var body: some View {
+            Text(text).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 260, alignment: .trailing)
         }
     }
 

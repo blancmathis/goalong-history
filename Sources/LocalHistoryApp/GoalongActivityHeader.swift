@@ -14,7 +14,6 @@ struct GoalongActivityHeader: View {
     var onStep: (Int) -> Void
     var onToday: () -> Void
     var onReturn: () -> Void
-    var onRefresh: () -> Void
     var onShare: () -> Void
 
     var body: some View {
@@ -74,15 +73,9 @@ struct GoalongActivityHeader: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
-            Button(action: onRefresh) {
-                Group {
-                    if isRefreshing { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.clockwise") }
-                }.frame(width: 16, height: 16)
-            }
-            .modifier(GoalongHeaderButtonState(enabled: !isRefreshing)).accessibilityIdentifier("activity-refresh")
-            .accessibilityLabel("Actualiser").help("Actualiser")
+        // Lot 2b (14): the reason a button is grey is written beside it, not only in its tooltip.
+        VStack(alignment: .trailing, spacing: 6) {
+            // Lot 2b (3): no refresh button; the page reads again when the window becomes active, and ⌘R stays in the menu.
             // Always present, grey when there is nothing to share: the same rule on every page.
             Button(action: onShare) {
                 Label(selection.period == 1 ? "Partager cette journée…" : "Partager cette période…", systemImage: "square.and.arrow.up")
@@ -90,6 +83,9 @@ struct GoalongActivityHeader: View {
             .modifier(GoalongHeaderButtonState(enabled: !isPreview && shareReason == nil))
             .help(shareReason ?? "Partager la journée du \(shortDate(selection.day)). Rien n’est envoyé sans votre validation.")
             .accessibilityHint(shareReason ?? "")
+            if let reason = isPreview ? "Aperçu fictif : rien à partager" : shareReason {
+                GoalongDisabledReason(text: reason).accessibilityIdentifier("activity-share-reason")
+            }
         }
         .controlSize(.regular)
     }
