@@ -4,12 +4,17 @@
     /// Installs the standard macOS menu hierarchy while the dashboard is open.
     /// The app can still launch as an LSUIElement menu-bar recorder; switching to
     /// `.regular` in `DashboardWindowController` then reveals this retained menu.
-    final class ApplicationMenuController: NSObject, NSMenuDelegate {
+    final class ApplicationMenuController: NSObject, NSMenuDelegate, NSMenuItemValidation {
         private let onOpenSettings: () -> Void
         private let onNavigate: (DashboardSection) -> Void
         private let onCheckForUpdates: () -> Void
         private let canCheckForUpdates: () -> Bool
         private let onQuit: () -> Void
+        /// Lot 2a (4): ⌘F gives the search field of the page the focus; the item is off while the page has none.
+        private let onFindInPage: () -> Void
+        private let canFindInPage: () -> Bool
+        /// A page of the sidebar that is not on offer (Ambiance with its module off) has its shortcut off.
+        private let isSectionAvailable: (DashboardSection) -> Bool
 
         private let servicesMenu = NSMenu(title: "Services")
         private let windowMenu = NSMenu(title: "Fenêtre")
@@ -26,13 +31,19 @@
             onNavigate: @escaping (DashboardSection) -> Void = { _ in },
             onCheckForUpdates: @escaping () -> Void,
             canCheckForUpdates: @escaping () -> Bool,
-            onQuit: @escaping () -> Void
+            onQuit: @escaping () -> Void,
+            onFindInPage: @escaping () -> Void = {},
+            canFindInPage: @escaping () -> Bool = { false },
+            isSectionAvailable: @escaping (DashboardSection) -> Bool = { $0 != .ambiance || GoalongModuleStore.shared.isEnabled(.ambiance) }
         ) {
             self.onOpenSettings = onOpenSettings
             self.onNavigate = onNavigate
             self.onCheckForUpdates = onCheckForUpdates
             self.canCheckForUpdates = canCheckForUpdates
             self.onQuit = onQuit
+            self.onFindInPage = onFindInPage
+            self.canFindInPage = canFindInPage
+            self.isSectionAvailable = isSectionAvailable
             super.init()
         }
 
@@ -40,6 +51,16 @@
             application.mainMenu = mainMenu
             application.servicesMenu = servicesMenu
             application.windowsMenu = windowMenu
+        }
+
+        func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+            if menuItem.action == #selector(navigate(_:)) {
+                guard let raw = menuItem.representedObject as? String, let section = DashboardSection(rawValue: raw) else { return true }
+                return isSectionAvailable(section)
+            }
+            if menuItem.action == #selector(findInPage) { return canFindInPage() }
+            if menuItem.action == #selector(checkForUpdates) { return canCheckForUpdates() }
+            return true
         }
 
         func menuNeedsUpdate(_ menu: NSMenu) {
@@ -124,13 +145,17 @@
             menu.addItem(responderItem("Coller", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
             menu.addItem(
                 responderItem("Tout sélectionner", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+            menu.addItem(.separator())
+            menu.addItem(item("Rechercher", action: #selector(findInPage), keyEquivalent: "f"))
             return menu
         }
 
         private func viewMenu() -> NSMenu {
             let menu = NSMenu(title: "Présentation")
-            for (index, section) in DashboardSection.primarySections.filter({ $0 != .settings }).enumerated() {
-                let entry = item(section.simpleTitle, action: #selector(navigate(_:)), keyEquivalent: "\(index + 1)")
+            // One table (`sidebarShortcutKey`) for the menu and the sidebar tooltips: ⌘1 Activité … ⌘4 Ambiance.
+            for section in [DashboardSection.overview, .history, .blocking, .ambiance] {
+                guard let key = section.sidebarShortcutKey else { continue }
+                let entry = item(section.simpleTitle, action: #selector(navigate(_:)), keyEquivalent: key)
                 entry.representedObject = section.rawValue
                 menu.addItem(entry)
             }
@@ -208,6 +233,10 @@
         @objc private func navigate(_ sender: NSMenuItem) {
             guard let raw = sender.representedObject as? String, let section = DashboardSection(rawValue: raw) else { return }
             onNavigate(section)
+        }
+
+        @objc private func findInPage() {
+            onFindInPage()
         }
 
         @objc private func checkForUpdates() {

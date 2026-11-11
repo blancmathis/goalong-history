@@ -757,6 +757,8 @@ struct FocusCommitmentDraft: Equatable {
     var onClose: () -> Void
     @State private var draft: FocusCommitmentDraft
     @State private var error: String?
+    /// What the sheet opened with: a click outside asks first when the engagement differs from it.
+    private let initialDraft: FocusCommitmentDraft
 
     init(controller: ConcentrationController, request: FocusCommitmentEditRequest, now: Date,
          draft: FocusCommitmentDraft? = nil, onClose: @escaping () -> Void) {
@@ -765,7 +767,9 @@ struct FocusCommitmentDraft: Equatable {
         self.now = now
         self.onClose = onClose
         let period = request.periods.first ?? .init(kind: .day, key: FocusCalendar.dayKey(now))
-        _draft = State(initialValue: draft ?? FocusCommitmentDraft(period: period, existing: request.existing))
+        let start = draft ?? FocusCommitmentDraft(period: period, existing: request.existing)
+        _draft = State(initialValue: start)
+        initialDraft = start
     }
 
     private var harderOnly: Bool {
@@ -816,6 +820,7 @@ struct FocusCommitmentDraft: Equatable {
         }
         .padding(28).frame(width: 600)
         .background(LHTheme.pageBackground)
+        .goalongDismissOnOutsideClick(isDirty: { draft != initialDraft }, onCancel: onClose)
     }
 
     private func save() {

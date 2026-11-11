@@ -324,6 +324,12 @@ struct FocusLimitPanelView: View {
     @State private var tomorrowDraft: FocusCommitmentDraft
     /// A review already saved: it can be edited down to nothing.
     private let hasSavedReview: Bool
+    /// What the sheet opened with: a click outside asks first when any answer differs from it.
+    private let initialAnswers: Answers
+    private struct Answers: Equatable {
+        var choices: [UUID: Choice]; var tomorrowFirst: String; var note: String; var commitTomorrow: Bool
+        var tomorrowDraft: FocusCommitmentDraft
+    }
 
     /// Renders pin the clock; the app reads it when the sheet opens.
     private let now: Date
@@ -354,7 +360,14 @@ struct FocusLimitPanelView: View {
         _note = State(initialValue: review?.note ?? "")
         _commitTomorrow = State(initialValue: commitTomorrow)
         let next = FocusCalendar.dayInterval(plan.day).map { FocusCalendar.dayKey($0.end) } ?? plan.day
-        _tomorrowDraft = State(initialValue: FocusCommitmentDraft(period: .init(kind: .day, key: next)))
+        let draft = FocusCommitmentDraft(period: .init(kind: .day, key: next))
+        _tomorrowDraft = State(initialValue: draft)
+        initialAnswers = Answers(choices: initial, tomorrowFirst: review?.tomorrowFirst ?? "", note: review?.note ?? "",
+                                 commitTomorrow: commitTomorrow, tomorrowDraft: draft)
+    }
+
+    private var isDirty: Bool {
+        Answers(choices: choices, tomorrowFirst: tomorrowFirst, note: note, commitTomorrow: commitTomorrow, tomorrowDraft: tomorrowDraft) != initialAnswers
     }
 
     private var items: [FocusPlanItem] { plan.items.filter { $0.status != .dropped } }
@@ -420,6 +433,7 @@ struct FocusLimitPanelView: View {
         }
         .padding(28).frame(width: 640)
         .background(LHTheme.pageBackground)
+        .goalongDismissOnOutsideClick(isDirty: { isDirty }, onCancel: onClose)
     }
 
     /// Builds the review the sheet saves. « Demain » is the day after the reviewed plan, as setReview computes it,

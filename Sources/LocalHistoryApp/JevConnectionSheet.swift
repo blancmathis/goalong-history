@@ -60,6 +60,8 @@ import SwiftUI
         .padding(26).frame(width: 510, alignment: .leading)
         .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
         .onDisappear { key = "" }
+        // « Fermer ». A typed key is input: it asks before dropping it. The removal alert above blocks the click.
+        .goalongDismissOnOutsideClick(isDirty: { !key.isEmpty }, onCancel: { key = ""; dismiss() })
         .alert("Supprimer la clé Jev ?", isPresented: $confirmingRemoval) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer la clé", role: .destructive) {
