@@ -1092,7 +1092,7 @@ extension BlockRuleEditor {
     func markSession(_ kind: JevSessionMark.Kind, id: UUID, start: Date? = nil, end: Date? = nil) {
         let mark = JevSessionMark(id: id, kind: kind, on: draft.surveillance != nil, start: start, end: end, lock: stopLevel,
                                   settings: draft.surveillance ?? JevSurveillanceStore.shared.document.sessionSettings)
-        JevSurveillanceStore.shared.mark(mark, now: Date()) // wall: compared with the session's dates
+        JevSurveillanceStore.shared.mark(mark, now: GoalongToday.now)
     }
 }
 

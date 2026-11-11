@@ -447,7 +447,7 @@ private extension BlockRule {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
                 if mark.lock == .free {
-                    Button("Arrêter") { store.endOwn(mark.id, now: Date()) } // wall: compared with the mark's dates
+                    Button("Arrêter") { store.endOwn(mark.id, now: GoalongToday.now) }
                         .buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("blocages-watch-stop")
                 } else {

@@ -13,7 +13,7 @@ import LocalHistoryCore
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-move-warning")
             Toggle("Voiles progressifs", isOn: $settings.effectsEnabled)
                 .toggleStyle(.goalongSwitch).accessibilityIdentifier("jev-effects-enabled")
-            Text("Un voile sur l’écran, sans toucher à la luminosité du Mac ni bloquer les clics.")
+            Text("Un voile sur l’écran, sans toucher à la luminosité du Mac ni bloquer les clics. Si Jev ne reçoit plus de résultat, les effets disparaissent sous 30 secondes.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(0..<settings.stages.count, id: \.self) { index in

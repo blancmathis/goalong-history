@@ -180,7 +180,7 @@ import XCTest
 
     func testTheDraftSaysWhatIsMissing() {
         var draft = BlockRuleDraft()
-        XCTAssertEqual(draft.problem, "Choisissez ce que la règle bloque.")
+        XCTAssertEqual(draft.problem, "Choisissez ce que la règle fait.", "T-050 B1: « Surveillance » alone is a rule too")
         draft.red = true; XCTAssertNil(draft.problem)
         draft.weekdays = []; XCTAssertEqual(draft.problem, "Choisissez au moins un jour et deux heures différentes.")
         draft.weekdays = [1]; draft.endMinute = draft.startMinute; XCTAssertNotNil(draft.problem)
