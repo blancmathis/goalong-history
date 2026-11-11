@@ -75,6 +75,16 @@ import LocalHistoryCore
         XCTAssertEqual(JevStopGate.quitStep(JevStopGate.currentStep(monitor: monitor)), .allow, "Jev off: nothing to cut")
     }
 
+    /// T-050 B2a: quitting during a « lists + Surveillance » rule in « Mot de passe » asks the password once. The
+    /// lists' prompt took it: Jev's own step is then already met; « Verrouillé » still refuses.
+    func testQuitAsksThePasswordOnceWhenTheListsTookIt() {
+        XCTAssertEqual(JevStopGate.quitStep(.password, passwordGiven: true), .allow)
+        XCTAssertEqual(JevStopGate.quitStep(.typing("abc"), passwordGiven: true), .allow)
+        XCTAssertEqual(JevStopGate.quitStep(.password), .password, "no password given yet: Jev asks it")
+        XCTAssertEqual(JevStopGate.quitStep(.refused(JevStopGate.lockedText), passwordGiven: true),
+                       .refused(JevStopGate.quitLockedText))
+    }
+
     /// Point (b): a red-screen-only session with « Mot de passe » has « Arrêter », which ends it only once its stop passed.
     func testAProtectedOwnSessionStopsThroughItsStop() {
         let store = JevSurveillanceStore(defaults: defaults()), now = Date()

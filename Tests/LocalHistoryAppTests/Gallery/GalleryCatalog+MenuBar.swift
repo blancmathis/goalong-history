@@ -55,6 +55,13 @@ extension GalleryCatalog {
                 model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux", detail: "Verrouillé jusqu’à 16:34",
                                             isActive: true, isLocked: true)
             },
+            // T-050 B2a: « Relancer la dernière séance », its shortcut and the prepared sessions in one click.
+            panel("menubar/seances-preparees", width: MenuBarPanelView.width, clock: .injected,
+                  note: "Contenu du panneau ; le vrai popover ajoute son matériau translucide.") { ctx in
+                let model = menuBarModel(ctx)
+                model.prepared = preparedSessions(ctx)
+                return AnyView(MenuBarPanelView(model: model))
+            },
             state("ecran-rouge-eteint", themes: GalleryTheme.withContrast, redScreen: RedScreenState()),
             state("ecran-rouge-allume", redScreen: RedScreenState(on: true, intensity: 0.7)),
             GalleryEntry("menubar-menu/ecran-rouge", sizes: [.fixed(300, 220)], clock: .none,

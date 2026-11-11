@@ -26,8 +26,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 }
 
 /// The one window of « Blocages » (T-050 A1, spec `t050/spec.md`): the same frame for a new rule, a rule, Jev and a
-/// session. Three titled boxes, always in this order — « Quand », « Quoi », « Arrêt » — and one footer. A block or a
-/// level that the engine cannot do for this « Quand » stays shown, greyed, with a sentence that says why. The engines
+/// session. Three titled boxes, always in this order — « Quand », « Quoi », « Arrêt » — and one footer. A block that
+/// the engine cannot do for this « Quand » stays shown, greyed, with a sentence that says why; a stop level a session's
+/// engine refuses is hidden (T-050 B2, P4), a rule's stays greyed. The engines
 /// keep every check and every refusal: « Toujours » and « Horaires » write ranges through `BlockRulePlan`, a « Séance »
 /// starts through `BlockingNowStart` (Continu without an intention) or Concentration (Pomodoro, or an intention).
 @MainActor struct BlockRuleEditor: View {
@@ -36,6 +37,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         case session(FocusComposerDraft)
         case rule(BlockRule)
         case jev
+        /// A prepared session (T-050 B2), saved or the last one started.
+        case prepared(PreparedSession)
 
         var id: String {
             switch self {
@@ -43,6 +46,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             case .session: return "session"
             case .rule(let rule): return "rule-\(rule.id)"
             case .jev: return "jev"
+            case .prepared(let session): return "prepared-\(session.id)"
             }
         }
     }
@@ -90,6 +94,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     var onOpenWork: () -> Void
     var onPrepareRed: () -> Void
     var onClose: () -> Void
+    /// Where « Enregistrer pour plus tard » and « Relancer » keep the sessions; renders give their own.
+    let preparedStore: PreparedSessionStore
 
     @State private var trigger: Trigger
     @State private var draft: BlockRuleDraft
@@ -111,6 +117,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @State private var confirmingFreeze = false
     @State private var confirmingFocusLock = false
     @State private var confirmingJev = false
+    // Séance préparée (T-050 B2)
+    @State private var naming = false
+    @State private var name = ""
+    /// The window as it opened: a click outside asks first once it differs.
+    private let initial: Snapshot
     @Environment(\.openJevSettings) private var openJevSettings
     /// The plan the open alert promises: a click on it keeps this end (R5-regressions-01).
     @State private var pending: BlockingNowPlan?
@@ -119,7 +130,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     init(subject: Subject, blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
          now: Date? = nil, trigger: Trigger? = nil, draft startDraft: BlockRuleDraft? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
-         onOpenRecording: @escaping () -> Void = {},
+         preparedStore: PreparedSessionStore = .shared, onOpenRecording: @escaping () -> Void = {},
          onOpenWork: @escaping () -> Void = {}, onPrepareRed: @escaping () -> Void = {}, onClose: @escaping () -> Void) {
         self.subject = subject
         self.blocking = blocking
@@ -131,6 +142,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         self.onOpenWork = onOpenWork
         self.onPrepareRed = onPrepareRed
         self.onClose = onClose
+        self.preparedStore = preparedStore
         // Nil = the remembered session draft (the app). A render gives a fixed one: it reads no preference.
         var first = Trigger.schedule, composer = sessionDraft, rule = BlockRuleDraft()
         switch subject {
@@ -141,14 +153,45 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             rule.lock = value.lock ? .locked : .free
         case .rule(let value): first = value.key.isAlways ? .always : .schedule; rule = BlockRuleDraft(value)
         case .jev: break
+        case .prepared(let value): first = .session; composer = value.composer; rule = value.ruleDraft
         }
-        if case .rule = subject {} else if (trigger ?? first) == .session { rule.surveillance = Self.sessionSurveillance }
-        _trigger = State(initialValue: trigger ?? first)
-        _sessionDraft = State(initialValue: composer ?? .remembered())
-        _draft = State(initialValue: startDraft ?? rule)
+        switch subject {
+        case .rule, .prepared: break
+        case .new, .session, .jev: if (trigger ?? first) == .session { rule.surveillance = Self.sessionSurveillance }
+        }
         let clock = now ?? GoalongToday.now
+        var start = Snapshot(trigger: trigger ?? first, draft: startDraft ?? rule, session: composer ?? .remembered(), later: false,
+                             span: .minutes(60), wholeMac: false, freezeMode: .shield, kept: [], name: "")
+        var end = Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock
+        if case .prepared(let value) = subject {
+            (start.name, start.wholeMac, start.freezeMode, start.kept) = (value.name, value.wholeMac, value.freezeMode, value.kept)
+            switch value.span {
+            case .minutes(let minutes): start.span = .minutes(minutes)
+            case .until(let minute): start.span = .until; end = PreparedSession.untilDate(minute: minute, now: clock)
+            }
+        }
+        initial = start
+        _trigger = State(initialValue: start.trigger)
+        _sessionDraft = State(initialValue: start.session)
+        _draft = State(initialValue: start.draft)
         _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: clock) ?? clock)
-        _until = State(initialValue: Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock)
+        _until = State(initialValue: end)
+        _span = State(initialValue: start.span)
+        _name = State(initialValue: start.name)
+        _wholeMac = State(initialValue: start.wholeMac)
+        _freezeMode = State(initialValue: start.freezeMode)
+        _kept = State(initialValue: start.kept)
+    }
+
+    /// The prepared session this window opened, if any.
+    private var prepared: PreparedSession? {
+        if case .prepared(let session) = subject { return session }
+        return nil
+    }
+
+    /// A saved prepared session: « Modifier la séance », with « Enregistrer » and « Supprimer ».
+    private var savedPrepared: PreparedSession? {
+        prepared.flatMap { preparedStore.contains($0.id) ? $0 : nil }
     }
 
     /// « Surveillance » in a new session: checked as in the last one started (T-050 B1 point 4).
@@ -165,17 +208,84 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     /// The trigger is fixed once the rule exists: the selector stays shown, on its choice.
     var triggerIsFixed: Bool {
         switch subject {
-        case .rule: return true
+        case .rule, .prepared: return true
         case .new, .session, .jev: return false
         }
     }
 
     var title: String {
+        if savedPrepared != nil { return "Modifier la séance" }
         if trigger == .session { return "Nouvelle séance" }
         switch subject {
         case .rule, .jev: return "Modifier la règle"
-        case .new, .session: return "Nouvelle règle"
+        case .new, .session, .prepared: return "Nouvelle règle"
         }
+    }
+
+    /// « Quand » once the rule exists: only its choice stays shown, the others are hidden (T-050 B2 point 5).
+    static func whenOptions(fixed: Bool, current: Trigger) -> [Trigger] {
+        fixed ? [current] : Trigger.allCases
+    }
+
+    /// « Arrêt » of a session shows only the levels its engine has (P4): the impossible ones are hidden, with their
+    /// reason under the control. Rules keep every level, greyed with its reason.
+    var stopChoices: [BlockLock] {
+        guard trigger == .session else { return BlockLock.ordered }
+        return BlockLock.ordered.filter { lockUnavailable($0) == nil || $0 == stopLevel }
+    }
+
+    /// What the window holds: a change from the opening asks before a click outside closes it.
+    struct Snapshot: Equatable {
+        var trigger: Trigger
+        var draft: BlockRuleDraft
+        var session: FocusComposerDraft
+        var later: Bool
+        var span: BlockingNowComposer.Span
+        var wholeMac: Bool
+        var freezeMode: BlockFreeze.Mode
+        var kept: [BlockAppRule]
+        var name: String
+    }
+
+    /// A click outside closes the window at once until something changed; then it asks first.
+    static func isDirty(initial: Snapshot?, now: Snapshot) -> Bool { initial.map { $0 != now } ?? false }
+
+    private var snapshot: Snapshot {
+        Snapshot(trigger: trigger, draft: draft, session: sessionDraft, later: later, span: span, wholeMac: wholeMac,
+                 freezeMode: freezeMode, kept: kept, name: name)
+    }
+
+    /// The window as a prepared session: what « Enregistrer pour plus tard » keeps, and what « Relancer » starts again.
+    func preparedSession(id: UUID = UUID(), name: String = "") -> PreparedSession {
+        var value = PreparedSession(id: id, name: name)
+        value.pomodoro = sessionDraft.kind == .pomodoro
+        switch sessionDraft.rhythm {
+        case .classic: value.rhythm = 0
+        case .long: value.rhythm = 1
+        case .custom: value.rhythm = 2
+        }
+        (value.work, value.shortBreak, value.longBreak, value.every) = (sessionDraft.work, sessionDraft.shortBreak,
+                                                                        sessionDraft.longBreak, sessionDraft.every)
+        value.cycles = sessionDraft.cycles
+        value.intent = intent
+        switch span {
+        case .minutes(let minutes): value.span = .minutes(minutes)
+        case .until:
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: until)
+            value.span = .until(minute: (parts.hour ?? 0) * 60 + (parts.minute ?? 0))
+        }
+        value.listIDs = freezing ? [] : chosenIDs
+        value.blockDuringBreaks = sessionDraft.blockDuringBreaks
+        value.wholeMac = freezing
+        value.freezeMode = freezeMode
+        value.kept = kept
+        let screen = screenUnavailable == nil
+        value.red = screen && draft.red
+        value.intensity = draft.intensity
+        value.brightness = screen ? draft.brightness : nil
+        value.surveillance = draft.surveillance
+        value.lock = stopLevel
+        return value
     }
 
     private var cap: CGFloat { maxHeight ?? min(680, (NSScreen.main?.visibleFrame.height ?? 900) * 0.75) }
@@ -288,6 +398,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         .frame(width: Self.width)
         .background(LHTheme.pageBackground)
         .foregroundStyle(LHTheme.text)
+        .goalongDismissOnOutsideClick(onCancel: onClose)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("block-rule-editor")
     }
@@ -326,16 +437,25 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             if rule == nil, next == .session, draft.surveillance == nil { draft.surveillance = Self.sessionSurveillance }
         }
         .onDisappear { braise?.endPreview() }
-        .alert("Supprimer cette règle ?", isPresented: $confirmingDelete) {
+        .goalongDismissOnOutsideClick(isDirty: { Self.isDirty(initial: initial, now: snapshot) }, onCancel: close)
+        .alert(savedPrepared == nil ? "Supprimer cette règle ?" : "Supprimer cette séance ?", isPresented: $confirmingDelete) {
             Button("Supprimer", role: .destructive) { delete() }
             Button("Annuler", role: .cancel) {}
         } message: {
-            Text("Les listes restent. Seules leurs plages à ces heures sont retirées.")
+            Text(savedPrepared == nil ? "Les listes restent. Seules leurs plages à ces heures sont retirées." : "Les listes et les règles restent.")
+        }
+        .alert("Enregistrer la séance", isPresented: $naming) {
+            TextField("Nom", text: $name).accessibilityIdentifier("block-rule-session-name")
+            Button("Annuler", role: .cancel) {}
+            Button("Enregistrer") { savePrepared(id: UUID(), name: name) }
+        } message: {
+            Text("Elle sera dans « Séances » et dans la barre des menus, prête à lancer.")
         }
         .alert((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockTitle(stopLevel), isPresented: $confirmingLock) {
             Button("Annuler", role: .cancel) {}
             Button(stopLevel == .password ? "Protéger" : "Verrouiller") {
-                if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
+                if let pending, watchOnly { startWatch(pending) }
+                else if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
             }
         } message: {
             Text(GuardConsent.message((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockMessage(stopLevel),
@@ -424,8 +544,17 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     @ViewBuilder private func whenBox(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            GoalongSegmentedControl("Quand", selection: $trigger, options: Trigger.allCases,
-                                    unavailable: { triggerIsFixed && $0 != trigger ? "Le déclencheur est fixé à la création." : nil }) { $0.title }
+            if let saved = savedPrepared {
+                row("Nom") {
+                    TextField("", text: $name).textFieldStyle(GoalongFieldStyle())
+                        .goalongPlaceholder(saved.name, isEmpty: name.isEmpty)
+                        .accessibilityLabel("Nom de la séance")
+                        .accessibilityIdentifier("block-rule-session-name")
+                        .frame(minHeight: 32)
+                }
+            }
+            GoalongSegmentedControl("Quand", selection: $trigger,
+                                    options: Self.whenOptions(fixed: triggerIsFixed, current: trigger)) { $0.title }
                 .accessibilityIdentifier("block-rule-when")
             switch trigger {
             case .always:
@@ -827,7 +956,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private var stopBox: some View {
         VStack(alignment: .leading, spacing: 8) {
             GoalongSegmentedControl("Arrêt", selection: Binding(get: { stopLevel }, set: { draft.lock = $0 }),
-                                    options: BlockLock.ordered, unavailable: lockUnavailable) { $0.title }
+                                    options: stopChoices, unavailable: lockUnavailable) { $0.title }
                 .accessibilityIdentifier("block-rule-stop")
             if freezing {
                 BlockingLockExplainer(lock: .locked,
@@ -875,7 +1004,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private func footer(now: Date) -> some View {
         GoalongSheetFooter(inset: 28) {
-            if rule != nil {
+            if rule != nil || savedPrepared != nil {
                 Button("Supprimer", role: .destructive) { confirmingDelete = true }
                     .buttonStyle(LHQuietButtonStyle())
                     .accessibilityIdentifier("block-rule-delete")
@@ -887,6 +1016,17 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             }
             Button("Annuler", action: close).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("block-rule-cancel")
+            if let saved = savedPrepared {
+                Button("Enregistrer") { savePrepared(id: saved.id, name: name) }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .accessibilityIdentifier("block-rule-session-save")
+            } else if trigger == .session, !scheduling {
+                // A prepared session starts when it is launched: « Plus tard » has nothing to keep, the button is hidden.
+                Button("Enregistrer pour plus tard…") { name = ""; naming = true }
+                    .buttonStyle(LHSecondaryButtonStyle())
+                    .disabled(primaryDisabled)
+                    .accessibilityIdentifier("block-rule-session-keep")
+            }
             Button(primaryTitle(now: now)) { primary(now: now) }
                 .buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                 .disabled(primaryDisabled)
@@ -950,6 +1090,17 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         onClose()
     }
 
+    private func savePrepared(id: UUID, name typed: String) {
+        let clean = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        preparedStore.save(preparedSession(id: id, name: clean.isEmpty ? (savedPrepared?.name ?? Self.defaultIntent) : clean))
+        close()
+    }
+
+    /// Every session started from this window becomes « la dernière séance ».
+    private func recordLast() {
+        preparedStore.recordLast(preparedSession(id: prepared?.id ?? UUID(), name: prepared?.name ?? ""))
+    }
+
     private func primary(now: Date) {
         switch trigger {
         case .always, .schedule: save()
@@ -981,6 +1132,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     private func delete() {
+        if let saved = savedPrepared { preparedStore.delete(saved.id); close(); return }
         guard let rule else { return }
         let writes = BlockRulePlan.writes(nil, replacing: rule, lists: lists, red: braise?.ranges)
         if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise, surveillance: .shared) {
@@ -1019,8 +1171,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             let plan: BlockingNowPlan?
             if case .minutes = span { plan = blockPlan(at: date) } else { plan = blockPlan(at: now).confirmed(at: date) }
             guard let plan else { refusal = BlockingNowComposer.refusal(span, freeze: false); return }
-            markSession(.own, id: UUID(), start: plan.start, end: plan.end)
-            close()
+            // « Surveillance » alone with a protected stop asks the same confirmation as the lists (F2).
+            pending = plan
+            if stopLevel.protectsLists { confirmingLock = true } else { startWatch(plan) }
             return
         }
         guard let blocking else { return }
@@ -1042,6 +1195,12 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         if stopLevel.protectsLists { confirmingLock = true } else { startBlock(shown, blocking) }
     }
 
+    private func startWatch(_ plan: BlockingNowPlan) {
+        markSession(.own, id: UUID(), start: plan.start, end: plan.end)
+        recordLast()
+        close()
+    }
+
     private func startBlock(_ promised: BlockingNowPlan, _ blocking: BlockingController) {
         let holds = sessionHoldsScreen ? braise : nil
         var session: UUID?
@@ -1051,6 +1210,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             // A block session carries the mark; the red screen alone has no session: the mark keeps its own end.
             if let session { markSession(.block, id: session) }
             else { markSession(.own, id: UUID(), start: promised.start, end: promised.end) }
+            recordLast()
             close()
         }
     }
@@ -1063,7 +1223,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             blocking.error = BlockingNowComposer.refusal(span, freeze: true); return
         }
         blocking.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
-        if blocking.freeze != nil { markSession(.own, id: UUID(), start: Date(), end: end); close() } // wall: same frame as `end`
+        if blocking.freeze != nil { markSession(.own, id: UUID(), start: Date(), end: end); recordLast(); close() } // wall: same frame as `end`
     }
 
     /// Concentration: Pomodoro, or Continu with an intention. Without one, the session is named « Séance ».
@@ -1080,6 +1240,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                    lock: stopLevel == .locked && mode.canLock && !ids.isEmpty)
             sessionDraft.remember()
             if let id = focus.currentSession?.id { markSession(.focus, id: id) }
+            recordLast()
             close()
         } catch {
             focus.error = FocusUIError.message(error)
@@ -1090,9 +1251,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 extension BlockRuleEditor {
     /// The session's « Surveillance » choice, checked or not: Jev follows it, and the next session starts with it.
     func markSession(_ kind: JevSessionMark.Kind, id: UUID, start: Date? = nil, end: Date? = nil) {
-        let mark = JevSessionMark(id: id, kind: kind, on: draft.surveillance != nil, start: start, end: end, lock: stopLevel,
-                                  settings: draft.surveillance ?? JevSurveillanceStore.shared.document.sessionSettings)
-        JevSurveillanceStore.shared.mark(mark, now: GoalongToday.now, alive: JevMonitor.aliveSessions())
+        PreparedSessionLauncher.mark(kind, id: id, surveillance: draft.surveillance, lock: stopLevel, start: start, end: end)
     }
 }
 
