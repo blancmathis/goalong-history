@@ -3097,6 +3097,12 @@ blocages/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Rel
 blocages/editeur-seance-preparee   # Blocages lot B2a (T-050) : nouvelle image, une séance préparée rouverte (nom, « Quand » seul, Enregistrer)
 menubar/seances-preparees   # Blocages lot B2a (T-050) : nouvelle image, « Relancer » et « Lancer » dans le panneau
 blocages/editeur-   # Blocages lot B2a (T-050) : « Enregistrer pour plus tard… » sous « Séance » ; « Quand » d’une règle existante réduit à son choix ; niveaux d’arrêt impossibles d’une séance masqués
+blocages/   # Blocages lot B2b (T-050) : ligne de règle « quoi » d’abord, icône d’arrêt, interrupteur ; 4 modèles ; phrase de résumé de l’éditeur
+concentration/page--   # Blocages lot B2b (T-050) : page Blocages voisine (ligne de règle, modèles de l’état vide)
+braise/page-fenetre--   # Blocages lot B2b (T-050) : page Blocages voisine (ligne de règle, modèles de l’état vide)
+ambiance/barre-telechargement--   # Blocages lot B2b (T-050) : page Blocages voisine (ligne de règle, modèles de l’état vide)
+distractions/page--   # Blocages lot B2b (T-050) : page Blocages voisine (ligne de règle, modèles de l’état vide)
+programme/page--   # Blocages lot B2b (T-050) : page Blocages voisine (ligne de règle, modèles de l’état vide)
 agenda/reglages-acces-non-demande--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 agenda/reglages-acces-refuse--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins
 compte/acces-refuse--   # T-052 lot 3a (18) : Réglages prend la largeur de page d'Activité (1080 pt), les lignes se déplient moins

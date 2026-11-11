@@ -35,6 +35,7 @@ enum SupportSourceAllowlist {
         "BlockRule.swift",
         "BlockRuleEditor.swift",
         "BlockRulePlan.swift",
+        "BlockRuleRow.swift",
         "BlockingAXLane.swift",
         "BlockingController.swift",
         "BlockingEnforcement.swift",

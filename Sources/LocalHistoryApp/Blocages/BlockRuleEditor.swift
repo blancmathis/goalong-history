@@ -39,6 +39,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         case jev
         /// A prepared session (T-050 B2), saved or the last one started.
         case prepared(PreparedSession)
+        /// A new rule already filled: a template or a copy (T-050 B2b, A1 and A8).
+        case preset(BlockRulePreset)
 
         var id: String {
             switch self {
@@ -47,6 +49,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             case .rule(let rule): return "rule-\(rule.id)"
             case .jev: return "jev"
             case .prepared(let session): return "prepared-\(session.id)"
+            case .preset(let preset): return "preset-\(preset.id)"
             }
         }
     }
@@ -154,15 +157,17 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         case .rule(let value): first = value.key.isAlways ? .always : .schedule; rule = BlockRuleDraft(value)
         case .jev: break
         case .prepared(let value): first = .session; composer = value.composer; rule = value.ruleDraft
+        case .preset(let value): first = value.trigger; rule = value.draft
         }
         switch subject {
-        case .rule, .prepared: break
+        case .rule, .prepared, .preset: break
         case .new, .session, .jev: if (trigger ?? first) == .session { rule.surveillance = Self.sessionSurveillance }
         }
         let clock = now ?? GoalongToday.now
         var start = Snapshot(trigger: trigger ?? first, draft: startDraft ?? rule, session: composer ?? .remembered(), later: false,
                              span: .minutes(60), wholeMac: false, freezeMode: .shield, kept: [], name: "")
         var end = Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock
+        if case .preset(let value) = subject, let minutes = value.minutes { start.span = .minutes(minutes) }
         if case .prepared(let value) = subject {
             (start.name, start.wholeMac, start.freezeMode, start.kept) = (value.name, value.wholeMac, value.freezeMode, value.kept)
             switch value.span {
@@ -209,7 +214,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     var triggerIsFixed: Bool {
         switch subject {
         case .rule, .prepared: return true
-        case .new, .session, .jev: return false
+        case .new, .session, .jev, .preset: return false
         }
     }
 
@@ -218,7 +223,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         if trigger == .session { return "Nouvelle séance" }
         switch subject {
         case .rule, .jev: return "Modifier la règle"
-        case .new, .session, .prepared: return "Nouvelle règle"
+        case .new, .session, .prepared, .preset: return "Nouvelle règle"
         }
     }
 
@@ -414,6 +419,13 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                 VStack(alignment: .leading, spacing: 16) {
                                     Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4).accessibilityAddTraits(.isHeader)
                                         .accessibilityIdentifier("block-rule-title")
+                                    if case .new = subject {
+                                        // A1: a template fills the window; nothing is saved before « Enregistrer ».
+                                        BlockRuleTemplatesRow(lists: lists) { preset in
+                                            trigger = preset.trigger; draft = preset.draft
+                                            if let minutes = preset.minutes { span = .minutes(minutes) }
+                                        }
+                                    }
                                     box("Quand", id: "when") { whenBox(now: now) }
                                     box("Quoi", id: "what") { whatBox }
                                     box("Arrêt", id: "stop") { stopBox }
@@ -422,6 +434,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                 .padding(28)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            sentence(now: now)
                             footer(now: now)
                         }
                     }
@@ -458,8 +471,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 else if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
             }
         } message: {
-            Text(GuardConsent.message((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockMessage(stopLevel),
-                                      needed: BlockingRuntime.shared.guardNeedsConsent))
+            let plan = pending ?? blockPlan(at: now ?? GoalongToday.now)
+            // « Surveillance » alone holds no list and no guard: its own words (T-050 B2b point 5).
+            Text(watchOnly ? plan.watchLockMessage(stopLevel)
+                           : GuardConsent.message(plan.lockMessage(stopLevel), needed: BlockingRuntime.shared.guardNeedsConsent))
         }
         .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
             Button("Annuler", role: .cancel) {}
@@ -989,6 +1004,36 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     // MARK: Notes and footer
 
+    /// The rule in one sentence, with what its stop will ask (S3). « Verrouillé » is said as a warning.
+    @ViewBuilder private func sentence(now: Date) -> some View {
+        if let text = BlockRuleSentence.text(trigger: trigger, draft: draft, lists: lists, lock: stopLevel,
+                                             session: trigger == .session ? sessionWords(now: now) : nil, now: now) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if stopLevel == .locked { Image(systemName: BlockLock.locked.symbol).accessibilityHidden(true) }
+                Text(text).fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 12, weight: stopLevel == .locked ? .medium : .regular))
+            .foregroundStyle(stopLevel == .locked ? LHTheme.text : LHTheme.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28).padding(.vertical, 10)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("block-rule-sentence")
+        }
+    }
+
+    private func sessionWords(now: Date) -> BlockRuleSentence.Session {
+        guard usesFocus else { return .init(end: blockPlan(at: now).end, wholeMac: freezing) }
+        return .init(end: focusEnd(now: now), rhythm: sessionDraft.kind == .pomodoro ? "en Pomodoro" : nil)
+    }
+
+    private func focusEnd(now: Date) -> Date? {
+        var mode = sessionDraft
+        if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: now)) }
+        var session = FocusSession(intent: "·", mode: mode.mode, startedAt: now, events: [.init(kind: .start, at: now)])
+        session.plannedEndAt = nil
+        return FocusPhases.plannedEnd(session)
+    }
+
     @ViewBuilder private var notes: some View {
         if let refusal {
             GoalongNote(refusal, tone: .warning).accessibilityIdentifier("block-rule-refusal")
@@ -1044,11 +1089,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         guard trigger == .session else { return nil }
         if usesFocus {
             if focus?.currentSession != nil { return nil }
-            var mode = sessionDraft
-            if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: now)) }
-            var session = FocusSession(intent: "·", mode: mode.mode, startedAt: now, events: [.init(kind: .start, at: now)])
-            session.plannedEndAt = nil
-            return FocusPhases.plannedEnd(session).map { "Jusqu’à \(BlockingFormat.time($0))" }
+            return focusEnd(now: now).map { "Jusqu’à \(BlockingFormat.time($0))" }
         }
         if watchOnly {
             let plan = blockPlan(at: now)
