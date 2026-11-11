@@ -95,15 +95,27 @@ import LocalHistoryCore
         }
     }
 
-    struct BlockList: Identifiable, Equatable {
+    /// One thing that runs now (T-050 B2c, point 13 and S5): a rule of the page « Blocages », the same object, or a block
+    /// started outside a rule. The panel never weakens anything itself beyond what the page's switch does.
+    struct LiveItem: Identifiable, Equatable {
+        /// `now`: a « Libre » rule the page's switch turns off at once. `page`: its stop asks a proof, the page asks it.
+        /// `none`: « Verrouillé », nothing stops it before its end (P4: no dead button).
+        enum Stop: Equatable { case now, page, none }
         let id: String
         var title: String
         var detail: String
-        var isActive: Bool
-        var isLocked: Bool
+        var lock: BlockLock
+        var stop: Stop
     }
     @Published var blockingEnabled = false
-    @Published var blockLists: [BlockList] = []
+    @Published var live: [LiveItem] = []
+    /// The rules behind `live`, kept to stop a « Libre » one with the page's own call.
+    private var liveRules: [String: BlockRule] = [:]
+    /// The « Surveillance » blocks of the rules: a rule that carries one has no single stop (the page hides its switch).
+    var surveillanceRanges: @MainActor () -> [JevSurveillanceRange] = {
+        let store = JevSurveillanceStore.shared
+        return store.error == nil ? store.document.ranges : []
+    }
 
     /// The « Écran rouge » line. Always shown: no module to enable. Changes apply at once.
     @Published private(set) var redScreen = RedScreenState()
@@ -427,50 +439,48 @@ import LocalHistoryCore
 
     private func refreshBlocking() {
         blockingEnabled = modules.isEnabled(.blocking)
-        guard blockingEnabled, let controller = blocking() else { blockLists = []; return }
-        controller.refresh(enforceLast: false)
-        blockLists = controller.lists.map { list in
-            let active = controller.activeBlocks.filter { $0.listIDs.contains(list.id) }
-            let locked = controller.isStricterOnly(list.id)
-            let contents = "\(FrenchCount.count(list.sites.count, "site", "sites")), \(FrenchCount.count(list.apps.count, "app", "apps"))"
-            let detail = locked ? "Verrouillée, " + contents
-                : active.isEmpty ? contents : "Active, " + contents
-            return BlockList(id: list.id.uuidString, title: list.name, detail: detail,
-                             isActive: !active.isEmpty, isLocked: locked)
-        }
-    }
-
-    // SwiftUI's synchronous Binding setter can lose actor isolation in Swift 5 mode.
-    // Marshal the whole action, including refresh/publication, before entering the engine.
-    nonisolated func setBlockList(_ id: String, active: Bool) {
-        if Thread.isMainThread {
-            MainActor.assumeIsolated { setBlockListOnMainActor(id, active: active) }
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.setBlockListOnMainActor(id, active: active)
+        let controller = blockingEnabled ? blocking() : nil
+        controller?.refresh(enforceLast: false)
+        let screen = braise(), now = clock()
+        guard controller != nil || screen != nil else { live = []; liveRules = [:]; return }
+        let rules = BlockRules.current(blocking: controller, braise: screen, jev: surveillanceRanges(), now: now, calendar: calendar)
+            .filter { if case .running = $0.state { return true }; return false }
+        liveRules = Dictionary(rules.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        live = rules.map { rule in
+            let stop: LiveItem.Stop
+            switch BlockRuleSwitch.of(rule, canVerifyPassword: controller != nil) {
+            case .on(stop: .free): stop = .now
+            default: stop = rule.lock == .locked ? .none : .page
             }
+            return LiveItem(id: rule.id, title: rule.summary, detail: rule.stateText(now: now), lock: rule.lock, stop: stop)
+        }
+        // Blocks started outside a rule (a prepared session, a commitment…). A session's own blocks show with the session.
+        guard let controller else { return }
+        let names = Dictionary(controller.lists.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        for block in controller.activeBlocks where block.end > now {
+            switch block.origin {
+            case .program, .focus: continue
+            case .manual, .commitment, .trigger: break
+            }
+            let what = BlockRule.joined(block.listIDs.compactMap { names[$0] })
+            live.append(LiveItem(id: block.id.uuidString, title: what.isEmpty ? "Blocage" : "Bloque \(what)",
+                                 detail: "En cours jusqu’à \(BlockingFormat.endTime(block.end))", lock: block.lock,
+                                 stop: block.lock == .locked ? .none : .page))
         }
     }
 
-    private func setBlockListOnMainActor(_ id: String, active: Bool) {
-        guard modules.isEnabled(.blocking), let uuid = UUID(uuidString: id), let controller = blocking() else { return }
-        controller.refresh(enforceLast: false)
-        guard controller.list(uuid) != nil, !controller.isStricterOnly(uuid) else { refreshBlocking(); return }
-        let blocks = controller.activeBlocks.filter { $0.listIDs.contains(uuid) }
-        if active, blocks.isEmpty, let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: clock())) {
-            controller.start(listIDs: [uuid], until: end, lock: .free)
-        } else if !active {
-            // A shared session cannot be stopped for one list without changing the others.
-            guard blocks.allSatisfy({ $0.listIDs.count == 1 && $0.lock == .free }) else { onOpenSection(.blocking); return }
-            for block in blocks { controller.stop(block.id) }
-        }
-        if controller.error != nil { onOpenSection(.blocking) }
+    /// « Arrêter » of a line of « En ce moment ». A « Libre » rule stops with the page switch's own call, which checks the
+    /// rule's stop again and refuses without its proof. Anything else opens « Blocages », where its stop is asked.
+    func stopLive(_ id: String) {
         refreshBlocking()
-    }
-
-    func requestStopBlocking(_ id: String) {
-        guard let uuid = UUID(uuidString: id), blocking()?.list(uuid) != nil else { return }
-        onOpenSection(.blocking)
+        guard let item = live.first(where: { $0.id == id }), item.stop != .none else { return }
+        guard item.stop == .now, let rule = liveRules[id] else { onOpenSection(.blocking); return }
+        let controller = blocking()
+        if let refusal = BlockRuleSwitchAction.turnOff(rule, proof: .none, blocking: controller, braise: braise()) {
+            controller?.error = refusal
+            onOpenSection(.blocking)
+        }
+        refreshBlocking()
     }
 
     func openDay() { onOpenDay() }

@@ -7,7 +7,9 @@ import XCTest
 @testable import LocalHistoryApp
 
 final class BlockingActivationRegressionTests: XCTestCase {
-    @MainActor func testNativePanelSwitchStartsAndStopsBlocking() throws {
+    /// T-050 B2c: the panel's list switches gave way to the running rules. A « Libre » rule stops from the panel with
+    /// the page switch's own call.
+    @MainActor func testNativePanelStopsAFreeRunningRule() throws {
         guard ProcessInfo.processInfo.environment["GOALONG_BLOCKING_UI_TESTS"] == "1" else {
             throw XCTSkip("Opt-in native blocking activation with an in-memory list")
         }
@@ -21,7 +23,8 @@ final class BlockingActivationRegressionTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let modules = GoalongModuleStore(defaults: defaults)
         modules.setEnabled(.blocking, true)
-        let list = BlockList(name: "Régression", sites: [.init(pattern: "example.invalid")])
+        let allDay = BlockProgramRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440, lock: .free)
+        let list = BlockList(name: "Régression", sites: [.init(pattern: "example.invalid")], program: BlockProgram(ranges: [allDay]))
         let controller = BlockingController(document: BlockingDocument(lists: [list]),
             backend: StandardBlockingBackend(), runningApps: { [] })
         defer { controller.shutdown() }
@@ -35,6 +38,7 @@ final class BlockingActivationRegressionTests: XCTestCase {
         let model = MenuBarPanelModel(state: CaptureState(isGloballyPaused: { false }), modules: modules,
             concentration: { nil }, ambianceModule: AmbianceModule(settings: AmbianceSettings(defaults: defaults), supportDirectory: { root }),
             blocking: { controller }, onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
+        model.braise = { nil }; model.surveillanceRanges = { [] }
         model.refreshRuntimeState()
         let host = NSHostingController(rootView: MenuBarPanelView(model: model))
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 340, height: 800),
@@ -50,16 +54,11 @@ final class BlockingActivationRegressionTests: XCTestCase {
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxX)
         defer { popover.close(); window.orderOut(nil); window.contentView = nil }
         pump()
-        XCTAssertTrue(try press("Bloquer Régression", in: host.view))
-        pump()
-        XCTAssertEqual(controller.activeBlocks.count, 1)
         XCTAssertEqual(controller.activeBlocks.first?.listIDs, [list.id])
-        XCTAssertEqual(controller.activeBlocks.first?.lock, .free)
-        XCTAssertTrue(model.blockLists.first?.isActive == true)
-        XCTAssertTrue(try press("Bloquer Régression", in: host.view))
+        XCTAssertEqual(model.live.first?.stop, .now)
+        XCTAssertTrue(try press("Arrêter : Bloque Régression", in: host.view))
         pump()
         XCTAssertTrue(controller.activeBlocks.isEmpty)
-        XCTAssertTrue(model.blockLists.first?.isActive == false)
 
         // The app's composer uses this same controller entry point.
         controller.start(listIDs: [list.id], until: Date().addingTimeInterval(600), lock: .free)
@@ -91,7 +90,7 @@ final class BlockingActivationRegressionTests: XCTestCase {
             pending.append(contentsOf: value(object, "accessibilityChildren") as? [Any] ?? [])
             if let child = object as? NSView { pending.append(contentsOf: child.subviews) }
         }
-        XCTFail("Missing native blocking switch: \(label)")
+        XCTFail("Missing native panel button: \(label)")
         throw NSError(domain: "BlockingActivationRegressionTests", code: 1)
     }
 }

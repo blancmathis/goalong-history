@@ -273,58 +273,72 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertEqual(f.blocking?.activeBlocks.first?.lock, .locked)
     }
 
-    @MainActor func testLockedListsCannotBeToggledAndStopOpensBlocking() {
-        for lock: BlockLock in [.typing, .password, .locked] {
-            let f = fixture(), list = LocalHistoryApp.BlockList(name: "Protégée")
-            let session = BlockSession(listIDs: [list.id], start: f.now, end: f.now.addingTimeInterval(3600), lock: lock)
-            f.blocking = BlockingController(document: BlockingDocument(lists: [list], sessions: [session]), clock: { f.now },
-                calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
-            f.modules.setEnabled(.blocking, true)
-            let model = f.model(); model.refreshRuntimeState()
-            XCTAssertTrue(model.blockLists[0].isLocked)
-            let before = f.blocking?.activeBlocks
-            model.setBlockList(list.id.uuidString, active: false)
-            model.setBlockList(list.id.uuidString, active: true)
-            XCTAssertEqual(f.blocking?.activeBlocks, before)
-            model.requestStopBlocking(list.id.uuidString)
-            XCTAssertEqual(f.opened.last, .blocking); XCTAssertEqual(f.blocking?.activeBlocks, before)
-        }
-    }
-
-    @MainActor func testFreeListToggleUsesDayEndAndDoesNotStopSharedSession() {
-        let f = fixture(), first = LocalHistoryApp.BlockList(name: "Vidéo"), second = LocalHistoryApp.BlockList(name: "Sites")
-        f.blocking = BlockingController(document: BlockingDocument(lists: [first, second]), clock: { f.now },
-            calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
-        f.modules.setEnabled(.blocking, true)
-        let model = f.model(); model.setBlockList(first.id.uuidString, active: true)
-        XCTAssertEqual(f.blocking?.activeBlocks.first?.end,
-            f.calendar.date(byAdding: .day, value: 1, to: f.calendar.startOfDay(for: f.now)))
-        XCTAssertTrue(model.blockLists.first!.isActive)
-        model.setBlockList(first.id.uuidString, active: false)
-        XCTAssertFalse(model.blockLists.first!.isActive)
-        f.blocking?.start(listIDs: [first.id, second.id], until: f.now.addingTimeInterval(3600), lock: .free)
-        model.setBlockList(first.id.uuidString, active: false)
-        XCTAssertEqual(f.opened.last, .blocking); XCTAssertEqual(f.blocking?.activeBlocks.count, 1)
-    }
-
-    @MainActor func testBlockListBindingHopsToMainActorBeforePublishing() async {
-        let f = fixture(), list = LocalHistoryApp.BlockList(name: "Vidéo", sites: [.init(pattern: "example.invalid")])
+    /// T-050 B2c: the panel shows the running rules of « Blocages », the page's own objects, with the page's stop.
+    @MainActor private func liveModel(_ f: Fixture, lock: BlockLock, jev: [JevSurveillanceRange] = []) -> (MenuBarPanelModel, LocalHistoryApp.BlockList) {
+        // 10:00–12:00 every day; the fixture's clock reads Sunday 11:00 UTC.
+        let range = BlockProgramRange(weekdays: Set(1...7), startMinute: 600, endMinute: 720, lock: lock)
+        let list = LocalHistoryApp.BlockList(name: "Vidéo", sites: [.init(pattern: "example.invalid")],
+                                             program: BlockProgram(ranges: [range]))
         f.blocking = BlockingController(document: BlockingDocument(lists: [list]), clock: { f.now },
             calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
         f.modules.setEnabled(.blocking, true)
-        let model = f.model()
-        let published = expectation(description: "Blocking activation is published")
-        let subscription = f.blocking!.$activeBlocks.dropFirst().sink { blocks in
-            guard !blocks.isEmpty else { return }
-            XCTAssertTrue(Thread.isMainThread, "A SwiftUI binding must not enter the blocking engine off-main")
-            published.fulfill()
-        }
-        defer { subscription.cancel() }
-        let binding = Binding(get: { false }, set: { model.setBlockList(list.id.uuidString, active: $0) })
-        await Task.detached { binding.wrappedValue = true }.value
-        await fulfillment(of: [published], timeout: 2)
-        XCTAssertTrue(model.blockLists.first?.isActive == true)
+        let model = f.model(); model.braise = { nil }; model.surveillanceRanges = { jev }
+        model.refreshRuntimeState()
+        return (model, list)
+    }
+
+    @MainActor func testFreeRunningRuleStopsFromPanelWithThePageSwitch() throws {
+        let f = fixture(), (model, list) = liveModel(f, lock: .free)
+        let item = try XCTUnwrap(model.live.first)
+        XCTAssertEqual(model.live.count, 1); XCTAssertEqual(item.title, "Bloque Vidéo"); XCTAssertEqual(item.stop, .now)
         XCTAssertEqual(f.blocking?.activeBlocks.first?.listIDs, [list.id])
+        model.stopLive(item.id)
+        XCTAssertTrue(f.blocking?.activeBlocks.isEmpty == true); XCTAssertTrue(f.opened.isEmpty)
+    }
+
+    @MainActor func testProtectedRunningRulesNeverStopFromPanel() throws {
+        for lock: BlockLock in [.typing, .password, .locked] {
+            let f = fixture(), (model, _) = liveModel(f, lock: lock)
+            let item = try XCTUnwrap(model.live.first), before = f.blocking?.activeBlocks
+            XCTAssertFalse(before?.isEmpty ?? true)
+            // The applied lock: « Mot de passe » without a password set holds like « Verrouillé ».
+            let locked = item.lock == .locked
+            XCTAssertEqual(locked, lock != .typing, "\(lock)")
+            XCTAssertEqual(item.stop, locked ? .none : .page, "\(lock)")
+            model.stopLive(item.id)
+            XCTAssertEqual(f.blocking?.activeBlocks, before, "\(lock): the panel never weakens a protected rule")
+            XCTAssertEqual(f.opened, locked ? [] : [.blocking], "\(lock)")
+        }
+    }
+
+    @MainActor func testRuleWithSurveillanceOpensThePageInsteadOfStopping() throws {
+        let surveillance = JevSurveillanceRange(weekdays: Set(1...7), startMinute: 600, endMinute: 720, lock: .free,
+                                                settings: JevInterventionSettings())
+        let f = fixture(), (model, _) = liveModel(f, lock: .free, jev: [surveillance])
+        let item = try XCTUnwrap(model.live.first { $0.stop != .none }), before = f.blocking?.activeBlocks
+        XCTAssertEqual(item.stop, .page)
+        model.stopLive(item.id)
+        XCTAssertEqual(f.blocking?.activeBlocks, before); XCTAssertEqual(f.opened, [.blocking])
+    }
+
+    @MainActor func testBlockOutsideARuleShowsAndOnlyOpensThePage() throws {
+        let f = fixture(), list = LocalHistoryApp.BlockList(name: "Sites")
+        f.blocking = BlockingController(document: BlockingDocument(lists: [list]), clock: { f.now },
+            calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
+        f.modules.setEnabled(.blocking, true)
+        f.blocking?.start(listIDs: [list.id], until: f.now.addingTimeInterval(3600), lock: .free)
+        let model = f.model(); model.braise = { nil }; model.surveillanceRanges = { [] }
+        model.refreshRuntimeState()
+        let item = try XCTUnwrap(model.live.first), before = f.blocking?.activeBlocks
+        XCTAssertEqual(item.title, "Bloque Sites"); XCTAssertEqual(item.stop, .page)
+        model.stopLive(item.id)
+        XCTAssertEqual(f.blocking?.activeBlocks, before); XCTAssertEqual(f.opened, [.blocking])
+    }
+
+    @MainActor func testBlockingModuleOffShowsNoLiveRule() {
+        let f = fixture(), (model, _) = liveModel(f, lock: .free)
+        f.modules.setEnabled(.blocking, false); model.refreshRuntimeState()
+        XCTAssertTrue(model.live.isEmpty)
     }
 
     @MainActor func testPlayNextStaysInCurrentFamilySkipsUnavailableAndWraps() throws {

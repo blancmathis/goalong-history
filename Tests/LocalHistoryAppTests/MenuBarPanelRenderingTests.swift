@@ -50,10 +50,7 @@ final class MenuBarPanelRenderingTests: XCTestCase {
             model.ambianceEnabled = true; model.ambianceSources = sources; model.ambianceCurrent = sources[1]
             model.ambiancePlaying = false; model.ambianceLoading = false; model.ambianceError = nil
             model.blockingEnabled = true
-            model.blockLists = [
-                .init(id: "social", title: "Réseaux sociaux", detail: "6 sites, 2 apps", isActive: false, isLocked: false),
-                .init(id: "news", title: "Actualités", detail: "9 sites", isActive: false, isLocked: false),
-            ]
+            model.live = []
         }
 
         func render(_ name: String) throws {
@@ -86,9 +83,9 @@ final class MenuBarPanelRenderingTests: XCTestCase {
             model.focusRun = .init(phaseTitle: "Travail", remaining: TimeInterval(1122), elapsed: TimeInterval(378), progress: 0.25,
                                    cycle: 2, cycles: 4, nextBreak: Date(timeIntervalSince1970: 1_791_716_400), isPaused: false)
             model.ambiancePlaying = true
-            model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux",
-                                        detail: "Actif jusqu’à la fin de la séance, 3 tentatives", isActive: true, isLocked: true)
-            model.blockLists[1].isActive = true
+            model.live = [.init(id: "social", title: "Bloque Réseaux sociaux", detail: "En cours jusqu’à 11:30",
+                                lock: .locked, stop: .none),
+                          .init(id: "news", title: "Bloque Actualités", detail: "En cours jusqu’à 12:00", lock: .free, stop: .now)]
             try render("session-\(suffix)")
 
             base()

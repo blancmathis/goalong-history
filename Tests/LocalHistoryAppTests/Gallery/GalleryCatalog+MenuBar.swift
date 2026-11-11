@@ -26,8 +26,8 @@ extension GalleryCatalog {
                 model.focusRun = .init(phaseTitle: "Concentration", remaining: 1_122, elapsed: 378, progress: 0.25,
                                        cycle: 2, cycles: 4, nextBreak: GalleryClock.at(10, 0), isPaused: false)
                 model.ambiancePlaying = true
-                model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux",
-                                            detail: "Actif jusqu’à la fin de la séance, 3 tentatives", isActive: true, isLocked: false)
+                model.live = [.init(id: "social", title: "Bloque Réseaux sociaux", detail: "En cours jusqu’à 10:30",
+                                    lock: .free, stop: .now)]
             },
             state("pause") { model in
                 model.tracking = .paused(since: GalleryClock.at(9, 2)); model.trackingDetail = "Suivi en pause depuis 09:02"
@@ -52,8 +52,11 @@ extension GalleryCatalog {
                 model.attentionFix = .permissions
             },
             state("blocage-verrouille") { model in
-                model.blockLists[0] = .init(id: "social", title: "Réseaux sociaux", detail: "Verrouillé jusqu’à 16:34",
-                                            isActive: true, isLocked: true)
+                // T-050 B2c: running rules with the page's stop: locked (no stop), typing (asked in the page).
+                model.live = [.init(id: "social", title: "Bloque Réseaux sociaux", detail: "En cours jusqu’à 16:34",
+                                    lock: .locked, stop: .none),
+                              .init(id: "news", title: "Bloque Actualités", detail: "En cours jusqu’à 12:00",
+                                    lock: .typing, stop: .page)]
             },
             // T-050 B2a: « Relancer la dernière séance », its shortcut and the prepared sessions in one click.
             panel("menubar/seances-preparees", width: MenuBarPanelView.width, clock: .injected,
@@ -145,10 +148,8 @@ extension GalleryCatalog {
         model.ambianceEnabled = true; model.ambianceSources = sources; model.ambianceCurrent = sources[1]
         model.ambiancePlaying = false; model.ambianceLoading = false; model.ambianceError = nil
         model.blockingEnabled = true
-        model.blockLists = [
-            .init(id: "social", title: "Réseaux sociaux", detail: "6 sites, 2 apps", isActive: false, isLocked: false),
-            .init(id: "news", title: "Actualités", detail: "9 sites", isActive: false, isLocked: false),
-        ]
+        model.live = []
+        model.surveillanceRanges = { [] }
         ctx.keep(model)
         return model
     }
