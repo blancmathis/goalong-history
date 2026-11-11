@@ -397,7 +397,11 @@
                    slice.start <= previous.end.addingTimeInterval(30) {
                     sessions[sessions.count - 1] = SessionSlice(id: previous.id, start: previous.start, end: max(previous.end, slice.end),
                         appName: previous.appName, bundleIdentifier: previous.bundleIdentifier,
-                        contexts: mergedContexts(previous.contexts, adding: slice.context, isSuppressed: previous.isSuppressed || slice.isSuppressed),
+                        // One context at a time: `slice.context` is the joined text and would defeat the duplicate check.
+                        contexts: slice.contexts.reduce(mergedContexts(previous.contexts, adding: slice.contexts.first ?? "",
+                            isSuppressed: previous.isSuppressed || slice.isSuppressed)) {
+                            mergedContexts($0, adding: $1, isSuppressed: previous.isSuppressed || slice.isSuppressed)
+                        },
                         isSuppressed: previous.isSuppressed || slice.isSuppressed,
                         sourceSessionCount: previous.sourceSessionCount + slice.sourceSessionCount)
                 } else {
