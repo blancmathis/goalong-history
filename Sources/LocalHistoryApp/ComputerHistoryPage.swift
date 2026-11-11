@@ -363,6 +363,58 @@
             }
         }
 
+        /// T-052 lot 3b (S7): neighbouring windows that show the same apps read as one range, « 09:10–09:30 Safari et
+        /// Terminal ». Only touching windows with the same set of apps merge; a gap or another app starts a new row.
+        /// Newest first in, newest first out.
+        static func mergingNeighbours(_ groups: [ComputerHistoryTenMinuteGroup]) -> [ComputerHistoryTenMinuteGroup] {
+            var merged: [ComputerHistoryTenMinuteGroup] = []
+            for group in groups.sorted(by: { $0.start < $1.start }) {
+                if let last = merged.last, last.end == group.start,
+                   Set(last.apps.map(\.id)) == Set(group.apps.map(\.id)) {
+                    merged[merged.count - 1] = combined(last, group)
+                } else {
+                    merged.append(group)
+                }
+            }
+            return merged.reversed()
+        }
+
+        private static func combined(_ first: ComputerHistoryTenMinuteGroup, _ next: ComputerHistoryTenMinuteGroup) -> ComputerHistoryTenMinuteGroup {
+            var seconds: [String: TimeInterval] = [:]
+            for app in first.apps + next.apps { seconds[app.id, default: 0] += app.activeSeconds }
+            var apps: [AppSlice] = first.apps.map {
+                AppSlice(id: $0.id, name: $0.name, bundleIdentifier: $0.bundleIdentifier, activeSeconds: seconds[$0.id] ?? 0)
+            }
+            apps.sort { left, right in
+                if left.activeSeconds == right.activeSeconds {
+                    return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+                }
+                return left.activeSeconds > right.activeSeconds
+            }
+            var sessions = first.sessions
+            for slice in next.sessions {
+                if let previous = sessions.last, previous.appName == slice.appName, previous.bundleIdentifier == slice.bundleIdentifier,
+                   slice.start <= previous.end.addingTimeInterval(30) {
+                    sessions[sessions.count - 1] = SessionSlice(id: previous.id, start: previous.start, end: max(previous.end, slice.end),
+                        appName: previous.appName, bundleIdentifier: previous.bundleIdentifier,
+                        contexts: mergedContexts(previous.contexts, adding: slice.context, isSuppressed: previous.isSuppressed || slice.isSuppressed),
+                        isSuppressed: previous.isSuppressed || slice.isSuppressed,
+                        sourceSessionCount: previous.sourceSessionCount + slice.sourceSessionCount)
+                } else {
+                    sessions.append(slice)
+                }
+            }
+            var changes = 0
+            for index in sessions.indices.dropFirst()
+            where sessions[index - 1].appName.caseInsensitiveCompare(sessions[index].appName) != .orderedSame {
+                changes += 1
+            }
+            return ComputerHistoryTenMinuteGroup(id: first.start, start: first.start, end: next.end,
+                activeSeconds: first.activeSeconds + next.activeSeconds, apps: apps, sessions: sessions, appChangeCount: changes,
+                recordedEventCount: first.recordedEventCount + next.recordedEventCount,
+                inputEventCount: first.inputEventCount + next.inputEventCount)
+        }
+
         private static func mergedContexts(
             _ existing: [String],
             adding value: String,
@@ -475,7 +527,7 @@
                 qos: .utility
             ),
             buildGroups: @escaping BuildGroups = { sessions, day in
-                ComputerHistoryTenMinuteGroup.build(sessions: sessions, day: day)
+                ComputerHistoryTenMinuteGroup.mergingNeighbours(ComputerHistoryTenMinuteGroup.build(sessions: sessions, day: day))
             }
         ) {
             self.queue = queue

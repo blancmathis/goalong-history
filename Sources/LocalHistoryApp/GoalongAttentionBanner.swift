@@ -35,13 +35,21 @@ struct GoalongAttentionBanner: View {
 
     private var notice: Notice? {
         if let forcedNotice { return forcedNotice }
-        let slot = Self.currentStorageSlot(runtime: runtimeStore, localEnabled: consents.isEnabled(.localComputerHistory),
-            globallyPaused: globalPause.blocksActivity, section: navigationStore.selectedSection)
+        return Self.notice(runtime: runtimeStore, localEnabled: consents.isEnabled(.localComputerHistory),
+            globallyPaused: globalPause.blocksActivity, section: navigationStore.selectedSection,
+            updatedFrom: updates.updatedFromVersion, currentVersion: updates.currentVersion)
+    }
+
+    /// The one notice the banner shows, read by the window's banner stack too (T-052 lot 3b, point 17).
+    static func notice(runtime runtimeStore: DashboardRuntimeState, localEnabled: Bool, globallyPaused: Bool,
+                       section: DashboardSection, updatedFrom: String?, currentVersion: String) -> Notice? {
+        let slot = currentStorageSlot(runtime: runtimeStore, localEnabled: localEnabled,
+            globallyPaused: globallyPaused, section: section)
         let storageProblem = runtimeStore.runtime.storageFailure != nil || runtimeStore.freeDiskBytes.map(StorageHealth.isLow) == true
         if storageProblem, slot == .recordingCause { return .recordingCause }
         if slot == .storage, let kind = runtimeStore.runtime.storageFailure { return .storage(kind) }
         if slot == .storage, let free = runtimeStore.freeDiskBytes, StorageHealth.isLow(free) { return .lowSpace(free) }
-        if let previous = updates.updatedFromVersion { return .updated(from: previous, to: updates.currentVersion) }
+        if let updatedFrom { return .updated(from: updatedFrom, to: currentVersion) }
         return nil
     }
 
