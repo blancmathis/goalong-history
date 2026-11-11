@@ -343,6 +343,9 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
                     Button("Supprimer…", role: .destructive) { deleting = session }
                 }
                 .accessibilityElement(children: .contain)
+                // Lot 4: the double-click has a keyboard and VoiceOver equivalent: the « Modifier… » button (Tab, Space)
+                // and this named action (VoiceOver rotor).
+                .accessibilityAction(named: "Modifier la séance") { onOpen(session) }
                 .accessibilityIdentifier("blocages-prepared-\(session.id.uuidString)")
             }
         }

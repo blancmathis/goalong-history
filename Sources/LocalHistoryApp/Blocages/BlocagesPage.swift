@@ -169,11 +169,21 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Blocages").goalongPageTitle()
-            Text("Ce que Goalong bloque, quand, et ce qu’il faut pour l’arrêter.")
-                .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Blocages").goalongPageTitle()
+                Text("Ce que Goalong bloque, quand, et ce qu’il faut pour l’arrêter.")
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            // Lot 4 (13): the one lime action of the page sits in the header, like the other pages' actions.
+            // ⌘N only opens the rule editor: nothing is written until the rule is saved there.
+            Button { editing = .new } label: { Label("Nouvelle règle", systemImage: "plus") }
+                .buttonStyle(LHPrimaryButtonStyle())
+                .keyboardShortcut("n", modifiers: .command)
+                .help("Nouvelle règle (⌘N)")
+                .accessibilityIdentifier("blocages-new-rule")
         }
     }
 
@@ -195,12 +205,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     // MARK: Règles
 
     private func rules(now: Date) -> some View {
-        GoalongSection(title: "Règles", subtitle: "Une règle dit quand bloquer, quoi, et ce qu’il faut pour l’arrêter.", trailing: {
-            // The one lime action of the page.
-            Button { editing = .new } label: { Label("Nouvelle règle", systemImage: "plus") }
-                .buttonStyle(LHPrimaryButtonStyle())
-                .accessibilityIdentifier("blocages-new-rule")
-        }, content: {
+        GoalongSection(title: "Règles", subtitle: "Une règle dit quand bloquer, quoi, et ce qu’il faut pour l’arrêter.", content: {
             ObservedOptional(object: blocking) { blocking in
                 ObservedOptional(object: braise) { braise in
                     BlocagesRuleList(rules: BlockRules.current(blocking: blocking, braise: braise,
