@@ -90,6 +90,61 @@ import AppleScreenTime
         }
     }
 
+    /// What the app asks Sparkle next (T-053). The app never retries on the next run loop: a race
+    /// with Sparkle's own asynchronous steps lost the probe and the queued click. It keeps intents
+    /// and serves each one once, when Sparkle is free and no cycle is still closing.
+    ///
+    /// Sparkle 2.9.6 order this relies on (`.build/checkouts/Sparkle/Sparkle/SPUUpdater.m`):
+    /// - every cycle asks `mayPerform` first (`:846-853`) and ends with `didFinishUpdateCycle`
+    ///   (`:810-811`), even when refused (`abortUpdateDriver`, `:817-835`);
+    /// - at the end of a cycle, `sessionInProgress = NO` / `canCheckForUpdates = YES` are set
+    ///   (`:824-825`, `:877-878`) BEFORE `didFinishUpdateCycle`; Sparkle then lets the delegate start
+    ///   a new session from that callback and skips its own scheduling (`:829-830`, `:887-888`);
+    /// - the rescheduling sets the session busy (`:542-543`) until an XPC reply that always comes
+    ///   back later on the main queue (`SPUProbeInstallStatus.m:104,126`), then sets
+    ///   `canCheckForUpdates = YES` before `sessionInProgress = NO` (`:546-547`): no cycle, no
+    ///   `didFinishUpdateCycle`, so the app learns it only by observing both properties;
+    /// - at launch, `start` queues the first cycle on the main queue (`:172-187`).
+    struct SoftwareUpdateCheckQueue: Equatable {
+        enum Action: Equatable {
+            case none
+            case startProbe
+            case resumeClick
+        }
+
+        private(set) var wantsProbe = false
+        /// Sparkle asked `mayPerform` for a cycle whose `didFinishUpdateCycle` has not come yet.
+        private(set) var cycleOpen = false
+
+        mutating func requestProbe() {
+            wantsProbe = true
+        }
+
+        mutating func cycleWillStart() {
+            cycleOpen = true
+        }
+
+        /// A refused scheduled session is replaced by a probe. Any other cycle has just read the
+        /// feed (or failed to), so an older probe request is already answered.
+        mutating func cycleDidFinish(refused: Bool) {
+            cycleOpen = false
+            wantsProbe = refused
+        }
+
+        /// `sparkleIsFree` = `canCheckForUpdates && !sessionInProgress`. A queued click wins over a
+        /// probe: its user check reads the feed too.
+        mutating func next(sparkleIsFree: Bool, clickPending: Bool) -> Action {
+            guard sparkleIsFree, !cycleOpen else { return .none }
+            if clickPending {
+                wantsProbe = false
+                return .resumeClick
+            }
+            guard wantsProbe else { return .none }
+            wantsProbe = false
+            return .startProbe
+        }
+    }
+
     /// Owns the Sparkle lifecycle and exposes a quiet update surface in the dashboard.
     /// Release builds check the rolling main-channel feed immediately at launch. Development/source
     /// builds fail closed because they do not contain the release EdDSA key and must never offer an
@@ -120,6 +175,8 @@ import AppleScreenTime
         private var hasStarted = false
         private(set) var isRelaunchingForUpdate = false
         private var lastBackgroundCheck: Date?
+        private var checkQueue = SoftwareUpdateCheckQueue()
+        private var sparkleObservations: [NSKeyValueObservation] = []
         private var userAttendedCurrentUpdate = false
 
         var availableVersion: String? {
@@ -209,12 +266,38 @@ import AppleScreenTime
                 ? "Vérification automatique activée."
                 : "Vérification automatique désactivée."
 
+            observeSparkleAvailability(controller.updater)
             // Sparkle's scheduled interval may not be due yet, especially on a freshly installed
-            // build. Start one quiet probe now so the dashboard button reflects the current Git
-            // release without waiting for the hourly interval. A click on that button always runs
-            // a fresh user-initiated check, so it installs the newest release, never a stale one.
-            DispatchQueue.main.async { [weak self] in
-                self?.refreshAvailableUpdate()
+            // build. Ask for one quiet probe so the dashboard button reflects the current Git
+            // release. Record it only: Sparkle is free right now (`SPUUpdater.m:168`) but has queued
+            // its launch cycle (`:172-187`), which it skips if a session is open (`:185`). That
+            // cycle reschedules (`:464` → `:542-547`); the probe is served when it ends.
+            // A click always runs a fresh user-initiated check.
+            if automaticallyChecksForUpdates { checkQueue.requestProbe() }
+        }
+
+        /// Sparkle sets both properties on the main thread through their setters (automatic KVO).
+        private func observeSparkleAvailability(_ updater: SPUUpdater) {
+            let changed: @Sendable (SPUUpdater, NSKeyValueObservedChange<Bool>) -> Void = { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.serveQueuedChecks() }
+            }
+            sparkleObservations = [
+                updater.observe(\.canCheckForUpdates, changeHandler: changed),
+                updater.observe(\.sessionInProgress, changeHandler: changed),
+            ]
+        }
+
+        /// Serves a queued click or probe once Sparkle is free (see `SoftwareUpdateCheckQueue`).
+        private func serveQueuedChecks() {
+            guard let updater = updaterController?.updater else { return }
+            let isFree = updater.canCheckForUpdates && !updater.sessionInProgress
+            switch checkQueue.next(sparkleIsFree: isFree, clickPending: presentationState.hasPendingRequest) {
+            case .none:
+                return
+            case .startProbe:
+                beginBackgroundCheck(updater)
+            case .resumeClick:
+                resumePendingRequest()
             }
         }
 
@@ -226,6 +309,8 @@ import AppleScreenTime
             // the native login item during replacement.
             guard !isRelaunchingForUpdate else { return }
             updateWindows.finish()
+            sparkleObservations = []
+            checkQueue = SoftwareUpdateCheckQueue()
             updaterController = nil
             hasStarted = false
             lastBackgroundCheck = nil
@@ -254,7 +339,8 @@ import AppleScreenTime
         func refreshAvailableUpdate() {
             guard automaticallyChecksForUpdates else { return }
             guard Self.shouldCheckInBackground(lastCheck: lastBackgroundCheck, now: Date()) else { return }
-            beginBackgroundCheck()
+            checkQueue.requestProbe()
+            serveQueuedChecks()
         }
 
         static func shouldCheckInBackground(lastCheck: Date?, now: Date) -> Bool {
@@ -262,15 +348,11 @@ import AppleScreenTime
             return now.throttleElapsed(since: lastCheck) >= 3600
         }
 
-        private func beginBackgroundCheck() {
-            guard let updater = updaterController?.updater, updater.canCheckForUpdates else { return }
-            guard !updater.sessionInProgress else { return }
-            guard !isChecking else { return }
+        /// Only called by `serveQueuedChecks`, when Sparkle is free.
+        private func beginBackgroundCheck(_ updater: SPUUpdater) {
             lastBackgroundCheck = Date()
             isChecking = true
-            statusMessage = presentationState.availableVersion == nil
-                ? "Recherche de mises à jour…"
-                : "Préparation de la mise à jour…"
+            statusMessage = "Recherche de mises à jour…"
             SupportDiagnostics.shared.record(.updateCheckStarted, component: .updates, values: [.userChoice: .flag(false)])
             // A probe ends its session at once. A background *update* session would stay open with
             // the item it found, block every later check, and make the next click install that
@@ -289,6 +371,11 @@ import AppleScreenTime
 
         nonisolated static func isHeldSessionRefusal(_ error: (any Error)?) -> Bool {
             (error as NSError?)?.domain == heldSessionRefusalDomain
+        }
+
+        /// A refused scheduled session read nothing: it must not delay the next probe (T-053 B1).
+        nonisolated static func cycleCountsAsBackgroundCheck(error: (any Error)?) -> Bool {
+            !isHeldSessionRefusal(error)
         }
 
         func checkForUpdates() {
@@ -358,19 +445,18 @@ import AppleScreenTime
 
         private func markDetected(_ item: SUAppcastItem) {
             presentationState.recordDetected(version: item.displayVersionString)
+            // A probe has no user driver, so `markReady` never runs for it (T-053 C2).
+            statusMessage = "\(ProductIdentity.displayName) \(item.displayVersionString) est disponible."
         }
 
-        private func markReady(_ item: SUAppcastItem, presentPendingRequest: Bool = true) {
-            let shouldPresent = presentationState.recordReady(version: item.displayVersionString)
+        /// Sparkle's user driver calls this; scheduled sessions are refused and probes have no user
+        /// driver, so in practice it is a user-initiated check that Sparkle shows (T-053). A click still
+        /// queued is served when the cycle ends (`serveQueuedChecks`), never on the next run loop.
+        private func markReady(_ item: SUAppcastItem) {
+            presentationState.recordReady(version: item.displayVersionString)
             isChecking = false
             userAttendedCurrentUpdate = false
             statusMessage = "\(ProductIdentity.displayName) \(item.displayVersionString) est disponible."
-
-            if shouldPresent, presentPendingRequest {
-                DispatchQueue.main.async { [weak self] in
-                    self?.presentReadyUpdate()
-                }
-            }
         }
 
         private func startUserInitiatedCheck() {
@@ -379,8 +465,10 @@ import AppleScreenTime
                 return
             }
             guard !updater.sessionInProgress, updater.canCheckForUpdates else {
-                statusMessage = "La vérification est momentanément indisponible. Réessayez dans un instant."
-                presentationState.cancelPendingRequest()
+                // Sparkle is still busy (for example rescheduling): keep the click; it is served
+                // once Sparkle is free (`serveQueuedChecks`), never dropped (T-053 C1, C3).
+                isChecking = true
+                statusMessage = "Fin de la vérification en cours…"
                 return
             }
 
@@ -410,7 +498,7 @@ import AppleScreenTime
 
             guard presentationState.isReady, updater.sessionInProgress else {
                 presentationState.recordSessionFinished()
-                resumePendingRequest()
+                serveQueuedChecks()
                 return
             }
 
@@ -540,6 +628,8 @@ import AppleScreenTime
         }
 
         func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+            // Every cycle, refused or not, ends with `didFinishUpdateCycle` (`SPUUpdater.m:817-853`).
+            checkQueue.cycleWillStart()
             guard Self.sparkleMayRun(updateCheck) else {
                 throw NSError(domain: Self.heldSessionRefusalDomain, code: 1)
             }
@@ -597,15 +687,16 @@ import AppleScreenTime
             error: (any Error)?
         ) {
             isChecking = false
-            lastBackgroundCheck = Date()
-            if Self.isHeldSessionRefusal(error) {
-                // Sparkle's hourly schedule fired: run the same check as a probe once its refused
-                // session has closed. A queued click resumes when that probe finishes.
-                DispatchQueue.main.async { [weak self] in
-                    self?.beginBackgroundCheck()
-                }
-                return
+            let refused = Self.isHeldSessionRefusal(error)
+            if Self.cycleCountsAsBackgroundCheck(error: error) { lastBackgroundCheck = Date() }
+            // Sparkle is already free here (`SPUUpdater.m:824-825`, `:877-878`) and lets a new session
+            // start from this callback (`:829-830`, `:887-888`). A refused hourly session becomes a
+            // probe; a click queued behind a probe resumes now, once.
+            defer {
+                checkQueue.cycleDidFinish(refused: refused)
+                serveQueuedChecks()
             }
+            if refused { return }
             if let error, !Self.isNoUpdateResult(error) {
                 let hadPendingRequest = presentationState.hasPendingRequest
                 presentationState.cancelPendingRequest()
@@ -634,14 +725,8 @@ import AppleScreenTime
                 // A directly initiated check has now produced its native Sparkle result. No queued
                 // action remains even when the result was "up to date" rather than an update alert.
                 presentationState.cancelPendingRequest()
-            } else {
-                // A click may arrive while a scheduled/background session is still checking or
-                // winding down. Resume that exact request on the next run loop after Sparkle has
-                // released the old session, instead of dropping the click.
-                DispatchQueue.main.async { [weak self] in
-                    self?.resumePendingRequest()
-                }
             }
+            // Otherwise the click queued behind a probe is resumed by the deferred serve above.
         }
     }
 
@@ -666,10 +751,8 @@ import AppleScreenTime
                 // User-initiated checks are already being presented by Sparkle. Record the same
                 // availability without trying to focus the alert a second time.
                 updateWindows.beginExplicitPresentation()
-                markReady(update, presentPendingRequest: false)
-            } else {
-                markReady(update)
             }
+            markReady(update)
         }
 
         func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
