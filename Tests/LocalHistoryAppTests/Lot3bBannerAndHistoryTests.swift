@@ -60,6 +60,18 @@ final class Lot3bBannerAndHistoryTests: XCTestCase {
         XCTAssertTrue(ComputerHistoryTenMinuteGroup.mergingNeighbours([]).isEmpty)
     }
 
+    // 8: « Lire maintenant » never reads while another app is in front.
+    func testReadNowKeepsThePrivacyRule() {
+        XCTAssertFalse(GoalongAnalyticsLoadRequest.permits(preview: false, dashboardIsVisible: false, userAskedNow: false, appIsActive: true))
+        XCTAssertTrue(GoalongAnalyticsLoadRequest.permits(preview: false, dashboardIsVisible: false, userAskedNow: true, appIsActive: true))
+        XCTAssertFalse(GoalongAnalyticsLoadRequest.permits(preview: false, dashboardIsVisible: false, userAskedNow: true, appIsActive: false),
+                       "another app in front: the ask changes nothing")
+        XCTAssertTrue(GoalongAnalyticsLoadRequest.permits(preview: false, dashboardIsVisible: true, userAskedNow: false, appIsActive: true))
+        let request = GoalongAnalyticsLoadRequest(day: Date(), count: 1, preview: false, dashboardIsVisible: false,
+                                                  userAskedNow: true, appIsActive: false)
+        XCTAssertFalse(request.permitsLoading)
+    }
+
     private func session(_ id: String, _ app: String, _ start: Date, _ end: Date) -> ActivitySession {
         ActivitySession(
             id: id, start: start, end: end, appName: app, bundleIdentifier: "test.\(app)",

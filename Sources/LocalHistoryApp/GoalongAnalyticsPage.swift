@@ -41,6 +41,9 @@ struct GoalongAnalyticsPage: View {
     @State private var laneRevision = 0
     @State private var showingDeveloperProjects = false
     @State private var forceNextRead = false
+    /// « Lire maintenant »: one read while Goalong is in front; dropped as soon as another app takes the front.
+    @State private var readNowAsked = false
+    @State private var appIsActive = NSApp?.isActive ?? false
     @State private var showingAnalysisChoice = false
     @State private var reviewRequest: GoalongWorkReviewRequest?
     /// « Définition du travail » over Activité (`GoalongWorkSheet`).
@@ -92,7 +95,8 @@ struct GoalongAnalyticsPage: View {
     private var selectionID: String { "\(selection.day.timeIntervalSince1970)|\(selection.period)|\(previewActive)" }
     private var loadRequest: GoalongAnalyticsLoadRequest {
         GoalongAnalyticsLoadRequest(day: selection.day, count: selection.period,
-            revision: revision, preview: previewActive, dashboardIsVisible: runtimeStore.dashboardIsVisible)
+            revision: revision, preview: previewActive, dashboardIsVisible: runtimeStore.dashboardIsVisible,
+            userAskedNow: readNowAsked, appIsActive: appIsActive)
     }
 
     var body: some View {
@@ -172,9 +176,14 @@ struct GoalongAnalyticsPage: View {
                         } else if analytics.paused {
                             EmptyView()
                         } else if analytics.error == nil && !loadRequest.permitsLoading {
-                            GoalongNote("Lecture en attente : cliquez dans cette fenêtre pour lire les observations de cette période. Les lectures privées restent suspendues lorsque vous utilisez une autre application.",
-                                        symbol: "pause.circle")
-                                .accessibilityIdentifier("activity-read-waiting-for-focus")
+                            HStack(alignment: .center, spacing: 12) {
+                                GoalongNote("Lecture en attente : les lectures privées restent suspendues lorsque vous utilisez une autre application.",
+                                            symbol: "pause.circle")
+                                    .accessibilityIdentifier("activity-read-waiting-for-focus")
+                                Button("Lire maintenant") { readNow() }
+                                    .buttonStyle(LHSecondaryButtonStyle())
+                                    .accessibilityIdentifier("activity-read-now")
+                            }
                         } else if analytics.error == nil {
                             GoalongPageLoadingView(title: "Lecture des observations locales…",
                                 message: "Les durées sont calculées sur ce Mac, sans envoyer votre historique.")
@@ -322,6 +331,11 @@ struct GoalongAnalyticsPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .goalongDeveloperProjectsDidChange)) { _ in
             if !previewActive { laneRevision += 1 }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in appIsActive = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            appIsActive = false; readNowAsked = false
+        }
+        .onChange(of: runtimeStore.dashboardIsVisible) { visible in if visible { readNowAsked = false } }
         .onChange(of: developerMode) { enabled in
             if !enabled { showingPreview = false; previewNavigation = GoalongActivityNavigation() }
         }
@@ -634,6 +648,11 @@ struct GoalongAnalyticsPage: View {
         guard !previewActive else { return }
         model.selectDay(day)
         model.selectSection(.chatGPTRecap)
+    }
+    private func readNow() {
+        appIsActive = NSApp.isActive
+        guard appIsActive else { return }
+        readNowAsked = true
     }
     private func refresh() {
         forceNextRead = true
