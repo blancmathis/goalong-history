@@ -221,7 +221,7 @@ final class PauseRuleTests: XCTestCase {
         XCTAssertNil(PauseEngine.weakening(policy, less))
         XCTAssertNil(PauseEngine.weakening(policy, nil), "removing the pauses hardens")
         XCTAssertNotNil(PauseEngine.weakening(nil, policy), "adding pauses weakens")
-        XCTAssertNil(PauseEngine.weakening(policy, longerPeriod))
+        XCTAssertNotNil(PauseEngine.weakening(policy, longerPeriod), "a new period starts from zero: a used budget would come back")
         XCTAssertNotNil(PauseEngine.weakening(longerPeriod, shorter))
         var newPool = policy; newPool.id = UUID()
         XCTAssertNotNil(PauseEngine.weakening(policy, newPool), "a new pool starts from zero")

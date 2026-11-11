@@ -10,10 +10,6 @@ struct PausePolicy: Codable, Hashable, Identifiable {
         var title: String {
             switch self { case .day: return "jour"; case .week: return "semaine"; case .month: return "mois" }
         }
-        /// For « Durcir seulement »: the same budget over a longer period allows less.
-        var length: Int {
-            switch self { case .day: return 1; case .week: return 7; case .month: return 28 }
-        }
     }
 
     /// What comes before each pause.
@@ -226,7 +222,8 @@ enum PauseEngine {
         let refusal = "les pauses peuvent seulement diminuer."
         guard let current, current.id == next.id else { return refusal }
         if next.budgetMinutes > current.budgetMinutes { return refusal }
-        if next.period.length < current.period.length { return refusal }
+        // A new period starts its count from zero (`PauseEngine.current`): a change would hand back a used budget.
+        if next.period != current.period { return refusal }
         if (next.maxPauseMinutes ?? .max) > (current.maxPauseMinutes ?? .max) { return refusal }
         if (next.maxPauses ?? .max) > (current.maxPauses ?? .max) { return refusal }
         if next.gate.strength < current.gate.strength { return refusal }
