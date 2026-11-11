@@ -68,8 +68,29 @@ import LocalHistoryCore
 
     /// The stop of the surveillance the Blocage sessions carry.
     static func blockStep(monitor: JevMonitor? = nil) -> Step {
-        let lock = JevSurveillanceStore.shared.sessionLock(kind: .block, ids: JevMonitor.aliveSessions().blocks)
-        return lock == .free ? .allow : step(lock: lock, jevEnabled: (monitor ?? .shared).enabled)
+        blockStep(store: .shared, blocks: BlockingRuntime.shared.controller?.activeBlocks ?? [], now: Date(), // wall: the controller's block dates
+                  jevEnabled: (monitor ?? .shared).enabled)
+    }
+
+    /// Only the blocks already started carry their surveillance: a block programmed later asks nothing yet. Pure.
+    static func blockStep(store: JevSurveillanceStore, blocks: [BlockingActiveBlock], now: Date, jevEnabled: Bool) -> Step {
+        let lock = store.sessionLock(kind: .block, ids: JevMonitor.runningBlockIDs(blocks, now: now))
+        return lock == .free ? .allow : step(lock: lock, jevEnabled: jevEnabled)
+    }
+
+    /// Quitting Goalong stops Jev until the next launch: the same stop, like the blocking lists. « Verrouillé » says
+    /// that the window can be closed. Pure.
+    static let quitLockedText = lockedText + " Goalong reste ouvert jusqu’à sa fin. Vous pouvez fermer la fenêtre."
+    static func quitStep(_ step: Step) -> Step {
+        if case .refused(let reason) = step, reason == lockedText { return .refused(quitLockedText) }
+        return step
+    }
+
+    /// A recording pause set before a protected surveillance began ends when it begins (T-050 B1, question 2): only on
+    /// the passage from « nothing protected » to « protected », so a pause made later through the stop itself stays.
+    /// `wasProtected` nil = first look since launch: nothing is lifted. Pure.
+    static func liftsManualPause(paused: Bool, step: Step, wasProtected: Bool?) -> Bool {
+        paused && step != .allow && wasProtected == false
     }
 
     /// Asks for the stop of what runs now in a modal alert. True = Jev may be cut.

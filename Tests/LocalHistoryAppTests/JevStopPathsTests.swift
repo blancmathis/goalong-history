@@ -5,15 +5,17 @@ import LocalHistoryCore
 @testable import LocalHistoryApp
 
 /// T-050 B1 correction 9: every free command that cuts Jev goes through the stop of what runs. Pure: no alert, no real
-/// controller, no window. Paths that live in AppKit/SwiftUI actions are checked in their source.
+/// controller, no window. Paths that live in AppKit/SwiftUI actions (the page's stop, the pause, the key, the module
+/// switch) are still checked in their source: they need the app or a view to run.
 @MainActor final class JevStopPathsTests: XCTestCase {
-    private func focus() throws -> ConcentrationController {
+    private func focus() throws -> ConcentrationController { try focusWithStore().1 }
+    private func focusWithStore() throws -> (FocusStore, ConcentrationController) {
         let root = URL(fileURLWithPath: "/private/tmp/goalong-jev-paths-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = FocusStore(directory: root)
         var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = false; try store.saveSettings(settings)
         let now = Date(timeIntervalSince1970: 1_791_716_400)
-        return try ConcentrationController(store: store, clock: { now })
+        return (store, try ConcentrationController(store: store, clock: { now }))
     }
 
     /// `session stop` (CLI) and every caller that did not pass the stop are refused while the surveillance is protected.
@@ -31,12 +33,87 @@ import LocalHistoryCore
         XCTAssertNoThrow(try controller.stopSession(), "a free surveillance stops as before")
     }
 
-    func testTheCLIStopDoesNotPassTheStop() throws {
-        let runtime = try source("Concentration/ConcentrationRuntime.swift")
-        let line = try XCTUnwrap(runtime.components(separatedBy: "\n").first { $0.contains("case \"session stop\":") })
-        XCTAssertTrue(line.contains("stopSession(")); XCTAssertFalse(line.contains("surveillanceConfirmed"))
-        XCTAssertTrue(runtime.contains("value.surveillanceLock = "))
-        XCTAssertTrue(runtime.contains("controller?.surveillanceProtected"), "deleting the data does not cut it either")
+    /// Point (d) and the CLI: with the module on, a protected session refuses `session stop`, deleting the data and the
+    /// module switch; once the switch passed the stop, the module goes off.
+    func testTheCLIDeletingAndTheModuleSwitchDoNotCutAProtectedSession() throws {
+        let (focusStore, controller) = try focusWithStore()
+        let name = UUID().uuidString, defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: GoalongModule.concentration.defaultsKey)
+        let modules = GoalongModuleStore(defaults: defaults)
+        let runtime = ConcentrationRuntime(storeFactory: { focusStore }, factory: { _ in controller },
+                                           blockingProvider: { nil }, presentsPanels: false)
+        runtime.start(modules: modules)
+        controller.surveillanceLock = { _ in .password }
+        try controller.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        XCTAssertThrowsError(try runtime.handle(.init(command: "session stop")))
+        XCTAssertThrowsError(try runtime.deleteData())
+        modules.setEnabled(.concentration, false)
+        XCTAssertTrue(modules.isEnabled(.concentration)); XCTAssertNotNil(runtime.controller?.currentSession)
+        runtime.surveillanceOffConfirmed = true
+        modules.setEnabled(.concentration, false)
+        XCTAssertFalse(modules.isEnabled(.concentration)); XCTAssertNil(runtime.controller)
+    }
+
+    /// Point (a): quitting asks the stop of what runs; « Verrouillé » refuses and says the window can be closed.
+    func testQuittingAsksTheStopOfTheRunningSurveillance() throws {
+        let root = URL(fileURLWithPath: "/private/tmp/goalong-jev-quit-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let consents = GoalongCapabilityConsentStore(fileURL: root.appendingPathComponent("consents.json"))
+        XCTAssertTrue(consents.set(.jevMonitoring, enabled: true, surface: .settings))
+        let d = defaults(), store = JevSurveillanceStore(defaults: d), now = Date()
+        let monitor = JevMonitor(scopePreferences: JevMonitoringPreferences(defaults: d), surveillance: store, consents: consents,
+                                 sessionProvider: { nil }, blocksProvider: { [] }, legacySettings: { JevInterventionSettings() },
+                                 inbox: JevIngress(notificationCenter: NotificationCenter()), loadLocalSettings: false)
+        XCTAssertEqual(JevStopGate.quitStep(JevStopGate.currentStep(monitor: monitor)), .allow, "nothing runs: quit as before")
+        store.mark(own(.password, now: now), now: now, alive: JevRunningSessions())
+        XCTAssertEqual(JevStopGate.quitStep(JevStopGate.currentStep(monitor: monitor)), .password)
+        store.mark(own(.locked, now: now), now: now, alive: JevRunningSessions())
+        XCTAssertEqual(JevStopGate.quitStep(JevStopGate.currentStep(monitor: monitor)), .refused(JevStopGate.quitLockedText))
+        XCTAssertTrue(JevStopGate.quitLockedText.contains("fermer la fenêtre"))
+        XCTAssertTrue(consents.set(.jevMonitoring, enabled: false, surface: .settings))
+        XCTAssertEqual(JevStopGate.quitStep(JevStopGate.currentStep(monitor: monitor)), .allow, "Jev off: nothing to cut")
+    }
+
+    /// Point (b): a red-screen-only session with « Mot de passe » has « Arrêter », which ends it only once its stop passed.
+    func testAProtectedOwnSessionStopsThroughItsStop() {
+        let store = JevSurveillanceStore(defaults: defaults()), now = Date()
+        let mark = own(.password, now: now)
+        store.mark(mark, now: now, alive: JevRunningSessions())
+        XCTAssertTrue(BlocagesWatchLive.canStop(.password)); XCTAssertFalse(BlocagesWatchLive.canStop(.locked))
+        var asked: [JevStopGate.Step] = []
+        BlocagesWatchLive.stop(mark, store: store, now: now, jevEnabled: true) { asked.append($0); return false }
+        XCTAssertEqual(asked, [.password]); XCTAssertNotNil(store.runningOwn(now: now), "refused: it keeps running")
+        BlocagesWatchLive.stop(mark, store: store, now: now, jevEnabled: true) { _ in true }
+        XCTAssertNil(store.runningOwn(now: now.addingTimeInterval(1)))
+        let locked = own(.locked, now: now)
+        store.mark(locked, now: now, alive: JevRunningSessions())
+        BlocagesWatchLive.stop(locked, store: store, now: now, jevEnabled: true) { _ in XCTFail("never asked"); return true }
+        XCTAssertNotNil(store.runningOwn(now: now))
+    }
+
+    /// Point (c): turning Blocage off asks only the stop of the blocks already started.
+    func testOnlyStartedBlocksAskTheirStop() {
+        let store = JevSurveillanceStore(defaults: defaults()), now = Date(), id = UUID()
+        store.mark(JevSessionMark(id: id, kind: .block, on: true, lock: .password, settings: JevInterventionSettings()),
+                   now: now, alive: JevRunningSessions(blocks: [id]))
+        func block(startingIn seconds: TimeInterval) -> BlockingActiveBlock {
+            BlockingActiveBlock(id: id, listIDs: [], start: now.addingTimeInterval(seconds), end: now.addingTimeInterval(3_600),
+                                lock: .password, origin: .manual)
+        }
+        XCTAssertEqual(JevStopGate.blockStep(store: store, blocks: [block(startingIn: 600)], now: now, jevEnabled: true), .allow)
+        XCTAssertEqual(JevStopGate.blockStep(store: store, blocks: [block(startingIn: -60)], now: now, jevEnabled: true), .password)
+    }
+
+    /// Point (e): a recording pause set before a protected surveillance began is lifted when it begins; a pause made
+    /// through the stop while it runs, or found at launch, stays.
+    func testAPauseSetBeforeAProtectedSurveillanceEndsWhenItBegins() {
+        XCTAssertTrue(JevStopGate.liftsManualPause(paused: true, step: .password, wasProtected: false))
+        XCTAssertTrue(JevStopGate.liftsManualPause(paused: true, step: .refused(JevStopGate.lockedText), wasProtected: false))
+        XCTAssertFalse(JevStopGate.liftsManualPause(paused: true, step: .allow, wasProtected: false), "« Libre » or nothing runs")
+        XCTAssertFalse(JevStopGate.liftsManualPause(paused: false, step: .password, wasProtected: false), "not paused")
+        XCTAssertFalse(JevStopGate.liftsManualPause(paused: true, step: .password, wasProtected: true), "paused through the stop")
+        XCTAssertFalse(JevStopGate.liftsManualPause(paused: true, step: .password, wasProtected: nil), "first look after launch")
     }
 
     func testConcentrationStopAsksTheSessionStop() throws {
@@ -80,6 +157,17 @@ import LocalHistoryCore
         XCTAssertEqual(JevStopGate.step(lock: .free, jevEnabled: true), .allow)
         XCTAssertEqual(JevStopGate.step(lock: .password, jevEnabled: true), .password)
         XCTAssertEqual(JevStopGate.step(lock: .password, jevEnabled: false), .allow)
+    }
+
+    private func defaults() -> UserDefaults {
+        let name = "jev-paths-" + UUID().uuidString, value = UserDefaults(suiteName: name)!
+        addTeardownBlock { value.removePersistentDomain(forName: name) }
+        return value
+    }
+
+    private func own(_ lock: BlockLock, now: Date) -> JevSessionMark {
+        JevSessionMark(id: UUID(), kind: .own, on: true, start: now.addingTimeInterval(-60), end: now.addingTimeInterval(600),
+                       lock: lock, settings: JevInterventionSettings())
     }
 
     private func source(_ name: String) throws -> String {

@@ -160,6 +160,9 @@ import AppleScreenTime
         private var blockingQuitApproved = false
         private var terminationSignalSource: DispatchSourceSignal?
         private var quitAlertIsVisible = false
+        /// T-050 B1: the menu's quit passed the stop of a protected « Surveillance »; the terminate call consumes it.
+        private var jevQuitAuthorized = false
+        private var protectedSurveillanceObserver: NSObjectProtocol?
         private let continuityPreferences = BackgroundContinuityPreferences()
 
         /// Local recording is stopped by the privacy stop or by an unreadable config.json
@@ -521,7 +524,10 @@ import AppleScreenTime
         private func confirmUserQuitIfNeeded() -> Bool {
             var approved = false
             defer {
-                if !approved { MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() } }
+                if !approved {
+                    jevQuitAuthorized = false
+                    MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() }
+                }
             }
             guard confirmBlockingQuitIfNeeded(consumeAuthorization: false) else { return false }
             guard !userQuitConfirmed,
@@ -554,7 +560,39 @@ import AppleScreenTime
             }
         }
 
+        /// The lists and red-screen ranges first, then a protected « Surveillance » (T-050 B1): quitting stops Jev too.
         private func confirmBlockingQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
+            confirmListsQuitIfNeeded(consumeAuthorization: consumeAuthorization)
+                && confirmJevQuitIfNeeded(consumeAuthorization: consumeAuthorization)
+        }
+
+        /// Same conduct as the lists: « Verrouillé » refuses and offers to close the window, « Taper » and « Mot de passe »
+        /// ask once (`JevStopGate.quitStep`); the terminate call after the menu's quit only consumes that answer.
+        private func confirmJevQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
+            MainActor.assumeIsolated {
+                if consumeAuthorization, jevQuitAuthorized { jevQuitAuthorized = false; return true }
+                let step = JevStopGate.quitStep(JevStopGate.currentStep())
+                guard JevStopGate.needsAsking(step) else { return true }
+                if case .refused(let reason) = step {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    let alert = NSAlert()
+                    alert.messageText = "Une surveillance est verrouillée"
+                    alert.informativeText = reason
+                    alert.addButton(withTitle: "Fermer la fenêtre")
+                    alert.addButton(withTitle: "Annuler")
+                    if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
+                    return false
+                }
+                guard !quitAlertIsVisible else { return false }
+                quitAlertIsVisible = true
+                defer { quitAlertIsVisible = false }
+                guard JevStopGate.confirm(action: "Quitter Goalong", step: step) else { return false }
+                jevQuitAuthorized = !consumeAuthorization
+                return true
+            }
+        }
+
+        private func confirmListsQuitIfNeeded(consumeAuthorization: Bool) -> Bool {
             MainActor.assumeIsolated {
             switch Self.quitPrompt(runtime: BlockingRuntime.shared) {
             case .quit: return true
@@ -756,6 +794,8 @@ import AppleScreenTime
             capabilityConsentObserver = nil
             if let globalPauseObserver { NotificationCenter.default.removeObserver(globalPauseObserver) }
             globalPauseObserver = nil
+            if let protectedSurveillanceObserver { NotificationCenter.default.removeObserver(protectedSurveillanceObserver) }
+            protectedSurveillanceObserver = nil
             if let retentionPolicyObserver { NotificationCenter.default.removeObserver(retentionPolicyObserver) }
             retentionPolicyObserver = nil
             readOnlyQueryServer?.stop()
@@ -821,15 +861,7 @@ import AppleScreenTime
                 return
             }
             if captureState.isManuallyPaused {
-                continuityPreferences.manuallyPaused = false
-                captureState.setManualPaused(false)
-                captureHealthStore.setPaused(false)
-                minuteSealer.start()
-                recorder.record(
-                    kind: .recordingResumed, message: "Recording resumed from the Goalong History interface")
-                contextMonitor.resetAndSample()
-                // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
-                checkPermissionsAndStartTap()
+                resumeManualPause(message: "Recording resumed from the Goalong History interface")
             } else {
                 // T-050 B1 correction 1: the menu, the menu bar panel, the dashboard and ⌘P all land here.
                 guard MainActor.assumeIsolated({ JevStopGate.confirm(action: "Mettre en pause") }) else { return }
@@ -840,6 +872,27 @@ import AppleScreenTime
                 captureHealthStore.setPaused(true)
                 _ = minuteSealer.stopAndSeal()
             }
+            configureCallPresence()
+            menuBarController.updateStatus()
+        }
+
+        private func resumeManualPause(message: String) {
+            continuityPreferences.manuallyPaused = false
+            captureState.setManualPaused(false)
+            captureHealthStore.setPaused(false)
+            minuteSealer.start()
+            recorder.record(kind: .recordingResumed, message: message)
+            contextMonitor.resetAndSample()
+            // After a launch-restored pause the tap is not running: start it now, not at the next watchdog tick.
+            checkPermissionsAndStartTap()
+        }
+
+        /// T-050 B1, question 2: a recording pause set before a protected « Surveillance » began ends when it begins
+        /// (`JevMonitor` posts it, `JevStopGate.liftsManualPause`). « Tout suspendre » and the consents do not change.
+        private func resumeManualPauseForProtectedSurveillance() {
+            guard captureState.isManuallyPaused, !localRecordingHalted,
+                  capabilityConsents.isEnabled(.localComputerHistory) else { return }
+            resumeManualPause(message: "Recording resumed: a protected surveillance started")
             configureCallPresence()
             menuBarController.updateStatus()
         }
@@ -1352,6 +1405,10 @@ import AppleScreenTime
                 if GoalongGlobalPause.isPaused() { self.screenTimeRepository?.waitForPendingCollection() }
                 self.resumingGlobalPause = false
                 self.menuBarController.updateStatus()
+            }
+            protectedSurveillanceObserver = NotificationCenter.default.addObserver(
+                forName: .goalongProtectedSurveillanceStarted, object: nil, queue: .main) { [weak self] _ in
+                self?.resumeManualPauseForProtectedSurveillance()
             }
             capabilityConsentObserver = NotificationCenter.default.addObserver(
                 forName: .goalongCapabilityConsentDidChange,

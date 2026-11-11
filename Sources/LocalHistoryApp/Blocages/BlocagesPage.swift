@@ -434,9 +434,9 @@ private extension BlockRule {
     }
 }
 
-/// A session with « Surveillance » and no block session of its own (T-050 B1): it says until when, and stops when its
-/// stop is « Libre ». A protected one stays until its end.
-@MainActor private struct BlocagesWatchLive: View {
+/// A session with « Surveillance » and no block session of its own (T-050 B1): it says until when. « Arrêter » asks its
+/// stop (« Taper », « Mot de passe »); « Verrouillé » stays until its end.
+@MainActor struct BlocagesWatchLive: View {
     @ObservedObject private var store = JevSurveillanceStore.shared
     let now: Date
 
@@ -446,8 +446,12 @@ private extension BlockRule {
                 Text("Surveillance \(BlockingFormat.until(end, now: now))").font(.system(size: 13, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
-                if mark.lock == .free {
-                    Button("Arrêter") { store.endOwn(mark.id, now: GoalongToday.now) }
+                if Self.canStop(mark.lock) {
+                    Button("Arrêter") {
+                        Self.stop(mark, store: store, now: GoalongToday.now) {
+                            JevStopGate.confirm(action: "Arrêter la surveillance", step: $0)
+                        }
+                    }
                         .buttonStyle(LHSecondaryButtonStyle())
                         .accessibilityIdentifier("blocages-watch-stop")
                 } else {
@@ -457,6 +461,17 @@ private extension BlockRule {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("blocages-watch-live")
         }
+    }
+
+    static func canStop(_ lock: BlockLock) -> Bool { lock != .locked }
+
+    /// Ends the session once its stop is passed. `confirm` asks it (an alert in the app); Jev off asks nothing.
+    static func stop(_ mark: JevSessionMark, store: JevSurveillanceStore, now: Date,
+                     jevEnabled: Bool? = nil, confirm: (JevStopGate.Step) -> Bool) {
+        guard canStop(mark.lock) else { return }
+        let step = JevStopGate.step(lock: mark.lock, jevEnabled: jevEnabled ?? JevMonitor.shared.enabled)
+        guard !JevStopGate.needsAsking(step) || confirm(step) else { return }
+        store.endOwn(mark.id, now: now)
     }
 }
 

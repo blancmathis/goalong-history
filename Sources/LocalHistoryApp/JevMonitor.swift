@@ -280,7 +280,19 @@ struct JevRecentCheck: Identifiable {
         epoch = UUID(); request?.cancel(); request = nil; resetInterventions()
         lastPayload = ""; JevWarningPanel.shared.hide()
     }
+    /// Whether a protected surveillance ran at the last look; nil until the first one (T-050 B1, question 2).
+    private var wasProtected: Bool?
+    /// A recording pause set before a protected surveillance began: the app resumes the recording (`AppDelegate`).
+    private func liftPauseIfProtectionBegins(now: Date) {
+        let step = JevStopGate.step(currentActivity(now: now), jevEnabled: enabled, challenge: { "" })
+        let lifts = JevStopGate.liftsManualPause(paused: BackgroundContinuityPreferences().manuallyPaused, step: step,
+                                                 wasProtected: wasProtected)
+        wasProtected = step != .allow
+        guard lifts else { return }
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .goalongProtectedSurveillanceStarted, object: nil) }
+    }
     func reconfigure() {
+        liftPauseIfProtectionBegins(now: Date())
         cancelPending(); timer?.invalidate(); timer = nil
         settingsSignature = signature
         activeSettings = JevSurveillanceStore.strongest(currentActivity().map(\.settings))
@@ -291,7 +303,8 @@ struct JevRecentCheck: Identifiable {
         if timedBreak != nil && !breakStorageInvalid {
             scheduleTimer(seconds: 1)
         } else if available { scheduleTimer(seconds: 15) }
-        else if gate == Self.waitingText { scheduleTimer(seconds: 30) }
+        // The recording pause too: a protected surveillance that begins lifts it (T-050 B1, question 2).
+        else if gate == Self.waitingText || BackgroundContinuityPreferences().manuallyPaused { scheduleTimer(seconds: 30) }
     }
     private func scheduleTimer(seconds: TimeInterval) {
         let timer = Timer(timeInterval: seconds, repeats: true) { [weak self] _ in
@@ -409,5 +422,9 @@ struct JevRecentCheck: Identifiable {
         JevWarningPanel.shared.hide(resetPosition: true)
         cancelPending(); timer?.invalidate(); timer = nil; inbox.configure(enabled: false)
     }
+}
+extension Notification.Name {
+    /// A protected « Surveillance » began while the recording was paused by hand (T-050 B1, question 2).
+    static let goalongProtectedSurveillanceStarted = Notification.Name("ai.goalong.jev.protectedSurveillanceStarted")
 }
 #endif

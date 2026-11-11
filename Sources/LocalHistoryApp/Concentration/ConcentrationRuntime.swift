@@ -42,9 +42,19 @@ import LocalHistoryQueryCLI
     }
     func start(modules: GoalongModuleStore = .shared, monitor: ContextMonitor? = nil) {
         self.modules = modules; self.monitor = monitor
-        modules.concentrationDisableCheck = { [weak self] in self?.controller?.refresh(); return self?.controller?.hasLockedBlock != true }
+        modules.concentrationDisableCheck = { [weak self] in
+            guard let self, let controller = self.controller else { return true }
+            controller.refresh(); return !self.refusesTurningOff(controller)
+        }
         modules.onConcentrationEnabledChange = { [weak self] in self?.apply(enabled: $0) }
         apply(enabled: modules.isEnabled(.concentration))
+    }
+    /// T-050 B1: the settings switch passed the stop of the session's protected « Surveillance » (one shot).
+    var surveillanceOffConfirmed = false
+    /// Turning the module off is refused while a block is locked, or while the session carries a protected « Surveillance »
+    /// whose stop was not passed.
+    func refusesTurningOff(_ controller: ConcentrationController) -> Bool {
+        controller.hasLockedBlock || (controller.surveillanceProtected && !surveillanceOffConfirmed)
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
@@ -82,7 +92,7 @@ import LocalHistoryQueryCLI
             } catch { self.error = FocusUIError.message(error) }
         } else if !enabled, let controller {
             controller.refresh()
-            if controller.hasLockedBlock { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
+            if refusesTurningOff(controller) { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
             measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID()
             controller.shutdown(); monitor?.concentrationSink = nil
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)

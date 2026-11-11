@@ -104,7 +104,10 @@ import SwiftUI
                 // T-050 B1: turning off the module of a session that carries a protected « Surveillance » ends it: its stop first.
                 if !value, let step = Self.surveillanceStep(module),
                    !JevStopGate.confirm(action: "Désactiver \(module.title)", step: step) { return }
+                // The stop was passed (or nothing to ask): the runtime's own check lets this one off through.
+                concentration.surveillanceOffConfirmed = !value && module == .concentration
                 modules.setEnabled(module, value)
+                concentration.surveillanceOffConfirmed = false
                 onChange(module, value)
             }))
                 .toggleStyle(.goalongSwitchOnly).fixedSize()
