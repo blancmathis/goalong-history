@@ -34,8 +34,8 @@ import XCTest
         while Date() < deadline, !condition() { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
     }
 
-    private func click(in window: NSWindow, at point: NSPoint = NSPoint(x: 50, y: 50)) {
-        let event = NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+    private func click(in window: NSWindow, at point: NSPoint = NSPoint(x: 50, y: 50), timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        let event = NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: timestamp,
                                        windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
         NSApp.sendEvent(event)
     }
@@ -123,6 +123,44 @@ import XCTest
         XCTAssertEqual(D.decision(isEnabled: true, isDirty: false, otherLayerAbove: true), .ignore, "alert, panel, popover")
         XCTAssertEqual(D.decision(isEnabled: true, isDirty: true, otherLayerAbove: true), .ignore)
         XCTAssertEqual(D.decision(isEnabled: false, isDirty: false, otherLayerAbove: false), .ignore)
+    }
+
+    func testDecisionPassesTheActivationAndTitleBarClicks() {
+        typealias D = GoalongSheetDismissal
+        XCTAssertEqual(D.decision(isEnabled: true, isDirty: false, otherLayerAbove: false, isActivationClick: true), .ignore)
+        XCTAssertEqual(D.decision(isEnabled: true, isDirty: true, otherLayerAbove: false, isActivationClick: true), .ignore, "no question either")
+        XCTAssertEqual(D.decision(isEnabled: true, isDirty: false, otherLayerAbove: false, isTitleBarClick: true), .ignore)
+        XCTAssertEqual(D.decision(isEnabled: true, isDirty: true, otherLayerAbove: false, isTitleBarClick: true), .ignore)
+        XCTAssertTrue(D.isActivationClick(eventTimestamp: 100.1, lastActivation: 100.0))
+        XCTAssertTrue(D.isActivationClick(eventTimestamp: 99.9, lastActivation: 100.0), "the event may be stamped just before the notification")
+        XCTAssertFalse(D.isActivationClick(eventTimestamp: 101, lastActivation: 100.0))
+        XCTAssertFalse(D.isActivationClick(eventTimestamp: 100, lastActivation: nil))
+        let content = NSRect(x: 0, y: 0, width: 600, height: 400)
+        XCTAssertTrue(D.isTitleBarClick(location: NSPoint(x: 300, y: 410), contentLayoutRect: content))
+        XCTAssertFalse(D.isTitleBarClick(location: NSPoint(x: 300, y: 200), contentLayoutRect: content))
+    }
+
+    func testTheClickThatActivatesTheAppPassesThrough() {
+        let rig = rig(dirty: false)
+        defer { close(rig) }
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+        spin(for: 0.05)
+        click(in: rig.parent)
+        XCTAssertEqual(rig.cancelled(), 0, "the click that brings Goalong back does not close the sheet")
+        XCTAssertNotNil(rig.parent.attachedSheet)
+        click(in: rig.parent, timestamp: ProcessInfo.processInfo.systemUptime - 5)
+        XCTAssertEqual(rig.cancelled(), 1, "a later click outside closes it again")
+    }
+
+    func testAClickInTheParentTitleBarPassesThrough() {
+        let rig = rig(dirty: false)
+        defer { close(rig) }
+        let top = rig.parent.contentLayoutRect.maxY
+        XCTAssertLessThan(top, rig.parent.frame.height, "the titled parent has a title bar above its content")
+        click(in: rig.parent, at: NSPoint(x: 300, y: top + 10))
+        XCTAssertEqual(rig.cancelled(), 0, "moving the window or using its buttons does not close the sheet")
+        click(in: rig.parent, at: NSPoint(x: 300, y: top - 10))
+        XCTAssertEqual(rig.cancelled(), 1, "a click in the content still does")
     }
 
     func testADirtySheetNeverClosesWithoutAsking() {

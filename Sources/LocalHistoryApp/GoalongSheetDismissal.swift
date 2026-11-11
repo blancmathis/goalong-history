@@ -10,9 +10,28 @@ enum GoalongSheetDismissal {
 
     /// What a click or ⌘W does. Pure, so a test proves every exclusion without a window.
     /// - `otherLayerAbove`: an alert, a confirmation, a file panel or a popover sits above the sheet.
-    static func decision(isEnabled: Bool, isDirty: Bool, otherLayerAbove: Bool) -> Decision {
-        guard isEnabled, !otherLayerAbove else { return .ignore }
+    /// - `isActivationClick`: the click that brings Goalong to the front from another app (the member copied a text elsewhere).
+    /// - `isTitleBarClick`: the click is in the parent window's title bar (move the window, window buttons).
+    /// Both pass through untouched: the sheet stays and the click is not consumed.
+    static func decision(isEnabled: Bool, isDirty: Bool, otherLayerAbove: Bool,
+                         isActivationClick: Bool = false, isTitleBarClick: Bool = false) -> Decision {
+        guard isEnabled, !otherLayerAbove, !isActivationClick, !isTitleBarClick else { return .ignore }
         return isDirty ? .askToDiscard : .cancel
+    }
+
+    /// A click this close (seconds) to the app's activation is the click that activated it.
+    static let activationClickWindow: TimeInterval = 0.3
+
+    /// Pure: was this click the one that brought the app to the front? Both times are `systemUptime` seconds.
+    static func isActivationClick(eventTimestamp: TimeInterval, lastActivation: TimeInterval?) -> Bool {
+        guard let lastActivation else { return false }
+        return abs(eventTimestamp - lastActivation) <= activationClickWindow
+    }
+
+    /// Pure: a point (window coordinates) outside `contentLayoutRect` is in the title bar. `contentLayoutRect` also leaves out
+    /// the title bar of a full-size-content window, so one rule covers both kinds of window.
+    static func isTitleBarClick(location: NSPoint, contentLayoutRect: NSRect) -> Bool {
+        !contentLayoutRect.contains(location)
     }
 
     /// True when something other than the sheet itself is in front: a nested sheet (alert, panel) or a child window (popover).
@@ -47,6 +66,9 @@ enum GoalongSheetDismissal {
         var cancel: () -> Void = {}
         var askToDiscard: () -> Void = {}
         private var monitor: Any?
+        private var activationObserver: NSObjectProtocol?
+        /// `systemUptime` of the last `didBecomeActive`; the click that caused it is not an outside click.
+        var lastActivation: TimeInterval?
         static let escapeKeyCode: UInt16 = 53
 
         func start(in window: NSWindow) {
@@ -54,6 +76,9 @@ enum GoalongSheetDismissal {
             self.window = window
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .keyDown]) { [weak self] event in
                 MainActor.assumeIsolated { self?.handle(event) ?? event }
+            }
+            activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.lastActivation = ProcessInfo.processInfo.systemUptime }
             }
             // First field gets the focus once the sheet's views exist.
             DispatchQueue.main.async { [weak window] in
@@ -65,16 +90,22 @@ enum GoalongSheetDismissal {
         func stop() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+            if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+            activationObserver = nil
+            lastActivation = nil
             window = nil
         }
 
         /// Returns nil when the event is consumed (a click that closes the sheet must not reach the page behind).
         func handle(_ event: NSEvent) -> NSEvent? {
             guard let sheet = window else { return event }
+            var isActivationClick = false, isTitleBarClick = false
             switch event.type {
             case .leftMouseDown:
                 // Only a click in the window the sheet hangs from, and not in the sheet itself.
                 guard let parent = sheet.sheetParent, event.window === parent, parent.attachedSheet === sheet else { return event }
+                isActivationClick = GoalongSheetDismissal.isActivationClick(eventTimestamp: event.timestamp, lastActivation: lastActivation)
+                isTitleBarClick = GoalongSheetDismissal.isTitleBarClick(location: event.locationInWindow, contentLayoutRect: parent.contentLayoutRect)
             case .keyDown:
                 // ⌘W or Escape while the sheet is the key window: both do what « Annuler » does.
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -85,7 +116,8 @@ enum GoalongSheetDismissal {
                 return event
             }
             switch GoalongSheetDismissal.decision(isEnabled: isEnabled(), isDirty: isDirty(),
-                                                  otherLayerAbove: GoalongSheetDismissal.otherLayerAbove(sheet: sheet)) {
+                                                  otherLayerAbove: GoalongSheetDismissal.otherLayerAbove(sheet: sheet),
+                                                  isActivationClick: isActivationClick, isTitleBarClick: isTitleBarClick) {
             case .ignore: return event
             case .cancel: cancel(); return nil
             case .askToDiscard: askToDiscard(); return nil
