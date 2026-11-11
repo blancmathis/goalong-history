@@ -138,14 +138,14 @@ final class T046C1RenderTests: XCTestCase {
         XCTAssertNotNil(navigation.returnContext)
         var returned = 0
         let rendered = host(GoalongActivityHeader(selection: navigation, isPreview: false, isRefreshing: false, onDay: { _ in },
-            onPeriod: { _ in }, onStep: { _ in }, onToday: {}, onReturn: { returned += 1 }, onRefresh: {}, onShare: {}))
+            onPeriod: { _ in }, onStep: { _ in }, onToday: {}, onReturn: { returned += 1 }, onShare: {}))
         let seen = strings(of: rendered)
         XCTAssertTrue(seen.contains { $0.hasPrefix("Retour aux") }, "saw \(seen.sorted())")
         XCTAssertTrue(press("Retour aux 7 jours", in: rendered), "The return answers to the accessibility press")
         XCTAssertEqual(returned, 1)
         let without = strings(of: host(GoalongActivityHeader(selection: GoalongActivityNavigation(day: selected, period: 7, now: selected),
             isPreview: false, isRefreshing: false, onDay: { _ in }, onPeriod: { _ in }, onStep: { _ in }, onToday: {},
-            onReturn: {}, onRefresh: {}, onShare: {})))
+            onReturn: {}, onShare: {})))
         XCTAssertFalse(without.contains { $0.hasPrefix("Retour aux") }, "Without an opened day there is nothing to return to")
         assertNoVisibleWindow()
     }

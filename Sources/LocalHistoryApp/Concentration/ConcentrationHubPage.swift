@@ -96,10 +96,7 @@ struct ConcentrationHubHeader: View {
                 if let controller = runtime.controller {
                     BlockingListsSection(controller: controller, now: now ?? GoalongToday.now, editing: $editingList)
                     if let error = controller.error, editingList == nil {
-                        GoalongNote(FocusUIError.message(raw: error), tone: .warning).onTapGesture { controller.error = nil }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityHint("Masquer ce message")
-                            .accessibilityAction(named: "Masquer") { controller.error = nil }
+                        GoalongNote(FocusUIError.message(raw: error), tone: .warning, onDismiss: { controller.error = nil })
                     }
                 } else {
                     GoalongSection(title: "Listes") {

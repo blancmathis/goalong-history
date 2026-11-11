@@ -113,7 +113,6 @@ struct GoalongAnalyticsPage: View {
                     },
                     onToday: { updateSelection { $0.today() } },
                     onReturn: { updateSelection { $0.restorePeriod() } },
-                    onRefresh: refresh,
                     onShare: {
                         guard !previewActive else { return }
                         model.selectDay(selection.day)
@@ -135,10 +134,8 @@ struct GoalongAnalyticsPage: View {
                         if analytics.paused {
                             // R-74 (R9C-39): the window's pause banner holds the title and the one resume button;
                             // the page only says what the pause means for these figures.
-                            if analytics.payload == nil {
-                                GoalongNote("Vos durées reviennent ici dès que le suivi reprend.", symbol: "pause.circle")
-                                    .accessibilityIdentifier("activity-read-paused")
-                            } else {
+                            // Lot 2b: nothing repeats « Vos durées reviennent ici » (the banner and the sidebar say it).
+                            if analytics.payload != nil {
                                 GoalongNote("Chiffres figés pendant la pause : ils seront actualisés dès la reprise.", symbol: "pause.circle")
                                     .accessibilityIdentifier("activity-read-paused")
                             }
@@ -268,6 +265,14 @@ struct GoalongAnalyticsPage: View {
             Button("Annuler", role: .cancel) {}
         } message: {
             Text("Choisissez le type d’analyse. Les sources et les autorisations restent à vérifier avant toute génération.")
+        }
+        // Lot 2b (3): no refresh button. The page reads again when the window becomes active (the load stays under
+        // `permitsLoading`, so a hidden or unfocused window reads nothing) and on ⌘R.
+        .onChange(of: runtimeStore.dashboardIsVisible) { visible in
+            if visible, !previewActive { refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongRefreshPageRequested)) { _ in
+            if navigationStore.selectedSection == .overview || navigationStore.selectedSection == .analytics { refresh() }
         }
         .onAppearWhenShown {
             // The page is rebuilt on each section change: a day that turned while it was away counts too.

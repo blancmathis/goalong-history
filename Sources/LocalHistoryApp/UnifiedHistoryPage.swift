@@ -68,6 +68,9 @@
             .onChange(of: navigationStore.selectedDay) { day in
                 synchronizeSources(with: day)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .goalongRefreshPageRequested)) { _ in
+                if navigationStore.selectedSection == .history { refresh() }
+            }
             .onChange(of: source) { next in
                 screenTime.setActive(runtimeStore.dashboardIsVisible && next == .screenTime)
                 if next == .conversations {
@@ -82,7 +85,6 @@
                 isRefreshing: snapshotStore.isRefreshing || agents.isScanning || screenTime.isBusy,
                 onSelectDay: selectDay,
                 onShare: { navigationStore.showingWebsiteShare = true },
-                onRefresh: refresh,
                 // Same rule as Activité: an empty day greys the button instead of offering nothing.
                 // History off: nothing is recorded, so there is nothing to share either (UI-17C, écran 22).
                 sharingEnabled: historyEnabled && snapshotStore.snapshot.eventCount > 0,

@@ -33,6 +33,16 @@ import SwiftUI
                     ForEach(controller.lists) { list in card(list) }
                 }
             }
+            if let removed = controller.undoableDeletion {
+                HStack(spacing: 10) {
+                    Text("« \(removed.name) » supprimée.").font(.system(size: 13))
+                    Button("Annuler") { controller.undoDeletion() }
+                        .buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("blocking-undo-delete")
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 6)
+                .accessibilityElement(children: .contain).accessibilityIdentifier("blocking-undo-bar")
+            }
         }
     }
 
@@ -69,6 +79,18 @@ import SwiftUI
         .buttonStyle(.plain)
         .accessibilityIdentifier("blocking-list-\(list.name)")
         .accessibilityHint("Modifier la liste")
+        // Lot 2b (A8): right-click. The card is already a button: one click, and so a double-click, opens the editor.
+        .contextMenu {
+            Button("Modifier") { editing = list.id }
+            Button("Supprimer", role: .destructive) { requestDelete(list) }
+                .disabled(controller.isStricterOnly(list.id))
+        }
+    }
+
+    /// A harmless list goes at once (« Annuler » for 5 s); a list that protects something opens its editor, whose
+    /// « Supprimer » asks for confirmation.
+    private func requestDelete(_ list: BlockList) {
+        if !controller.deleteWithUndo(list.id) { editing = list.id }
     }
 
     static func contents(_ list: BlockList) -> String {
@@ -330,7 +352,10 @@ import SwiftUI
                 }
                 Spacer()
                 if !stricterOnly {
-                    Button("Supprimer", role: .destructive) { confirmingDelete = true }
+                    Button("Supprimer", role: .destructive) {
+                        // Lot 2b (A7): nothing protected goes at once, with « Annuler » for 5 s; the rest keeps its confirmation.
+                        if controller.deleteWithUndo(list.id) { onDone() } else { confirmingDelete = true }
+                    }
                         .buttonStyle(LHQuietButtonStyle())
                 }
                 Button("Terminé", action: onDone)

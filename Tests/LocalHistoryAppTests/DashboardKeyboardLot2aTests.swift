@@ -247,5 +247,30 @@ import XCTest
         XCTAssertEqual(restored.origin.x, frame.origin.x, accuracy: 1)
         third.window?.contentView = nil; third.window?.close()
     }
+
+    /// Lot 2b: a segment, a slider or a date picker with the focus keeps ←, → and T.
+    func testArrowsAndTStayWithANonTextControlThatHasTheFocus() throws {
+        try isolated()
+        let rig = try rig(.history)
+        defer { close(rig) }
+        let today = Calendar.current.startOfDay(for: rig.model.now())
+        let segments = NSSegmentedControl(labels: ["Jour", "Semaine"], trackingMode: .selectOne, target: nil, action: nil)
+        segments.frame = NSRect(x: 10, y: 50, width: 200, height: 24)
+        rig.window.contentView?.addSubview(segments)
+        let slider = NSSlider(value: 1, minValue: 0, maxValue: 10, target: nil, action: nil)
+        slider.frame = NSRect(x: 10, y: 90, width: 200, height: 24)
+        rig.window.contentView?.addSubview(slider)
+        for control in [segments, slider] as [NSControl] {
+            XCTAssertTrue(rig.window.makeFirstResponder(control))
+            XCTAssertTrue(DashboardKeyboard.focusedNonTextControl(rig.window.firstResponder))
+            XCTAssertFalse(press(rig, left), "← belongs to the control")
+            XCTAssertFalse(press(rig, right))
+            XCTAssertFalse(press(rig, tKey, "t"))
+            XCTAssertEqual(Calendar.current.startOfDay(for: rig.model.navigationStore.selectedDay), today)
+        }
+        XCTAssertTrue(rig.window.makeFirstResponder(nil))
+        XCTAssertFalse(DashboardKeyboard.focusedNonTextControl(rig.window.firstResponder))
+        XCTAssertTrue(press(rig, left), "with nothing focused the day keys work again")
+    }
 }
 #endif

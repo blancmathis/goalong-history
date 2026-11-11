@@ -70,11 +70,7 @@ import AppleScreenTime
                             JevConnectHint(text: "Avec Jev, le service d’analyse partenaire, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
                         }
                         if let error = controller.error {
-                            GoalongNote(FocusUIError.message(raw: error), tone: .warning)
-                                .onTapGesture { controller.error = nil }
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("Masquer ce message")
-                                .accessibilityAction(named: "Masquer") { controller.error = nil }
+                            GoalongNote(FocusUIError.message(raw: error), tone: .warning, onDismiss: { controller.error = nil })
                                 .accessibilityIdentifier("concentration-error")
                         }
                         if modules.isEnabled(.concentration), let note = Self.measurementNote(runtime.measurementError) {
