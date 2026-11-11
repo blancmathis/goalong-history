@@ -1,4 +1,5 @@
 #if os(macOS)
+import Carbon
 import Foundation
 import XCTest
 import LocalHistoryCore
@@ -49,12 +50,12 @@ import LocalHistoryCore
         first.name = "Matin calme"; store.save(first)
         XCTAssertEqual(store.document.sessions.map(\.name), ["Matin calme", "Soir"], "same id = replaced in place")
         store.delete(first.id)
-        store.recordLast(first); store.setShortcut(.controlOptionCommandR)
+        store.recordLast(first); store.setShortcut(.controlOptionCommandS)
         let again = PreparedSessionStore(defaults: d)
         XCTAssertEqual(again.document, store.document, "written once, read back")
         XCTAssertEqual(again.document.sessions.map(\.name), ["Soir"])
         XCTAssertEqual(again.document.last?.id, first.id)
-        XCTAssertEqual(again.document.shortcut, .controlOptionCommandR)
+        XCTAssertEqual(again.document.shortcut, .controlOptionCommandS)
     }
 
     func testPoint1UnreadableStoreSaysSoAndStartsEmpty() {
@@ -136,9 +137,73 @@ import LocalHistoryCore
 
     func testRelaunchShortcutKeysAreControlOptionCommand() {
         XCTAssertNil(RelaunchShortcut.none.key)
-        XCTAssertEqual(RelaunchShortcut.controlOptionCommandR.key?.code, 0x0F)
-        XCTAssertEqual(RelaunchShortcut.controlOptionCommandR.key?.modifiers, 0x0100 | 0x0800 | 0x1000)
-        XCTAssertEqual(RelaunchShortcut.controlOptionCommandR.title, "⌃⌥⌘R")
+        XCTAssertEqual(RelaunchShortcut.controlOptionCommandS.key?.code, 0x01)
+        XCTAssertEqual(RelaunchShortcut.controlOptionCommandS.key?.modifiers, 0x0100 | 0x0800 | 0x1000)
+        XCTAssertEqual(RelaunchShortcut.controlOptionCommandS.title, "⌃⌥⌘S")
+        XCTAssertFalse(RelaunchShortcut.allCases.contains { $0.key?.code == 0x0F }, "⌃⌥⌘R stays Braise's escape")
+    }
+
+    /// F1: the Carbon handler answers only its own id; Braise's ⌃⌥⌘R goes on untouched. A stored ⌃⌥⌘R reads as « Aucun ».
+    func testF1RelaunchHandlerIgnoresOtherHotKeysAndOldChoiceBecomesNone() async throws {
+        func press(_ id: EventHotKeyID) throws -> OSStatus {
+            var event: EventRef?
+            XCTAssertEqual(CreateEvent(nil, OSType(kEventClassKeyboard), UInt32(kEventHotKeyPressed), 0, 0, &event), noErr)
+            let value = try XCTUnwrap(event); defer { ReleaseEvent(value) }
+            var hotKey = id
+            XCTAssertEqual(SetEventParameter(value, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                             MemoryLayout<EventHotKeyID>.size, &hotKey), noErr)
+            return RelaunchHotKey.handle(nil, value, nil)
+        }
+        let saved = RelaunchHotKey.shared.action; defer { RelaunchHotKey.shared.action = saved }
+        var calls = 0
+        RelaunchHotKey.shared.action = { calls += 1 }
+        XCTAssertEqual(try press(EventHotKeyID(signature: OSType(0x42525332), id: 1)), OSStatus(eventNotHandledErr), "Braise")
+        XCTAssertEqual(try press(EventHotKeyID(signature: RelaunchHotKey.id.signature, id: 2)), OSStatus(eventNotHandledErr))
+        await Task.yield(); await Task.yield()
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(try press(RelaunchHotKey.id), noErr)
+        for _ in 0..<10 where calls == 0 { await Task.yield() }
+        XCTAssertEqual(calls, 1)
+
+        let d = defaults(), kept = session()
+        d.set(try JSONEncoder().encode(PreparedSessionStore.Document(sessions: [kept], shortcut: .controlOptionCommandS)),
+              forKey: PreparedSessionStore.storageKey)
+        let raw = try XCTUnwrap(String(data: try XCTUnwrap(d.data(forKey: PreparedSessionStore.storageKey)), encoding: .utf8))
+        d.set(Data(raw.replacingOccurrences(of: "controlOptionCommandS", with: "controlOptionCommandR").utf8),
+              forKey: PreparedSessionStore.storageKey)
+        let store = PreparedSessionStore(defaults: d)
+        XCTAssertNil(store.error)
+        XCTAssertEqual(store.document.shortcut, RelaunchShortcut.none)
+        XCTAssertEqual(store.document.sessions, [kept], "the sessions survive the removed choice")
+    }
+
+    /// F2: « Surveillance » alone with a protected stop opens the window: nothing starts, nothing is remembered.
+    func testF2ProtectedWatchOnlySessionNeverStartsInOneClick() throws {
+        let d = defaults(), store = PreparedSessionStore(defaults: d)
+        for lock in [BlockLock.password, .locked] {
+            var watch = session(lock: lock); watch.listIDs = []; watch.surveillance = JevInterventionSettings()
+            XCTAssertEqual(PreparedSessionLauncher.path(watch, hasFocus: false, hasBlocking: true, hasBraise: false, lists: [social.id]),
+                           .editor, "\(lock)")
+            var focused = session(lock: lock); focused.intent = "Écrire"
+            XCTAssertEqual(PreparedSessionLauncher.path(focused, hasFocus: true, hasBlocking: true, hasBraise: false, lists: [social.id]),
+                           .editor, "\(lock) with Concentration")
+            XCTAssertEqual(PreparedSessionLauncher.launch(watch, blocking: nil, braise: nil, focus: nil, store: store), .needsEditor)
+        }
+        XCTAssertNil(store.document.last, "a session that did not start is not « la dernière séance »")
+        XCTAssertNil(d.object(forKey: PreparedSessionStore.storageKey))
+    }
+
+    /// F3: unreadable data is copied before the next write replaces it; the copy is kept once.
+    func testF3UnreadableStoreKeepsACopyBeforeTheNextWrite() {
+        let d = defaults(), broken = Data("pas du json".utf8)
+        d.set(broken, forKey: PreparedSessionStore.storageKey)
+        let store = PreparedSessionStore(defaults: d)
+        store.save(session())
+        XCTAssertNil(store.error)
+        XCTAssertEqual(d.data(forKey: PreparedSessionStore.unreadableCopyKey), broken)
+        d.set(Data("autre".utf8), forKey: PreparedSessionStore.storageKey)
+        _ = PreparedSessionStore(defaults: d)
+        XCTAssertEqual(d.data(forKey: PreparedSessionStore.unreadableCopyKey), broken, "the first copy is not replaced")
     }
 
     // MARK: Point 5 — an existing rule shows only its « Quand »

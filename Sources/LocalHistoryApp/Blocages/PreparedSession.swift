@@ -94,14 +94,18 @@ struct PreparedSession: Codable, Equatable, Identifiable {
     }
 }
 
-/// The global shortcut that relaunches the last session. A few fixed choices: none is taken by macOS.
+/// The global shortcut that relaunches the last session. A few fixed choices: none is taken by macOS, and ⌃⌥⌘R
+/// stays Braise's red-screen escape. A stored choice this list no longer has (⌃⌥⌘R, before F1) reads as « Aucun ».
 enum RelaunchShortcut: String, Codable, CaseIterable {
-    case none, controlOptionCommandR, controlOptionCommandS, controlOptionCommandL
+    case none, controlOptionCommandS, controlOptionCommandL
+
+    init(from decoder: Decoder) throws {
+        self = RelaunchShortcut(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .none
+    }
 
     var title: String {
         switch self {
         case .none: return "Aucun"
-        case .controlOptionCommandR: return "⌃⌥⌘R"
         case .controlOptionCommandS: return "⌃⌥⌘S"
         case .controlOptionCommandL: return "⌃⌥⌘L"
         }
@@ -112,7 +116,6 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
         let modifiers: UInt32 = 0x0100 | 0x0800 | 0x1000
         switch self {
         case .none: return nil
-        case .controlOptionCommandR: return (0x0F, modifiers)
         case .controlOptionCommandS: return (0x01, modifiers)
         case .controlOptionCommandL: return (0x25, modifiers)
         }
@@ -130,7 +133,9 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
 
     static let shared = PreparedSessionStore()
     static let storageKey = "goalong.sessions.prepared.v1"
-    static let unreadableText = "Séances préparées illisibles : elles reviendront au prochain enregistrement."
+    /// The unreadable data is copied here once, before the next write replaces it.
+    static let unreadableCopyKey = "goalong.sessions.prepared.v1.unreadable"
+    static let unreadableText = "Séances préparées illisibles : une copie est gardée, les nouvelles séances repartent de zéro."
     @Published private(set) var document = Document()
     @Published private(set) var error: String?
     /// A session that needs the window (a protected stop, the whole Mac, a refusal): the page « Blocages » opens it.
@@ -142,6 +147,9 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
         guard defaults.object(forKey: Self.storageKey) != nil else { return }
         guard let data = defaults.data(forKey: Self.storageKey), data.count <= 512_000,
               let value = try? JSONDecoder().decode(Document.self, from: data), value.schema == 1 else {
+            if defaults.object(forKey: Self.unreadableCopyKey) == nil, let raw = defaults.object(forKey: Self.storageKey) {
+                defaults.set(raw, forKey: Self.unreadableCopyKey)
+            }
             error = Self.unreadableText
             return
         }
@@ -193,15 +201,17 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
     /// Pure: which engine starts the session at once, or `.editor` when it needs the window.
     static func path(_ session: PreparedSession, hasFocus: Bool, hasBlocking: Bool, hasBraise: Bool,
                      lists: Set<UUID>) -> Path {
+        // A protected stop (« Mot de passe », « Verrouillé ») never starts in one click, « Surveillance » alone included.
+        if session.lock.protectsLists { return .editor }
         if hasFocus, session.pomodoro || !session.trimmedIntent.isEmpty {
-            return session.lock == .locked ? .editor : .focus
+            return .focus
         }
         if session.pomodoro || session.wholeMac { return .editor }
         if session.holdsScreen, !hasBraise { return .editor }
         if session.listIDs.allSatisfy({ !lists.contains($0) }), !session.holdsScreen {
             return session.surveillance == nil ? .editor : .watch
         }
-        return !hasBlocking || session.lock.protectsLists ? .editor : .block
+        return hasBlocking ? .block : .editor
     }
 
     static func launch(_ session: PreparedSession, blocking: BlockingController?, braise: BraiseController?,

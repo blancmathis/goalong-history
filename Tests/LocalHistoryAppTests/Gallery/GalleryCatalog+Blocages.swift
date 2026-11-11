@@ -18,7 +18,7 @@ extension GalleryCatalog {
         var evening = PreparedSession(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B3")!, name: "Soirée sans écran")
         evening.span = .until(minute: 22 * 60); evening.wholeMac = true; evening.lock = .locked
         [morning, pomodoro, evening].forEach(store.save)
-        store.recordLast(morning); store.setShortcut(.controlOptionCommandR)
+        store.recordLast(morning); store.setShortcut(.controlOptionCommandS)
         return store
     }
 

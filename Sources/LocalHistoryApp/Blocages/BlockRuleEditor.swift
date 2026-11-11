@@ -454,7 +454,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         .alert((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockTitle(stopLevel), isPresented: $confirmingLock) {
             Button("Annuler", role: .cancel) {}
             Button(stopLevel == .password ? "Protéger" : "Verrouiller") {
-                if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
+                if let pending, watchOnly { startWatch(pending) }
+                else if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
             }
         } message: {
             Text(GuardConsent.message((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockMessage(stopLevel),
@@ -1170,9 +1171,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             let plan: BlockingNowPlan?
             if case .minutes = span { plan = blockPlan(at: date) } else { plan = blockPlan(at: now).confirmed(at: date) }
             guard let plan else { refusal = BlockingNowComposer.refusal(span, freeze: false); return }
-            markSession(.own, id: UUID(), start: plan.start, end: plan.end)
-            recordLast()
-            close()
+            // « Surveillance » alone with a protected stop asks the same confirmation as the lists (F2).
+            pending = plan
+            if stopLevel.protectsLists { confirmingLock = true } else { startWatch(plan) }
             return
         }
         guard let blocking else { return }
@@ -1192,6 +1193,12 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
         pending = shown
         if stopLevel.protectsLists { confirmingLock = true } else { startBlock(shown, blocking) }
+    }
+
+    private func startWatch(_ plan: BlockingNowPlan) {
+        markSession(.own, id: UUID(), start: plan.start, end: plan.end)
+        recordLast()
+        close()
     }
 
     private func startBlock(_ promised: BlockingNowPlan, _ blocking: BlockingController) {
