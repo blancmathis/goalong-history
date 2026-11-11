@@ -74,7 +74,7 @@ import AppKit
             }
         }
         .background(LHTheme.pageBackground)
-        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls() }
+        .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls().goalongDismissOnOutsideClick() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
             Button("Inclure") { var next = settingsStore.appliedSettings; next.capturePrivateBrowsing = true; _ = model.applyRecordingChoice(next) }

@@ -97,13 +97,16 @@ struct GoalongRecordingSetupSheet: View {
     let onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var proposal: GoalongRecordingSetup.Proposal
+    private let initialProposal: GoalongRecordingSetup.Proposal
     @State private var error: String?
     init(model: DashboardViewModel, activating: Bool = false, complete: Bool = false,
          onSaved: @escaping () -> Void = {}) {
         let settings = model.settingsStore
         self.model = model; _alertStore = ObservedObject(wrappedValue: model.alertStore); _settingsStore = ObservedObject(wrappedValue: model.settingsStore); self.activating = activating; self.onSaved = onSaved
-        _proposal = State(initialValue: GoalongRecordingSetup.proposal(from: settings.appliedSettings,
-            visibleText: ActivityAnalysisPreferences.richContextEnabled, complete: complete))
+        let start = GoalongRecordingSetup.proposal(from: settings.appliedSettings,
+            visibleText: ActivityAnalysisPreferences.richContextEnabled, complete: complete)
+        _proposal = State(initialValue: start)
+        initialProposal = start
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -143,6 +146,7 @@ struct GoalongRecordingSetupSheet: View {
                     .accessibilityIdentifier("recording-setup-confirm")
             }.padding(20)
         }.frame(width: 700, height: 610).background(LHTheme.pageBackground)
+        .goalongDismissOnOutsideClick(isDirty: { proposal != initialProposal })
     }
 }
 

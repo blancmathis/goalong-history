@@ -19,6 +19,10 @@ import LocalHistoryCore
     /// A definition typed but not saved when its view went away (Activité's sheet closes on Escape). Kept in memory
     /// only and given back at the next opening, as the page keeps it while it stays alive.
     private static var unsaved: (fields: [String], prefilled: Bool)?
+    /// True while a definition was typed and not saved: the sheet then asks before it closes.
+    static var hasUnsavedDefinition: Bool { unsaved != nil }
+    /// « Abandonner »: the typed definition is not given back at the next opening.
+    static func discardUnsaved() { unsaved = nil }
     /// The untouched starting point this view filled in, read once (a file and the installed apps' names).
     @State private var legacyStart: [String]?
     private var fields: [String] { [draft, applications, content, procrastination] }

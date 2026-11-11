@@ -204,6 +204,7 @@ struct GoalongAnalyticsContent: View {
                     if !payload.isPreview { onHistoryDay(day) }
                 })
                 .goalongControls()
+                .goalongDismissOnOutsideClick()
         }
         // Without a container, the identifier below replaces the ids of every control inside the page.
         .accessibilityElement(children: .contain)

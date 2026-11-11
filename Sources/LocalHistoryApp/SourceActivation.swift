@@ -562,6 +562,8 @@ import LocalHistoryCore
             .foregroundStyle(LHTheme.text).tint(LHTheme.accent)
             .background(LHTheme.pageBackground)
             .background(PermissionSheetWindowBehavior())
+            .goalongDismissOnOutsideClick(isEnabled: { !restarting },
+                                          onCancel: { PermissionRecovery.clearSetup(); flow.cancel(); dismiss() })
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: ready)
             .sheet(isPresented: $showingRecordingReview, onDismiss: {
                 if continueAfterRecordingReview { continueAfterRecordingReview = false; check() }
