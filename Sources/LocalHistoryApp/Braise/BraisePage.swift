@@ -59,14 +59,14 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
     var id: UUID { range.id }
 }
 
-/// Garde-fous › Écran rouge: the manual red, « Suivre mes horaires » and the ranges.
+/// The old page Garde-fous › Écran rouge: the manual red and the ranges. The page « Blocages » shows `live` and `safety`.
 /// A range has the blocking model and safeties (docs/BLOCKING.md), plus an intensity.
 @MainActor struct BraisePageContent: View {
     /// The whole page, or one part of it set in the page « Blocages »: `live` (what is on now, with its stops),
-    /// `manual` (manual red, « Suivre mes horaires », brightness lock), `safety` (shortcut, login, privacy).
+    /// `safety` (shortcut, login, privacy). The manual red lives in the menu bar (T-050 point 10).
     /// `listener` shows nothing: it opens the stop sheet a command asks for (menu, shortcut, a switch of `manual`).
     /// One listener per window: two would open two sheets for one stop.
-    enum Part { case page, live, manual, safety, listener }
+    enum Part { case page, live, safety, listener }
 
     @ObservedObject var controller: BraiseController
     var showsTitle = true
@@ -95,9 +95,6 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in controller.refreshLoginStatus() }
         case .live:
             stopSheets(live, listens: false)
-        case .manual:
-            stopSheets(VStack(alignment: .leading, spacing: 24) { controlsCard; brightnessSection }.font(.system(size: 13)),
-                       listens: false)
         case .safety:
             safetyDetails.font(.system(size: 13))
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in controller.refreshLoginStatus() }
@@ -229,8 +226,6 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                     VStack(alignment: .leading, spacing: 18) {
                         Toggle("Écran rouge manuel", isOn: Binding(get: { controller.preferences.mode == .on }, set: { controller.setManual($0) }))
                             .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("braise-manual")
-                        Toggle("Suivre mes horaires", isOn: Binding(get: { controller.ranges.follows }, set: { controller.setFollows($0) }))
-                            .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("braise-follows")
                         slider("Intensité du rouge", value: Binding(get: { controller.active ? controller.appliedIntensity : controller.preferences.intensity },
                                                                     set: { controller.slideIntensity($0) }), range: 0...1)
                         if let notice = controller.sliderNotice {
@@ -249,7 +244,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                 GoalongSection(title: "Plages protégées", subtitle: "Une plage qui passe minuit compte pour le jour où elle commence.") {
                     VStack(alignment: .leading, spacing: 12) {
                         if controller.ranges.program.ranges.isEmpty {
-                            GoalongEmptyState(title: "Aucune plage", kind: .empty, message: "Ajoutez une plage, puis cochez « Suivre mes horaires ».")
+                            GoalongEmptyState(title: "Aucune plage", kind: .empty, message: "Ajoutez une plage : elle suit ses horaires.")
                         }
                         ForEach(controller.ranges.program.ranges) { range in rangeRow(range) }
                         if let rowError { GoalongNote(rowError, tone: .warning) }

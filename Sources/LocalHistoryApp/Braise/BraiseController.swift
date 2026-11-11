@@ -9,7 +9,7 @@ import ServiceManagement
 /// A command that takes red away (T-048 B2). Outside a range it acts at once; during a range it is
 /// a weakening and follows the rule of an active block (docs/BLOCKING.md « Range lock »).
 enum RedScreenWeakening: Equatable {
-    case manualOff, unfollow, pause, emergency
+    case manualOff, pause, emergency
     case intensity(Double)
 }
 
@@ -63,6 +63,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @Published private(set) var pendingBrightness: BrightnessLockChange?
     /// Shown next to the brightness slider when the protection stopped it at its level.
     @Published private(set) var brightnessNotice: String?
+    /// What the editor's sliders show on screen while they move (T-050 A2), nil = the real state.
+    @Published private(set) var preview: Preview?
+    /// Said under the slider when what runs keeps the preview from where the slider is.
+    @Published private(set) var previewNotice: String?
     var stateChanged: (() -> Void)?
     /// A protected range needs the page (Garde-fous › Écran rouge) to be stopped.
     var onStopRequired: (() -> Void)?
@@ -83,6 +87,11 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     private var maintenanceTimer: Timer?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var saveTask: DispatchWorkItem?
+    /// The preview ends by itself at this time; nil while the slider is held.
+    private(set) var previewUntil: Date?
+    private var previewTimer: Timer?
+    /// The screens' hardware levels before the first brightness preview, also in `preview-brightness.json` for a crash.
+    private var previewBrightnessBefore: [UInt32: Double]?
 
     init(store: BraiseStore, gamma: BraiseGammaDriving, runsTimers: Bool = true,
          clock: @escaping () -> Date = Date.init, calendar: Calendar = .autoupdatingCurrent,
@@ -116,6 +125,15 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         gamma.recoverPending()
         displayCount = gamma.onlineDisplayCount()
         brightnessDisplays = brightness.displays()
+        // A crashed run's brightness preview comes back too, unless something holds the screens.
+        let crashed = store.loadPreviewBrightness()
+        if !crashed.isEmpty {
+            if BrightnessLockRules.target(manual: ranges.brightnessLock, windows: []) == nil {
+                for (id, level) in crashed { _ = brightness.setBrightness(level, of: id) }
+            }
+            store.savePreviewBrightness(nil)
+        }
+        if migrateLegacy() { saveRangesNow() }
         if runsTimers {
             refreshLoginStatus()
             observe(NotificationCenter.default, names: [NSApplication.didChangeScreenParametersNotification,
@@ -183,11 +201,36 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         guard on else { return guardWeakening(.manualOff) }
         update { $0.mode = .on; $0.pauseUntil = nil }; return .applied
     }
-    /// « Suivre mes horaires ». Unchecking it during a range is a weakening.
-    @discardableResult func setFollows(_ on: Bool) -> RedScreenGuardResult {
-        guard on else { return guardWeakening(.unfollow) }
-        guard running else { return .applied }
-        ranges.follows = true; errorMessage = nil; saveRangesNow(); evaluate(); return .applied
+    /// T-050 A3, once at start. « Suivre mes horaires » is gone: ranges that were not followed come back paused (their
+    /// holds did not run and are dropped), so no red starts by surprise. A brightness lock with no protection in progress
+    /// becomes a rule « Toujours » at its level; a protected one stays as it is: « En cours »
+    /// shows it with its stop, and the first start after its protection converts it. True = the ranges changed.
+    private func migrateLegacy() -> Bool {
+        var changed = false
+        if !ranges.follows {
+            let known = Set(ranges.program.ranges.map(\.id))
+            ranges.disabled.formUnion(known)
+            ranges.holds = ranges.holds.filter { !known.contains($0.key) }
+            ranges.follows = true; changed = true
+        }
+        // A red range of 00:00 → 24:00 saved before T-050 was unusable (shown « En pause »): now it would start by surprise.
+        // Once, before the brightness lock below adds its own « Toujours » range.
+        if ranges.fullDayPaused != true {
+            for range in ranges.program.ranges where range.startMinute == 0 && range.endMinute == 1_440 { ranges.disabled.insert(range.id) }
+            ranges.fullDayPaused = true; changed = true
+        }
+        // Only a lock that was never protected moves: a protected one (even past its wall end, the continuous clock
+        // decides) stays in « En cours » with its stop, and moves at a later launch once it is free.
+        if let lock = ranges.brightnessLock, lock.effectiveLock == .free || lock.end == nil,
+           ranges.program.ranges.count < RedScreenProgram.maximumRanges {
+            let range = BlockProgramRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440)
+            ranges.program.ranges.append(range)
+            ranges.intensities[range.id] = 0
+            var levels = ranges.brightness ?? [:]; levels[range.id] = BrightnessLockRules.clamp(lock.level)
+            ranges.brightness = levels
+            ranges.brightnessLock = nil; changed = true
+        }
+        return changed
     }
     /// ⌃⌥⌘R, « Rétablir les couleurs ».
     @discardableResult func emergencyOff() -> RedScreenGuardResult { guardWeakening(.emergency) }
@@ -227,10 +270,6 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         switch action {
         case .intensity(let value): relevant = relevant.filter { $0.intensity > value + 0.0001 }
         case .pause: relevant = relevant.filter(\.isProtected)
-        case .unfollow:
-            // A one-time window does not depend on « Suivre mes horaires »: it is neither asked for nor stopped.
-            let known = Set(ranges.program.ranges.map(\.id))
-            relevant = relevant.filter { known.contains($0.rangeID) }
         default: break
         }
         if let strong = RedScreenRules.strongest(relevant) {
@@ -282,7 +321,6 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     private func apply(_ action: RedScreenWeakening) {
         switch action {
         case .manualOff: update { $0.mode = .off; $0.pauseUntil = nil }
-        case .unfollow: ranges.follows = false; errorMessage = nil; saveRangesNow(); evaluate()
         case .pause: update { $0.pauseUntil = clock().addingTimeInterval(15 * 60) }
         case .emergency: gamma.restore(); update { $0.mode = .off; $0.pauseUntil = nil }; saveNow()
         case .intensity(let value):
@@ -298,6 +336,77 @@ struct RedScreenRefusal: LocalizedError, Equatable {
                 update { $0.intensity = value }
             }
         }
+    }
+
+    // MARK: Preview (T-050 A2)
+
+    /// The editor's sliders, on screen while they move. Never weaker than what runs: the red never below the effect in
+    /// progress, the brightness never above a held level.
+    struct Preview: Equatable {
+        var red: Double?
+        var brightness: Double?
+    }
+    /// How long the preview stays after the slider is let go.
+    static let previewHold: TimeInterval = 2
+
+    /// `holding`: the slider is held, the preview stays until the next call. Let go: it ends `previewHold` later.
+    func showPreview(red: Double? = nil, brightness: Double? = nil, holding: Bool) {
+        guard running else { return }
+        let value = Preview(red: red.map { min(1, max(0, $0.isFinite ? $0 : 1)) },
+                            brightness: canControlBrightness ? brightness.map(BrightnessLockRules.clamp) : nil)
+        if value.brightness != nil, previewBrightnessBefore == nil {
+            var levels: [UInt32: Double] = [:]
+            for display in brightnessDisplays where display.controllable { levels[display.id] = brightnessDriver.brightness(of: display.id) }
+            previewBrightnessBefore = levels
+            // Written before the screens move: a crash during the preview finds them at the next start.
+            store.savePreviewBrightness(levels)
+        }
+        if preview != value { preview = value }
+        previewTimer?.invalidate(); previewTimer = nil
+        previewUntil = holding ? nil : clock().addingTimeInterval(Self.previewHold)
+        if runsTimers, !holding {
+            let timer = Timer(timeInterval: Self.previewHold + 0.05, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.evaluate() }
+            }
+            RunLoop.main.add(timer, forMode: .common); previewTimer = timer
+        }
+        evaluate()
+    }
+
+    /// The real state comes back now: the editor closes, « Annuler », another « Quand ».
+    func endPreview() {
+        guard running, preview != nil || previewBrightnessBefore != nil else { return }
+        dropPreview(); evaluate()
+    }
+
+    private func dropPreview() {
+        previewTimer?.invalidate(); previewTimer = nil
+        previewUntil = nil
+        if preview != nil { preview = nil }
+        if previewNotice != nil { previewNotice = nil }
+    }
+
+    /// What the screens show with the preview: the strongest red and the darkest brightness of the real state and the
+    /// preview. Sets `previewNotice` when the real state wins over the slider.
+    private func previewed(target: Double?) -> (active: Bool, intensity: Double, brightness: Double?) {
+        guard let preview else { return (active, appliedIntensity, target) }
+        var notices: [String] = []
+        var shownActive = active, shownIntensity = appliedIntensity, shownBrightness = target
+        if let red = preview.red {
+            if active, appliedIntensity > red + 0.0001 {
+                notices.append("L’écran rouge est déjà à \(GoalongUIFormat.percent(appliedIntensity * 100)) : l’aperçu ne descend pas plus bas.")
+            }
+            shownIntensity = max(active ? appliedIntensity : 0, red); shownActive = true
+        }
+        if let level = preview.brightness {
+            if let target, level > target + BrightnessLockRules.tolerance {
+                notices.append("La luminosité est bloquée à \(GoalongUIFormat.percent(target * 100)) : l’aperçu ne monte pas plus haut.")
+            }
+            shownBrightness = min(target ?? level, level)
+        }
+        let notice = notices.isEmpty ? nil : notices.joined(separator: " ")
+        if previewNotice != notice { previewNotice = notice }
+        return (shownActive, shownIntensity, shownBrightness)
     }
 
     // MARK: Brightness lock (T-048 D2)
@@ -638,6 +747,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         guard running else { return }
         let now = clock()
         if let end = preferences.pauseUntil, end <= now { preferences.pauseUntil = nil; saveSoon() }
+        if let end = previewUntil, end <= now { dropPreview() }
         refreshWindows(now)
         let paused = isPaused
         let manual = preferences.mode == .on && !paused
@@ -650,11 +760,20 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         if brightnessProtection == nil, brightnessNotice != nil { brightnessNotice = nil }
         let target = BrightnessLockRules.target(manual: ranges.brightnessLock, windows: shown)
         if brightnessTarget != target { brightnessTarget = target }
-        enforcer.update(target: target, displays: brightnessDisplays.filter(\.controllable).map(\.id))
         active = manual || rangeIntensity != nil
         appliedIntensity = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
-        gamma.set(active: active, intensity: active ? appliedIntensity : preferences.intensity, brightness: preferences.brightness,
-                  animated: runsTimers && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        let screen = previewed(target: target)
+        enforcer.update(target: screen.brightness, displays: brightnessDisplays.filter(\.controllable).map(\.id))
+        if screen.brightness == nil, preview?.brightness == nil, let before = previewBrightnessBefore {
+            // Nothing holds the screens after the preview: they go back to where they were.
+            for (id, level) in before { _ = brightnessDriver.setBrightness(level, of: id) }
+        }
+        if preview?.brightness == nil, previewBrightnessBefore != nil { previewBrightnessBefore = nil; store.savePreviewBrightness(nil) }
+        // A rule that holds the brightness alone (red at 0) tints nothing: the filter's own dimming must not run for it
+        // (T-050 lot A2). The manual red and any real red keep the filter.
+        let tints = screen.active && (manual || screen.intensity > 0)
+        gamma.set(active: tints, intensity: tints ? screen.intensity : preferences.intensity, brightness: preferences.brightness,
+                  animated: preview == nil && runsTimers && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         boundaryTimer?.invalidate(); boundaryTimer = nil
         var events: [Date] = []
         if let end = preferences.pauseUntil { events.append(end) }
@@ -673,7 +792,6 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         if paused, let end = preferences.pauseUntil { return "En pause jusqu’à \(Self.clockText(end))" }
         if let window = windows.max(by: { $0.end < $1.end }) { return "Plage en cours jusqu’à \(Self.clockText(window.end))" }
         if manual { return "Activé manuellement, sans horaire de fin" }
-        guard ranges.follows else { return "Cochez « Suivre mes horaires » pour suivre vos plages." }
         let next = BlockingSchedule.windows(of: ranges.enabledProgram, at: now, calendar: calendar, endPolicy: .last)
             .filter { $0.start > now }.map(\.start).min()
         if let next { return "Prochaine plage \(Self.when(next))" }
@@ -735,6 +853,11 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         running = false; boundaryTimer?.invalidate(); boundaryTimer = nil
         maintenanceTimer?.invalidate(); maintenanceTimer = nil
         for (center, token) in observers { center.removeObserver(token) }; observers = []
+        dropPreview()
+        if let before = previewBrightnessBefore {
+            for (id, level) in before { _ = brightnessDriver.setBrightness(brightnessTarget ?? level, of: id) }
+            previewBrightnessBefore = nil; store.savePreviewBrightness(nil)
+        }
         enforcer.stop(); saveNow(); gamma.restore(); active = false; gamma.onError = nil; gamma.onDisplays = nil; stateChanged = nil
     }
 }

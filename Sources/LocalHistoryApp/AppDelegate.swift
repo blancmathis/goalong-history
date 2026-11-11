@@ -571,7 +571,7 @@ import AppleScreenTime
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
                 alert.messageText = "Une plage d’écran rouge ou le verrou de luminosité est protégé"
-                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou le verrou de luminosité dans Garde-fous › Écran rouge."
+                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou le verrou de luminosité dans Blocages, « En cours »."
                 alert.addButton(withTitle: "Ouvrir Écran rouge")
                 alert.addButton(withTitle: "Annuler")
                 if alert.runModal() == .alertFirstButtonReturn { BraiseRuntime.shared.onOpen?() }

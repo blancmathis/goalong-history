@@ -24,9 +24,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 }
 
-/// The one editor of « Blocages » (docs/spec-blocages-20261110.md): a rule is a trigger, what it applies and
-/// its stop rule. « Maintenant » hands over to the existing composers, « Horaire » writes ranges through
-/// `BlockRulePlan`, « Jev » is the existing monitoring form. The engines keep every check and every refusal.
+/// The one window of « Blocages » (T-050 A1, spec `t050/spec.md`): the same frame for a new rule, a rule, Jev and a
+/// session. Three titled boxes, always in this order — « Quand », « Quoi », « Arrêt » — and one footer. A block or a
+/// level that the engine cannot do for this « Quand » stays shown, greyed, with a sentence that says why. The engines
+/// keep every check and every refusal: « Toujours » and « Horaires » write ranges through `BlockRulePlan`, a « Séance »
+/// starts through `BlockingNowStart` (Continu without an intention) or Concentration (Pomodoro, or an intention).
 @MainActor struct BlockRuleEditor: View {
     enum Subject: Identifiable {
         case new
@@ -45,18 +47,34 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     enum Trigger: Hashable, CaseIterable {
-        case now, schedule, jev
+        case always, schedule, jev, session
         var title: String {
             switch self {
-            case .now: return "Maintenant"
-            case .schedule: return "Horaire"
+            case .always: return "Toujours"
+            case .schedule: return "Horaires"
             case .jev: return "Jev"
+            case .session: return "Séance"
             }
         }
     }
 
     static let width: CGFloat = 660
     static let jevTitle = "Quand Jev me voit décrocher"
+    static let alwaysSentence = "Actif tout le temps, jusqu’à ce que vous l’arrêtiez."
+    /// Product question raised in T-050: a locked rule without an end would never stop.
+    static let alwaysLockedReason = "Une règle « Toujours » verrouillée ne s’arrêterait jamais."
+    /// A range typed by hand in « Horaires » with the form of « Toujours » (every day, 00:00 → 24:00) and « Verrouillé ».
+    static let hoursAlwaysLockedReason = "Tous les jours, de 00:00 à 24:00, c’est une règle « Toujours » : verrouillée, elle ne s’arrêterait jamais. Changez les heures ou le niveau d’arrêt."
+    static let focusLockReason = "Une séance Pomodoro ou avec intention s’arrête librement ou se verrouille, sans autre niveau."
+    static let focusScreenReason = "Une séance Pomodoro ou avec intention ne porte pas encore l’écran rouge ni la luminosité."
+    static let laterScreenReason = "Un blocage programmé plus tard ne porte pas l’écran rouge ni la luminosité."
+    static let freezeScreenReason = "Le gel de tout le Mac couvre déjà l’écran."
+    static let freezeLockReason = "Le gel de tout le Mac est toujours verrouillé."
+    static let jevBlockReason = "Jev prévient seulement : il ne bloque rien et ne change pas l’écran."
+    static let jevLockReason = "Vous arrêtez Jev quand vous voulez, ici ou depuis le menu Goalong."
+    static let wholeMacReason = "Tout le Mac se gèle seulement pendant une séance en Continu, sans intention."
+    /// A session started without an intention still needs one for Concentration.
+    static let defaultIntent = "Séance"
 
     let subject: Subject
     var blocking: BlockingController?
@@ -72,15 +90,31 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     var onClose: () -> Void
 
     @State private var trigger: Trigger
-    @State private var asSession: Bool
-    @State private var sessionDraft: FocusComposerDraft
     @State private var draft: BlockRuleDraft
     @State private var refusal: String?
     @State private var unreadableFields: Set<String> = []
     @State private var confirmingDelete = false
+    // Séance
+    @State private var sessionDraft: FocusComposerDraft
+    @State private var later = false
+    @State private var startAt: Date
+    @State private var span: BlockingNowComposer.Span = .minutes(60)
+    @State private var until: Date
+    @State private var wholeMac = false
+    @State private var freezeMode: BlockFreeze.Mode = .shield
+    @State private var kept: [BlockAppRule] = []
+    @State private var picking = false
+    @State private var settingPassword = false
+    @State private var confirmingLock = false
+    @State private var confirmingFreeze = false
+    @State private var confirmingFocusLock = false
+    /// The plan the open alert promises: a click on it keeps this end (R5-regressions-01).
+    @State private var pending: BlockingNowPlan?
+    @State private var pendingFreezePromise: BlockingFreezePromise?
+    @State private var pendingFreezeAt = GoalongToday.now
 
     init(subject: Subject, blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
-         now: Date? = nil, trigger: Trigger? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
+         now: Date? = nil, trigger: Trigger? = nil, draft startDraft: BlockRuleDraft? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
          onOpenRecording: @escaping () -> Void = {},
          onOpenWork: @escaping () -> Void = {}, onPrepareRed: @escaping () -> Void = {}, onClose: @escaping () -> Void) {
         self.subject = subject
@@ -94,17 +128,22 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         self.onPrepareRed = onPrepareRed
         self.onClose = onClose
         // Nil = the remembered session draft (the app). A render gives a fixed one: it reads no preference.
-        var first = Trigger.now, session = false, composer = sessionDraft, rule = BlockRuleDraft()
+        var first = Trigger.schedule, composer = sessionDraft, rule = BlockRuleDraft()
         switch subject {
         case .new: break
-        case .session(let value): session = true; composer = value
-        case .rule(let value): first = .schedule; rule = BlockRuleDraft(value)
+        case .session(let value):
+            first = .session; composer = value
+            rule.listIDs = value.blockListIds
+            rule.lock = value.lock ? .locked : .free
+        case .rule(let value): first = value.key.isAlways ? .always : .schedule; rule = BlockRuleDraft(value)
         case .jev: first = .jev
         }
         _trigger = State(initialValue: trigger ?? first)
-        _asSession = State(initialValue: session)
         _sessionDraft = State(initialValue: composer ?? .remembered())
-        _draft = State(initialValue: rule)
+        _draft = State(initialValue: startDraft ?? rule)
+        let clock = now ?? GoalongToday.now
+        _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: clock) ?? clock)
+        _until = State(initialValue: Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock)
     }
 
     private var rule: BlockRule? {
@@ -112,41 +151,126 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         return nil
     }
 
-    private var title: String {
+    /// The trigger is fixed once the rule exists: the selector stays shown, on its choice.
+    var triggerIsFixed: Bool {
         switch subject {
-        case .new, .session: return "Nouvelle règle"
-        case .rule: return "Modifier la règle"
-        case .jev: return Self.jevTitle
+        case .rule, .jev: return true
+        case .new, .session: return false
         }
     }
 
-    /// The composer of a block that starts now has its own buttons: the sheet adds no footer then.
-    private var showsComposer: Bool { trigger == .now && blocking != nil && !(asSession && focus != nil) }
-    private var showsConsent: Bool {
-        RedScreenRangeEditor.showsConsent(lock: draft.lock, needed: BlockingRuntime.shared.guardNeedsConsent)
+    var title: String {
+        if trigger == .session { return "Nouvelle séance" }
+        switch subject {
+        case .rule, .jev: return "Modifier la règle"
+        case .new, .session: return "Nouvelle règle"
+        }
     }
-    private var cap: CGFloat { maxHeight ?? min(640, (NSScreen.main?.visibleFrame.height ?? 900) * 0.7) }
+
+    private var cap: CGFloat { maxHeight ?? min(680, (NSScreen.main?.visibleFrame.height ?? 900) * 0.75) }
+
+    // MARK: Engines
+
+    private var intent: String { sessionDraft.intent.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// Pomodoro, or an intention: the session runs in Concentration. Continu without an intention is a block.
+    var usesFocus: Bool { focus != nil && (sessionDraft.kind == .pomodoro || !intent.isEmpty) }
+    private var freezing: Bool { trigger == .session && wholeMac && !usesFocus }
+    /// Lists only: the whole Mac always starts now.
+    private var scheduling: Bool { trigger == .session && later && !wholeMac && !usesFocus }
+    private var lists: [BlockList] { blocking?.lists ?? [] }
+    private var chosenIDs: [UUID] { lists.map(\.id).filter(draft.listIDs.contains) }
+
+    /// Why the « Bloquer » block is greyed for this « Quand ». Nil = it works.
+    var blockUnavailable: String? {
+        if trigger == .jev { return Self.jevBlockReason }
+        return nil
+    }
+
+    /// Why the red screen and the brightness are greyed for this « Quand ». Nil = they work.
+    var screenUnavailable: String? {
+        switch trigger {
+        case .jev: return Self.jevBlockReason
+        case .session:
+            if usesFocus { return Self.focusScreenReason }
+            if wholeMac { return Self.freezeScreenReason }
+            if later { return Self.laterScreenReason }
+        case .always, .schedule: break
+        }
+        if braise == nil { return "L’écran rouge n’est pas prêt sur ce Mac." }
+        return nil
+    }
+
+    /// Why a stop level is greyed for this « Quand ». Nil = the engine has it.
+    func lockUnavailable(_ lock: BlockLock) -> String? {
+        switch trigger {
+        case .jev: return lock == .free ? nil : Self.jevLockReason
+        case .always: if lock == .locked, !keepsAlwaysLock { return Self.alwaysLockedReason }
+        case .session:
+            if freezing { return lock == .locked ? nil : Self.freezeLockReason }
+            if usesFocus {
+                if lock == .typing || lock == .password { return Self.focusLockReason }
+                if lock == .locked {
+                    if !sessionDraft.canLock { return "Une séance sans fin ne peut pas être verrouillée." }
+                    if chosenIDs.isEmpty { return "Le verrou porte sur les listes bloquées : choisissez-en une." }
+                }
+            }
+        case .schedule: break
+        }
+        if lock == .password, blocking == nil { return "Le mot de passe vient du module Blocage." }
+        return nil
+    }
+
+    /// A rule that already exists keeps its stored level in the form, even where a new rule could not have it: saving
+    /// never weakens a stop in silence (T-050 lot A2). The engines still judge any real weakening.
+    private var keepsAlwaysLock: Bool { rule?.key.isAlways == true && rule?.key.lock == .locked }
+
+    /// The level the engine receives: the chosen one, or the nearest one it has.
+    var stopLevel: BlockLock {
+        if freezing { return .locked }
+        if let rule, draft.lock == rule.key.lock { return draft.lock }
+        return lockUnavailable(draft.lock) == nil ? draft.lock : .free
+    }
+
+    /// « Horaires » only: every day, 00:00 → 24:00, « Verrouillé ». Refused with its reason, never turned into « Libre ».
+    var hoursAlwaysLocked: Bool {
+        trigger == .schedule && draft.weekdays == Set(1...7) && draft.startMinute == 0 && draft.endMinute == 1_440
+            && draft.lock == .locked && !keepsAlwaysLock
+    }
+
+    /// Why « Enregistrer » is greyed for a rule. Nil = the engines may judge it.
+    var ruleProblem: String? {
+        if hoursAlwaysLocked { return Self.hoursAlwaysLockedReason }
+        return ruleDraft.problem
+    }
+
+    private var showsConsent: Bool {
+        trigger != .session && trigger != .jev
+            && RedScreenRangeEditor.showsConsent(lock: stopLevel, needed: BlockingRuntime.shared.guardNeedsConsent)
+    }
+
+    // MARK: Body
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in // wall: display tick
             let now = self.now ?? GoalongToday.timeline(context.date)
             ObservedOptional(object: blocking) { _ in
                 ObservedOptional(object: braise) { _ in
-                    VStack(spacing: 0) {
-                        GoalongSheetScroll(cap: cap) {
-                            VStack(alignment: .leading, spacing: 20) {
-                                Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4).accessibilityAddTraits(.isHeader)
-                                whenRow
-                                switch trigger {
-                                case .now: nowPane(now: now)
-                                case .schedule: schedulePane
-                                case .jev: jevPane
+                    ObservedOptional(object: focus) { _ in
+                        VStack(spacing: 0) {
+                            GoalongSheetScroll(cap: cap) {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                                        .accessibilityIdentifier("block-rule-title")
+                                    box("Quand", id: "when") { whenBox(now: now) }
+                                    box("Quoi", id: "what") { whatBox }
+                                    box("Arrêt", id: "stop") { stopBox }
+                                    notes
                                 }
+                                .padding(28)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(28)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            footer(now: now)
                         }
-                        footer
                     }
                 }
             }
@@ -155,25 +279,66 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         .frame(width: Self.width)
         .background(LHTheme.pageBackground)
         .foregroundStyle(LHTheme.text)
-        .onChange(of: trigger) { _ in refusal = nil }
+        .onChange(of: trigger) { _ in refusal = nil; braise?.endPreview() }
+        .onDisappear { braise?.endPreview() }
         .alert("Supprimer cette règle ?", isPresented: $confirmingDelete) {
             Button("Supprimer", role: .destructive) { delete() }
             Button("Annuler", role: .cancel) {}
         } message: {
             Text("Les listes restent. Seules leurs plages à ces heures sont retirées.")
         }
+        .alert((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockTitle(stopLevel), isPresented: $confirmingLock) {
+            Button("Annuler", role: .cancel) {}
+            Button(stopLevel == .password ? "Protéger" : "Verrouiller") {
+                if let pending, let blocking { blocking.recordGuardConsent(); startBlock(pending, blocking) }
+            }
+        } message: {
+            Text(GuardConsent.message((pending ?? blockPlan(at: now ?? GoalongToday.now)).lockMessage(stopLevel),
+                                      needed: BlockingRuntime.shared.guardNeedsConsent))
+        }
+        .alert("Geler le Mac \(pendingFreeze.phrase(now: pendingFreezeAt)) ?", isPresented: $confirmingFreeze) {
+            Button("Annuler", role: .cancel) {}
+            Button("Geler") { freeze() }
+        } message: {
+            Text(GuardConsent.message("\(pendingFreeze.phrase(now: pendingFreezeAt).capitalizedFirst), seul\(kept.isEmpty || freezeMode != .shield ? " Goalong reste accessible" : "es les apps gardées restent accessibles"). Impossible d’annuler. Éteindre le Mac reste possible ; au redémarrage, le gel reprend.",
+                                      needed: BlockingRuntime.shared.guardNeedsConsent))
+        }
+        .alert("Verrouiller chaque phase de travail ?", isPresented: $confirmingFocusLock) {
+            Button("Annuler", role: .cancel) {}
+            Button("Verrouiller") { BlockingRuntime.shared.recordGuardConsent(); beginFocus() }
+        } message: {
+            Text(FocusComposer.lockMessage(BlockingRuntime.shared))
+        }
+        .sheet(isPresented: $settingPassword) {
+            if let blocking {
+                BlockingPasswordSheet(controller: blocking, purpose: .create) { settingPassword = false }.goalongControls()
+            }
+        }
         // A container: without it the sheet's identifier replaces the ones of the footer buttons.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("block-rule-editor")
     }
 
-    // MARK: Rows
+    // MARK: Frame
 
-    /// The composer's row (`BlockingNowComposer.row`): the labels of both forms stay on one line.
+    /// One titled box: the same for every « Quand ».
+    private func box<Content: View>(_ title: String, id: String, @ViewBuilder content: () -> Content) -> some View {
+        LHCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(title).font(LHTheme.cardTitleFont).accessibilityAddTraits(.isHeader)
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("block-rule-box-\(id)")
+    }
+
+    /// The label sits on the centre line of the first row of controls (32 points high).
     private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                .frame(width: 64, height: 32, alignment: .leading)
+                .frame(width: 84, height: 32, alignment: .leading)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -183,17 +348,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    @ViewBuilder private var whenRow: some View {
-        switch subject {
-        case .new, .session:
-            row("Quand") {
-                GoalongSegmentedControl("Quand", selection: $trigger, options: Trigger.allCases) { $0.title }
-                    .accessibilityIdentifier("block-rule-when")
-            }
-        case .rule:
-            row("Quand") { Text("Horaire").frame(height: 32) }
-        case .jev:
-            EmptyView()
+    /// A block the engine does not allow here: shown, greyed, with its reason.
+    private func greyed(_ reason: String?, id: String) -> some View {
+        Group {
+            if let reason { help(reason).accessibilityIdentifier("block-rule-reason-\(id)") }
         }
     }
 
@@ -208,36 +366,41 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         .frame(minHeight: 32, alignment: .leading)
     }
 
-    // MARK: Maintenant
+    // MARK: Quand
 
-    @ViewBuilder private func nowPane(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if focus != nil {
-                row("Séance") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Toggle("Séance de travail", isOn: $asSession).toggleStyle(.goalongSwitchInline)
-                            .frame(minHeight: 32)
-                            .accessibilityIdentifier("block-rule-session")
-                        help("Une intention, un minuteur ou des Pomodoro. Les listes choisies sont bloquées pendant la séance.")
-                    }
-                }
+    @ViewBuilder private func whenBox(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            GoalongSegmentedControl("Quand", selection: $trigger, options: Trigger.allCases,
+                                    unavailable: { triggerIsFixed && $0 != trigger ? "Le déclencheur est fixé à la création." : nil }) { $0.title }
+                .accessibilityIdentifier("block-rule-when")
+            switch trigger {
+            case .always:
+                help(Self.alwaysSentence).accessibilityIdentifier("block-rule-always")
+            case .schedule:
+                scheduleRows
+            case .jev:
+                JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
+                                  part: .when)
+            case .session:
+                sessionRows(now: now)
             }
-            if asSession, let focus {
-                BlockRuleSessionPane(controller: focus, now: now, draft: $sessionDraft, onStarted: onClose)
-            } else if let blocking {
-                BlockingNowComposer(controller: blocking, now: now, bare: true, braise: braise, onCancel: onClose, onDone: onClose)
-                if let error = blocking.error {
-                    GoalongNote(error, tone: .warning).accessibilityIdentifier("block-rule-error")
+            if let rule, rule.lock != .free, case .running = rule.state {
+                GoalongNote("Cette règle est en cours et protégée. Un changement qui l’affaiblit est refusé jusqu’à sa fin.",
+                            symbol: rule.lock.symbol)
+                    .accessibilityIdentifier("block-rule-protected")
+            }
+            if rule != nil, draft.listIDs.isEmpty, draft.hasRedPart {
+                row("État") {
+                    Toggle("Mettre la règle en pause", isOn: $draft.paused).toggleStyle(.goalongSwitchInline)
+                        .frame(minHeight: 32)
+                        .accessibilityIdentifier("block-rule-paused")
                 }
-            } else {
-                row("Quoi") { moduleOff }
             }
         }
     }
 
-    // MARK: Horaire
-
     private var hoursHint: String {
+        if hoursAlwaysLocked { return Self.hoursAlwaysLockedReason }
         if draft.weekdays.isEmpty || draft.startMinute == draft.endMinute {
             return "Choisissez au moins un jour et deux heures différentes."
         }
@@ -245,13 +408,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                                     : "La plage commence et se termine le même jour."
     }
 
-    @ViewBuilder private var schedulePane: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if let rule, rule.lock != .free, case .running = rule.state {
-                GoalongNote("Cette règle est en cours et protégée. Un changement qui l’affaiblit est refusé jusqu’à sa fin.",
-                            symbol: rule.lock.symbol)
-                    .accessibilityIdentifier("block-rule-protected")
-            }
+    private var scheduleRows: some View {
+        VStack(alignment: .leading, spacing: 14) {
             row("Jours") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
@@ -275,21 +433,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                         time("Fin", minute: Binding(get: { draft.endMinute % 1_440 }, set: { draft.endMinute = $0 == 0 ? 1_440 : $0 }))
                     }
                     .frame(minHeight: 32)
-                    help(hoursHint)
+                    help(hoursHint, warning: hoursAlwaysLocked).accessibilityIdentifier("block-rule-hours-hint")
                 }
-            }
-            row("Quoi") { listsPart }
-            row("Écran") { screenPart }
-            row("Arrêt") { stopPart }
-            if rule != nil, draft.listIDs.isEmpty, draft.hasRedPart {
-                row("État") {
-                    Toggle("Mettre la règle en pause", isOn: $draft.paused).toggleStyle(.goalongSwitchInline)
-                        .frame(minHeight: 32)
-                        .accessibilityIdentifier("block-rule-paused")
-                }
-            }
-            if let refusal {
-                GoalongNote(refusal, tone: .warning).accessibilityIdentifier("block-rule-refusal")
             }
         }
     }
@@ -303,76 +448,286 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
     }
 
-    @ViewBuilder private var listsPart: some View {
-        if let blocking {
-            VStack(alignment: .leading, spacing: 6) {
-                BlockingFlow(spacing: 8) {
-                    ForEach(blocking.lists) { list in
-                        BlockingListChip(list: list, selected: draft.listIDs.contains(list.id)) {
-                            if draft.listIDs.contains(list.id) { draft.listIDs.remove(list.id) } else { draft.listIDs.insert(list.id) }
+    // MARK: Séance
+
+    @ViewBuilder private func sessionRows(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if usesFocus, focus?.currentSession != nil {
+                GoalongNote("Une séance est déjà en cours. Terminez-la pour en lancer une autre.")
+                    .accessibilityIdentifier("block-rule-session-running")
+            }
+            row("Début") {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        GoalongSegmentedControl("Début", selection: $later, options: [false, true],
+                                                unavailable: { $0 ? laterUnavailable : nil }) { $0 ? "Plus tard" : "Tout de suite" }
+                            .accessibilityIdentifier("block-rule-start")
+                        if scheduling {
+                            DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
+                                .goalongDateField().labelsHidden()
+                                .environment(\.locale, Locale(identifier: "fr_FR"))
+                                .accessibilityIdentifier("blocking-start-at")
                         }
                     }
-                    BlockingNewListChip { draft.listIDs.insert($0) }
-                }
-                .frame(minHeight: 32, alignment: .leading)
-                if draft.listIDs.isEmpty, !draft.hasRedPart {
-                    help("Choisissez au moins une liste, l’écran rouge ou la luminosité.")
+                    .frame(minHeight: 32)
+                    if let reason = laterUnavailable { greyed(reason, id: "later") }
                 }
             }
-        } else {
-            moduleOff
+            row("Rythme") {
+                VStack(alignment: .leading, spacing: 10) {
+                    GoalongSegmentedControl("Rythme", selection: $sessionDraft.kind, options: [.free, .pomodoro],
+                                            unavailable: { $0 == .pomodoro && focus == nil ? "Pomodoro vient du module Concentration." : nil }) {
+                        $0 == .free ? "Continu" : "Pomodoro"
+                    }
+                    .frame(minHeight: 32)
+                    .accessibilityIdentifier("block-rule-rhythm")
+                    if sessionDraft.kind == .pomodoro { phases }
+                }
+            }
+            row("Pendant") { durationRow }
+            if focus != nil {
+                row("Intention") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("", text: $sessionDraft.intent)
+                            .textFieldStyle(GoalongFieldStyle())
+                            .goalongPlaceholder("Facultatif. Ex. : relire le contrat", isEmpty: sessionDraft.intent.isEmpty)
+                            .accessibilityLabel("Intention, facultative")
+                            .accessibilityIdentifier("concentration-intent")
+                            .frame(minHeight: 32)
+                        help(usesFocus ? "Avec une intention ou en Pomodoro, la séance a son minuteur, ses pauses et son bilan."
+                                       : "Sans intention, en Continu, c’est un blocage simple.")
+                    }
+                }
+            }
         }
     }
 
-    @ViewBuilder private var screenPart: some View {
-        if let braise {
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("Écran rouge", isOn: $draft.red).toggleStyle(.goalongSwitchInline)
-                    .frame(minHeight: 32)
-                    .accessibilityIdentifier("block-rule-red")
-                if draft.red {
-                    level("Rouge à", value: $draft.intensity, in: 0.05...1, spoken: "Intensité du rouge")
-                }
-                Toggle("Luminosité bloquée", isOn: Binding(get: { draft.brightness != nil }, set: { draft.brightness = $0 ? 0.4 : nil }))
-                    .toggleStyle(.goalongSwitchInline)
-                    .disabled(draft.brightness == nil && !braise.canControlBrightness)
-                    .accessibilityIdentifier("block-rule-brightness")
-                if let value = draft.brightness {
-                    level("Luminosité à", value: Binding(get: { value }, set: { draft.brightness = $0 }),
-                          in: BrightnessLockRules.levelRange, spoken: "Luminosité bloquée")
-                } else if !braise.canControlBrightness {
-                    help("Aucun écran de ce Mac ne peut être réglé par Goalong.")
-                }
+    private var laterUnavailable: String? {
+        if usesFocus { return "Une séance Pomodoro ou avec intention commence tout de suite." }
+        if wholeMac { return "Tout le Mac se gèle tout de suite." }
+        return nil
+    }
+
+    @ViewBuilder private var durationRow: some View {
+        if sessionDraft.kind == .pomodoro {
+            GoalongSegmentedControl("Cycles", selection: $sessionDraft.cycles, options: [nil, 2, 4, 6]) {
+                $0.map { "\($0) cycles" } ?? "Jusqu’à l’arrêt"
             }
+            .frame(minHeight: 32, alignment: .leading)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("L’écran rouge n’est pas prêt sur ce Mac.").foregroundStyle(LHTheme.secondaryText)
-                Button("Préparer l’écran rouge", action: onPrepareRed).buttonStyle(LHSecondaryButtonStyle())
-                    .accessibilityIdentifier("block-rule-prepare-red")
+            HStack(spacing: 10) {
+                GoalongSegmentedControl("Durée", selection: $span,
+                                        options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
+                    switch $0 {
+                    case .minutes(let value): return BlockingFormat.duration(minutes: value)
+                    case .until: return "Jusqu’à…"
+                    }
+                }
+                if span == .until {
+                    DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
+                        .goalongDateField().labelsHidden()
+                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                }
             }
             .frame(minHeight: 32, alignment: .leading)
         }
     }
 
-    private func level(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>, spoken: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(GoalongUIFormat.percent(value.wrappedValue * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
+    private var phases: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GoalongSegmentedControl("Phases", selection: $sessionDraft.rhythm, options: [.classic, .long, .custom]) {
+                switch $0 {
+                case .classic: return "25 / 5"
+                case .long: return "50 / 10"
+                case .custom: return "Autre"
+                }
             }
-            Slider(value: value, in: range).accessibilityLabel(spoken)
-                .accessibilityValue("\(Int((value.wrappedValue * 100).rounded())) pour cent")
+            if sessionDraft.rhythm == .custom {
+                HStack(spacing: 14) {
+                    stepper("Travail", value: $sessionDraft.work, range: 5...120, unit: "min")
+                    stepper("Pause", value: $sessionDraft.shortBreak, range: 1...30, unit: "min")
+                    stepper("Longue", value: $sessionDraft.longBreak, range: 5...60, unit: "min")
+                    stepper("Toutes les", value: $sessionDraft.every, range: 2...8, unit: "")
+                }
+            }
         }
     }
 
-    @ViewBuilder private var stopPart: some View {
+    private func stepper(_ title: String, value: Binding<Int>, range: ClosedRange<Int>, unit: String) -> some View {
+        Stepper(value: value, in: range) {
+            Text("\(title) \(value.wrappedValue)\(unit.isEmpty ? "" : " \(unit)")").monospacedDigit()
+        }
+        .fixedSize()
+    }
+
+    // MARK: Quoi
+
+    @ViewBuilder private var whatBox: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            row("Bloquer") { blockPart }
+            row("Écran rouge") { redPart }
+            row("Luminosité") { brightnessPart }
+            if let notice = braise?.previewNotice {
+                help(notice).accessibilityIdentifier("block-rule-preview-notice")
+            }
+            if trigger == .jev {
+                row("Rappel") {
+                    JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
+                                      part: .what)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var blockPart: some View {
+        if let blocking {
+            VStack(alignment: .leading, spacing: 6) {
+                BlockingFlow(spacing: 8) {
+                    ForEach(blocking.lists) { list in
+                        BlockingListChip(list: list, selected: !freezing && draft.listIDs.contains(list.id)) {
+                            wholeMac = false
+                            if draft.listIDs.contains(list.id) { draft.listIDs.remove(list.id) } else { draft.listIDs.insert(list.id) }
+                        }
+                    }
+                    BlockingNewListChip { id in wholeMac = false; draft.listIDs.insert(id) }
+                    BlockingWholeMacChip(selected: freezing) { wholeMac.toggle() }
+                        .disabled(wholeMacUnavailable != nil)
+                        .help(wholeMacUnavailable ?? "")
+                        .accessibilityIdentifier("block-rule-whole-mac")
+                }
+                .frame(minHeight: 32, alignment: .leading)
+                .disabled(blockUnavailable != nil)
+                if let reason = blockUnavailable {
+                    greyed(reason, id: "block")
+                } else if freezing {
+                    freezeRows
+                } else {
+                    if trigger == .session, sessionDraft.kind == .pomodoro, !chosenIDs.isEmpty {
+                        Toggle("Aussi pendant les pauses", isOn: $sessionDraft.blockDuringBreaks).toggleStyle(.goalongCheckbox)
+                    }
+                    if trigger != .session { greyed(wholeMacUnavailable, id: "whole-mac") }
+                    if draft.listIDs.isEmpty, !draft.hasRedPart, trigger != .session {
+                        help("Choisissez au moins une liste, l’écran rouge ou la luminosité.")
+                    }
+                }
+            }
+        } else if let reason = blockUnavailable {
+            greyed(reason, id: "block").frame(minHeight: 32, alignment: .leading)
+        } else {
+            moduleOff
+        }
+    }
+
+    private var wholeMacUnavailable: String? {
+        if trigger == .session, !usesFocus { return nil }
+        return Self.wholeMacReason
+    }
+
+    private var freezeRows: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GoalongSegmentedControl("Écran", selection: $freezeMode, options: BlockFreeze.Mode.allCases) {
+                $0 == .shield ? "Écran Goalong" : "Session verrouillée"
+            }
+            if freezeMode == .shield {
+                BlockingFlow(spacing: 6) {
+                    ForEach(kept) { app in
+                        BlockingItemChip(item: .app(app), removable: true) { kept.removeAll { $0 == app } }
+                    }
+                    Button { picking = true } label: { Label("Garder une app", systemImage: "plus") }
+                        .buttonStyle(LHQuietButtonStyle())
+                        .accessibilityIdentifier("blocking-freeze-keep")
+                        .popover(isPresented: $picking) {
+                            BlockingAppPicker(excluded: Set(kept.map(\.bundleIdentifier))) { kept.append($0) }
+                        }
+                }
+            }
+        }
+    }
+
+    private var redRange: ClosedRange<Double> {
+        trigger == .session ? BraiseController.minimumHoldIntensity...1 : 0.05...1
+    }
+
+    @ViewBuilder private var redPart: some View {
+        let reason = screenUnavailable
         VStack(alignment: .leading, spacing: 8) {
-            if let blocking {
-                BlockingLockPicker(controller: blocking, lock: $draft.lock)
+            Toggle("Teinte rouge", isOn: Binding(get: { reason == nil && draft.red }, set: { draft.red = $0 }))
+                .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
+                .disabled(reason != nil)
+                .accessibilityLabel("Écran rouge")
+                .accessibilityIdentifier("block-rule-red")
+            if reason == nil, draft.red {
+                level("Rouge à", value: $draft.intensity, in: redRange, spoken: "Intensité du rouge") { value, holding in
+                    braise?.showPreview(red: value, holding: holding)
+                }
+            }
+            if let reason {
+                // Jev: « Bloquer » already says it, once for the three blocks.
+                if reason != blockUnavailable { greyed(reason, id: "red") }
+                if braise == nil, trigger != .jev, trigger != .session || !usesFocus {
+                    Button("Préparer l’écran rouge", action: onPrepareRed).buttonStyle(LHSecondaryButtonStyle())
+                        .accessibilityIdentifier("block-rule-prepare-red")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var brightnessPart: some View {
+        let reason = screenUnavailable ?? (braise?.canControlBrightness == false && draft.brightness == nil
+            ? "Aucun écran de ce Mac ne peut être réglé par Goalong." : nil)
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Niveau fixé", isOn: Binding(get: { reason == nil && draft.brightness != nil },
+                                                       set: { draft.brightness = $0 ? 0.4 : nil }))
+                .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
+                .disabled(reason != nil)
+                .accessibilityLabel("Luminosité bloquée")
+                .accessibilityIdentifier("block-rule-brightness")
+            if reason == nil, let value = draft.brightness {
+                level("Luminosité à", value: Binding(get: { value }, set: { draft.brightness = $0 }),
+                      in: BrightnessLockRules.levelRange, spoken: "Luminosité bloquée") { value, holding in
+                    braise?.showPreview(brightness: value, holding: holding)
+                }
+            }
+            // The same sentence stands just above, under « Écran rouge »: it covers both blocks.
+            if let reason, reason != screenUnavailable { greyed(reason, id: "brightness") }
+        }
+    }
+
+    /// A slider with its live preview: the screen shows the value while it moves, and `previewHold` after it is let go.
+    private func level(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>, spoken: String,
+                       preview: @escaping (Double, Bool) -> Void) -> some View {
+        BlockRuleLevel(title: title, value: value, range: range, spoken: spoken, preview: preview)
+    }
+
+    // MARK: Arrêt
+
+    private var stopBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GoalongSegmentedControl("Arrêt", selection: Binding(get: { stopLevel }, set: { draft.lock = $0 }),
+                                    options: BlockLock.ordered, unavailable: lockUnavailable) { $0.title }
+                .accessibilityIdentifier("block-rule-stop")
+            if trigger == .jev {
+                BlockingLockExplainer(lock: .free, text: Self.jevLockReason)
+            } else if freezing {
+                BlockingLockExplainer(lock: .locked,
+                                      text: freezeMode == .shield
+                                          ? "Un écran Goalong couvre tout, sauf les apps gardées. Toujours verrouillé."
+                                          : "macOS verrouille la session, et la reverrouille à chaque ouverture. Toujours verrouillé.")
             } else {
-                GoalongSegmentedControl("Arrêt", selection: $draft.lock, options: BlockLock.ordered.filter { $0 != .password }) { $0.title }
-                BlockingLockExplainer(lock: draft.lock)
+                BlockingLockExplainer(lock: stopLevel)
+            }
+            let reasons = BlockLock.ordered.compactMap { lock in lockUnavailable(lock).map { (lock, $0) } }
+                .filter { _ in trigger != .jev } // Jev: the explainer above already says it
+            ForEach(Array(Set(reasons.map(\.1))).sorted(), id: \.self) { reason in
+                greyed(reason, id: "stop")
+            }
+            if stopLevel == .password, let blocking, !blocking.hasPassword {
+                HStack(spacing: 10) {
+                    Text("Pas encore de mot de passe.").font(.system(size: 12)).foregroundStyle(LHTheme.warning).fixedSize()
+                    Button("Le choisir…") { settingPassword = true }
+                        .buttonStyle(LHQuietButtonStyle()).fixedSize()
+                        .accessibilityIdentifier("blocking-password-set")
+                }
             }
             if showsConsent {
                 help(GuardConsent.text).accessibilityIdentifier("block-rule-guard-consent")
@@ -380,102 +735,245 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
     }
 
-    // MARK: Jev
+    // MARK: Notes and footer
 
-    private var jevPane: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            help("Jev lit votre activité en direct et vous prévient quand vous quittez le travail décrit. Il prévient seulement : il ne bloque rien.")
-            JevMonitoringPage(onOpenRecording: { onClose(); onOpenRecording() }, onOpenWork: { onClose(); onOpenWork() },
-                              embedded: true)
-            row("Arrêt") {
-                BlockingLockExplainer(lock: .free, text: "Vous arrêtez Jev quand vous voulez, ici ou depuis le menu Goalong.")
-                    .frame(minHeight: 32)
+    @ViewBuilder private var notes: some View {
+        if let refusal {
+            GoalongNote(refusal, tone: .warning).accessibilityIdentifier("block-rule-refusal")
+        }
+        if trigger == .session {
+            if usesFocus, let error = focus?.error {
+                GoalongNote(FocusUIError.message(raw: error), tone: .warning).accessibilityIdentifier("block-rule-session-error")
+            } else if !usesFocus, let error = blocking?.error {
+                GoalongNote(error, tone: .warning).accessibilityIdentifier("block-rule-error")
             }
         }
     }
 
-    // MARK: Footer
-
-    @ViewBuilder private var footer: some View {
-        switch trigger {
-        case .schedule:
-            GoalongSheetFooter(inset: 28) {
-                if rule != nil {
-                    Button("Supprimer la règle", role: .destructive) { confirmingDelete = true }
-                        .buttonStyle(LHQuietButtonStyle())
-                        .accessibilityIdentifier("block-rule-delete")
-                }
-                Spacer()
-                Button("Annuler", action: onClose).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
-                Button("Enregistrer") { save() }
-                    .buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
-                    .disabled(draft.problem != nil || !unreadableFields.isEmpty)
-                    .accessibilityIdentifier("block-rule-save")
+    private func footer(now: Date) -> some View {
+        GoalongSheetFooter(inset: 28) {
+            if rule != nil {
+                Button("Supprimer", role: .destructive) { confirmingDelete = true }
+                    .buttonStyle(LHQuietButtonStyle())
+                    .accessibilityIdentifier("block-rule-delete")
             }
-        case .jev:
-            GoalongSheetFooter(inset: 28) {
-                Spacer()
-                Button("Fermer", action: onClose).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
+            Spacer()
+            if let hint = footerHint(now: now) {
+                Text(hint).font(.system(size: 12)).foregroundStyle(LHTheme.tertiaryText).lineLimit(2)
+                    .accessibilityIdentifier("block-rule-hint")
+            }
+            if trigger == .jev {
+                // Jev's settings are written as they change: there is nothing to cancel or to save.
+                Button("Fermer", action: close).buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("block-rule-close")
+            } else {
+                Button("Annuler", action: close).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("block-rule-cancel")
+                Button(primaryTitle(now: now)) { primary(now: now) }
+                    .buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+                    .disabled(primaryDisabled)
+                    .accessibilityIdentifier(trigger == .session ? "block-rule-start-session" : "block-rule-save")
             }
-        case .now:
-            if !showsComposer {
-                GoalongSheetFooter(inset: 28) {
-                    Spacer()
-                    Button("Annuler", action: onClose).buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
-                }
-            }
+        }
+    }
+
+    func primaryTitle(now: Date) -> String {
+        guard trigger == .session else { return "Enregistrer" }
+        return scheduling && blockPlan(at: now).startsLater ? "Programmer" : "Démarrer"
+    }
+
+    /// What the main button will do, in words: the end of the session, or why it cannot start.
+    private func footerHint(now: Date) -> String? {
+        guard trigger == .session else { return nil }
+        if usesFocus {
+            if focus?.currentSession != nil { return nil }
+            var mode = sessionDraft
+            if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: now)) }
+            var session = FocusSession(intent: "·", mode: mode.mode, startedAt: now, events: [.init(kind: .start, at: now)])
+            session.plannedEndAt = nil
+            return FocusPhases.plannedEnd(session).map { "Jusqu’à \(BlockingFormat.time($0))" }
+        }
+        guard let blocking else { return "Activez Blocage, ou donnez une intention." }
+        let hint = BlockingProtectionDetails.startHint(wholeMac: freezing, frozen: blocking.freeze != nil,
+                                                       hasLists: !blocking.lists.isEmpty || sessionHoldsScreen,
+                                                       anySelected: !chosenIDs.isEmpty || sessionHoldsScreen,
+                                                       needsPassword: stopLevel == .password && !blocking.hasPassword)
+        if let hint { return hint }
+        if freezing { return BlockingFreezePromise(end: blockPlan(at: now).end, now: now).phrase(now: now).capitalizedFirst }
+        let plan = blockPlan(at: now)
+        return plan.startsLater ? BlockingFormat.period(from: plan.start, to: plan.end, now: now).capitalizedFirst
+                                : BlockingFormat.until(plan.end, now: now).capitalizedFirst
+    }
+
+    private var sessionHoldsScreen: Bool { braise != nil && screenUnavailable == nil && draft.hasRedPart }
+
+    private var primaryDisabled: Bool {
+        switch trigger {
+        case .always, .schedule: return ruleProblem != nil || !unreadableFields.isEmpty
+        case .jev: return false
+        case .session:
+            if usesFocus { return focus?.currentSession != nil }
+            guard let blocking else { return true }
+            if freezing { return blocking.freeze != nil }
+            return (chosenIDs.isEmpty && !sessionHoldsScreen) || (stopLevel == .password && !blocking.hasPassword)
+        }
+    }
+
+    private func close() {
+        braise?.endPreview()
+        onClose()
+    }
+
+    private func primary(now: Date) {
+        switch trigger {
+        case .always, .schedule: save()
+        case .jev: close()
+        case .session: startSession(now: now)
         }
     }
 
     // MARK: Writes
 
+    /// « Toujours » is a range of every day, 24 hours a day, in the current engines.
+    var ruleDraft: BlockRuleDraft {
+        var value = draft
+        if trigger == .always { value.weekdays = Set(1...7); value.startMinute = 0; value.endMinute = 1_440 }
+        value.lock = stopLevel
+        return value
+    }
+
     /// Both engines check before either writes (`BlockRulePlan.apply`); a refusal leaves the sheet open.
     private func save() {
         let consent = showsConsent
-        let writes = BlockRulePlan.writes(draft, replacing: rule, lists: blocking?.lists ?? [], red: braise?.ranges)
+        let writes = BlockRulePlan.writes(ruleDraft, replacing: rule, lists: lists, red: braise?.ranges)
         if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise) {
             self.refusal = refusal
             return
         }
         // The consent is recorded only where its text was shown (T-048 B6).
         if consent { BlockingRuntime.shared.recordGuardConsent() }
-        onClose()
+        close()
     }
 
     private func delete() {
         guard let rule else { return }
-        let writes = BlockRulePlan.writes(nil, replacing: rule, lists: blocking?.lists ?? [], red: braise?.ranges)
+        let writes = BlockRulePlan.writes(nil, replacing: rule, lists: lists, red: braise?.ranges)
         if let refusal = BlockRulePlan.apply(writes, blocking: blocking, braise: braise) {
             self.refusal = refusal
             return
         }
-        onClose()
+        close()
+    }
+
+    // MARK: Séance start
+
+    /// The page's `now` moves every 30 s only: it draws the labels; a click reads the clock again.
+    private func blockPlan(at date: Date) -> BlockingNowPlan {
+        if case .minutes(let value) = span { return BlockingNowPlan(later: scheduling, startAt: startAt, minutes: value, now: date) }
+        return BlockingNowPlan(later: scheduling, startAt: startAt, until: until, now: date)
+    }
+
+    private func continuousMinutes(now: Date) -> Int {
+        if case .minutes(let value) = span { return value }
+        let plan = BlockingNowPlan(later: false, startAt: now, until: until, now: now)
+        return max(1, Int((plan.end.timeIntervalSince(plan.start) / 60).rounded()))
+    }
+
+    private var pendingFreeze: BlockingFreezePromise {
+        pendingFreezePromise ?? BlockingFreezePromise(end: blockPlan(at: pendingFreezeAt).end, now: pendingFreezeAt)
+    }
+
+    private func startSession(now: Date) {
+        refusal = nil
+        if usesFocus {
+            if stopLevel == .locked { confirmingFocusLock = true } else { beginFocus() }
+            return
+        }
+        guard let blocking else { return }
+        let date = Date() // wall: page input; the controller moves it to its trusted frame
+        if freezing {
+            let shown: BlockingNowPlan
+            if case .minutes = span { shown = blockPlan(at: date) } else { shown = blockPlan(at: now) }
+            pending = shown
+            pendingFreezePromise = BlockingFreezePromise.alert(end: shown.end, click: date)
+            pendingFreezeAt = date
+            confirmingFreeze = true
+            return
+        }
+        let promised: BlockingNowPlan?
+        if case .minutes = span { promised = blockPlan(at: date) } else { promised = blockPlan(at: now).confirmed(at: date) }
+        guard let shown = promised else {
+            blocking.error = BlockingNowComposer.refusal(span, freeze: false); return
+        }
+        pending = shown
+        if stopLevel.protectsLists { confirmingLock = true } else { startBlock(shown, blocking) }
+    }
+
+    private func startBlock(_ promised: BlockingNowPlan, _ blocking: BlockingController) {
+        let holds = sessionHoldsScreen ? braise : nil
+        if BlockingNowStart.run(promised, listIDs: chosenIDs, lock: stopLevel, controller: blocking, braise: holds,
+                                red: draft.red, intensity: draft.intensity, brightness: draft.brightness,
+                                refusal: BlockingNowComposer.refusal(span, freeze: false)) {
+            close()
+        }
+    }
+
+    private func freeze() {
+        guard let blocking else { return }
+        blocking.recordGuardConsent()
+        // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
+        guard let end = pendingFreeze.end(at: Date()) else { // wall: page input; the controller moves it to its trusted frame
+            blocking.error = BlockingNowComposer.refusal(span, freeze: true); return
+        }
+        blocking.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
+        if blocking.freeze != nil { close() }
+    }
+
+    /// Concentration: Pomodoro, or Continu with an intention. Without one, the session is named « Séance ».
+    private func beginFocus() {
+        guard let focus else { return }
+        var mode = sessionDraft
+        if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: GoalongToday.now)) }
+        let ids = chosenIDs
+        do {
+            focus.refresh()  // a new day replaces the plan before the link is checked
+            try focus.startSession(intent: intent.isEmpty ? Self.defaultIntent : intent, mode: mode.mode,
+                                   planItemId: focus.openPlanItemID(mode.planItemId), blockListIds: ids,
+                                   blockDuringBreaks: mode.kind == .pomodoro && mode.blockDuringBreaks,
+                                   lock: stopLevel == .locked && mode.canLock && !ids.isEmpty)
+            sessionDraft.remember()
+            close()
+        } catch {
+            focus.error = FocusUIError.message(error)
+        }
     }
 }
 
-/// « Séance de travail » inside the editor: the composer of Concentration, unchanged. The sheet closes when
-/// the session starts.
-@MainActor private struct BlockRuleSessionPane: View {
-    @ObservedObject var controller: ConcentrationController
-    let now: Date
-    @Binding var draft: FocusComposerDraft
-    var onStarted: () -> Void
-    @ObservedObject private var modules = GoalongModuleStore.shared
+/// One slider of « Quoi » with its live preview (T-050 A2-7): each move shows the value and holds it; the release
+/// keeps it `BraiseController.previewHold` seconds, then the real state comes back.
+@MainActor private struct BlockRuleLevel: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let spoken: String
+    let preview: (Double, Bool) -> Void
+    @State private var dragging = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if controller.currentSession != nil {
-                GoalongNote("Une séance est déjà en cours. Terminez-la pour en lancer une autre.")
-                    .accessibilityIdentifier("block-rule-session-running")
-            } else {
-                FocusComposer(controller: controller, now: now, draft: $draft, blockingEnabled: modules.isEnabled(.blocking))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(GoalongUIFormat.percent(value * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             }
-            if let error = controller.error {
-                GoalongNote(FocusUIError.message(raw: error), tone: .warning).accessibilityIdentifier("block-rule-session-error")
-            }
+            Slider(value: $value, in: range, onEditingChanged: { editing in
+                dragging = editing
+                preview(value, editing)
+            })
+            .accessibilityLabel(spoken)
+            .accessibilityValue("\(Int((value * 100).rounded())) pour cent")
+            .onChange(of: value) { next in preview(next, dragging) }
         }
-        .onChange(of: controller.currentSession?.id) { id in if id != nil { onStarted() } }
     }
 }
 #endif

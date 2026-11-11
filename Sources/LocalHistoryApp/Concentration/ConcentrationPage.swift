@@ -1072,6 +1072,7 @@ struct FocusThreadModel: Equatable {
 // MARK: - Settings
 
 @MainActor struct FocusSettingsSection: View {
+    static let title = "Réglages des séances"
     @ObservedObject var controller: ConcentrationController
     @Binding var open: Bool
     @State private var daily = ""
@@ -1138,7 +1139,8 @@ struct FocusThreadModel: Equatable {
             }
             .padding(.top, 14)
         } label: {
-            Text("Réglages").font(LHTheme.sectionTitleFont).tracking(-0.2)
+            // T-050 point 16: « Réglages » alone read as the app's Réglages inside « Engagements et limites ».
+            Text(Self.title).font(LHTheme.sectionTitleFont).tracking(-0.2)
         }
         .onAppearWhenShown(perform: load)
         .accessibilityIdentifier("concentration-settings")

@@ -690,20 +690,37 @@
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
+                // T-050 point 10: the filter's comfort brightness, next to the intensity.
+                HStack(spacing: 8) {
+                    Image(systemName: "circle.lefthalf.filled").font(.system(size: 10)).accessibilityHidden(true)
+                    Slider(value: Binding(get: { model.redScreen.filterBrightness }, set: { model.setRedScreenFilterBrightness($0) }),
+                           in: RedScreenState.filterBrightnessRange)
+                        .controlSize(.small)
+                        .tint(LHTheme.secondaryText)
+                        .accessibilityLabel("Luminosité du filtre")
+                        .accessibilityValue(GoalongUIFormat.percent(model.redScreen.filterBrightness * 100))
+                        .accessibilityIdentifier("menubar-red-screen-brightness")
+                    Text(GoalongUIFormat.percent(model.redScreen.filterBrightness * 100))
+                        .font(.system(size: 12).monospacedDigit())
+                        .frame(width: 36, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(LHTheme.secondaryText)
+                .help("Luminosité du filtre")
                 if let notice = model.redScreen.notice {
                     Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
-                    if model.redScreen.followsSchedule {
-                        Text(model.redScreen.isProtected ? "Plage protégée en cours" : "Suit vos horaires")
+                    if model.redScreen.isProtected {
+                        Text("Plage protégée en cours")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     Spacer(minLength: 0)
-                    // Review B1 point 7: the ranges live in Garde-fous › Écran rouge.
-                    Button("Plages…") { model.openRedScreenSettings() }
+                    // T-050 point 13: the ranges are rules of the page « Blocages ».
+                    Button("Règles…") { model.openRedScreenSettings() }
                         .buttonStyle(.link).font(.system(size: 12))
-                        .help("Ouvrir Garde-fous › Écran rouge")
+                        .help("Ouvrir Blocages › Règles")
                         .accessibilityIdentifier("menubar-red-screen-ranges")
                 }
             }

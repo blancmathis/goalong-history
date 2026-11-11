@@ -731,35 +731,14 @@ struct BlockingMeter: View {
         }
     }
 
-    /// Keeps the promised end and reads the clock for the start only: a start time that has just passed
-    /// starts the block now. An end already reached is refused, never moved to the next day.
+    /// Keeps the promised end and reads the clock for the start only (`BlockingNowStart`).
     private func start(_ promised: BlockingNowPlan) {
         let ids = controller.lists.map(\.id).filter(selected.contains)
-        guard let plan = promised.confirmed(at: Date()) else { return refuseEndPassed() } // wall: page input; the controller moves it to its trusted frame
-        if plan.startsLater {
-            if controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil { later = false; onDone() }
-            return
+        if BlockingNowStart.run(promised, listIDs: ids, lock: lock, controller: controller, braise: redPart ? braise : nil,
+                                red: red, intensity: intensity, brightness: brightness, refusal: Self.refusal(span, freeze: false)) {
+            later = false
+            onDone()
         }
-        // Both parts are checked before one is written: a refused red screen starts no block, and the reverse.
-        let holds = redPart ? braise : nil
-        let level = red ? intensity : 0
-        if let refusal = holds?.holdRefusal(intensity: level, brightness: brightness, until: plan.end, lock: lock) {
-            controller.error = refusal.message; return
-        }
-        var started = false
-        if !ids.isEmpty || holds == nil {
-            guard controller.start(listIDs: ids, until: plan.end, lock: lock) else { return }
-            started = true
-        }
-        if let holds {
-            do { _ = try holds.holdNow(intensity: level, brightness: brightness, until: plan.end, lock: lock) } catch {
-                controller.error = (error as? RedScreenRefusal)?.message ?? error.localizedDescription
-                // The block runs: the sheet closes with the message. An open sheet would start a second block.
-                guard started else { return }
-            }
-        }
-        later = false
-        onDone()
     }
 
     /// The red screen and the brightness held to the end of the block, with the block's stop rule.
@@ -793,6 +772,38 @@ struct BlockingMeter: View {
                 .frame(width: 64, height: 32, alignment: .leading)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// The start of a block that the composer or the « Séance » of the rule editor promised (T-050 A1). It keeps the
+/// promised end and reads the clock for the start only: a start time that has just passed starts the block now. An end
+/// already reached is refused, never moved to the next day. Both parts are checked before one is written: a refused red
+/// screen starts no block, and the reverse. True = started or scheduled: the caller closes.
+enum BlockingNowStart {
+    @MainActor static func run(_ promised: BlockingNowPlan, listIDs ids: [UUID], lock: BlockLock, controller: BlockingController,
+                               braise holds: BraiseController?, red: Bool, intensity: Double, brightness: Double?,
+                               refusal: String) -> Bool {
+        guard let plan = promised.confirmed(at: Date()) else { controller.error = refusal; return false } // wall: page input; the controller moves it to its trusted frame
+        if plan.startsLater {
+            return controller.schedule(listIDs: ids, start: plan.start, end: plan.end, lock: lock) != nil
+        }
+        let level = red ? intensity : 0
+        if let refused = holds?.holdRefusal(intensity: level, brightness: brightness, until: plan.end, lock: lock) {
+            controller.error = refused.message; return false
+        }
+        var started = false
+        if !ids.isEmpty || holds == nil {
+            guard controller.start(listIDs: ids, until: plan.end, lock: lock) else { return false }
+            started = true
+        }
+        if let holds {
+            do { _ = try holds.holdNow(intensity: level, brightness: brightness, until: plan.end, lock: lock) } catch {
+                controller.error = (error as? RedScreenRefusal)?.message ?? error.localizedDescription
+                // The block runs: the sheet closes with the message. An open sheet would start a second block.
+                return started
+            }
+        }
+        return true
     }
 }
 
@@ -888,7 +899,7 @@ enum BlockingFreezePromise: Equatable {
     }
 }
 
-private extension String {
+extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
 

@@ -13,8 +13,10 @@ struct JevActivationAvailability: Equatable {
 @MainActor struct JevMonitoringPage: View {
     var onOpenRecording: () -> Void
     var onOpenWork: () -> Void = {}
-    /// Inside the Jev rule of « Blocages »: the editor brings the title and the scrolling.
-    var embedded = false
+    /// Inside the Jev rule of « Blocages » (T-050 A1): the editor brings the title, the boxes and the scrolling.
+    /// `.when` = the settings, as rows of « Quand »; `.what` = the reminder, as the « Quoi » of the rule.
+    enum Part { case page, when, what }
+    var part: Part = .page
     @ObservedObject private var monitor = JevMonitor.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @State private var showingConnection = false
@@ -28,9 +30,10 @@ struct JevActivationAvailability: Equatable {
 
     var body: some View {
         Group {
-            if embedded {
-                content
-            } else {
+            switch part {
+            case .when: whenRows
+            case .what: JevInterventionControls().accessibilityIdentifier("jev-intervention-settings")
+            case .page:
                 ScrollView {
                     content
                         .frame(maxWidth: LHTheme.readableWidth, alignment: .leading)
@@ -54,11 +57,8 @@ struct JevActivationAvailability: Equatable {
 
     private var content: some View {
             VStack(alignment: .leading, spacing: 24) {
-                // Embedded in Réglages, the pane's title carries this sentence (SettingsPane.lead).
-                if !embedded {
-                    Text("Des rappels pour rester sur vos projets de travail.")
-                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-                }
+                Text("Des rappels pour rester sur vos projets de travail.")
+                    .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                 monitoringCard
                 GoalongWorkDefinitionSummary(onOpen: onOpenWork)
                 JevBreakControls()
@@ -78,6 +78,54 @@ struct JevActivationAvailability: Equatable {
                 .accessibilityIdentifier("jev-privacy-details")
             }
             .font(.system(size: 13))
+    }
+
+    /// The settings of the page, without its card: the editor's « Quand » box draws the frame.
+    private var whenRows: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Activer Jev", isOn: enabledBinding).toggleStyle(.goalongSwitchInline).fixedSize()
+                        .frame(minHeight: 32)
+                        .disabled(!availability.canToggle(isEnabled: enabled))
+                        .accessibilityIdentifier("jev-enabled")
+                    if let reason = toggleBlockedReason {
+                        Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityIdentifier("jev-enabled-reason")
+                    }
+                }
+                Spacer(minLength: 8)
+                if enabled || monitor.timedBreak != nil {
+                    Label(monitor.status, systemImage: monitor.timedBreak != nil ? "pause.circle" : "circle.dotted")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                        .frame(minHeight: 32)
+                        .accessibilityIdentifier("jev-status")
+                }
+            }
+            JevScopeControl(showsTitle: false).disabled(!enabled || !availability.hasKey)
+            connectionRow
+            if !availability.localHistoryEnabled {
+                HStack(alignment: .top, spacing: 12) {
+                    Text("L’enregistrement doit aussi être activé. Aucun accès n’est modifié à votre place.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Configurer l’historique", action: onOpenRecording)
+                        .modifier(GoalongMainActionStyle(primary: monitor.hasKey))
+                        .accessibilityIdentifier("jev-open-recording")
+                }
+            }
+            if let error = monitor.error {
+                Label(error, systemImage: "exclamationmark.circle").font(.system(size: 12))
+                    .foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
+            }
+            GoalongWorkDefinitionSummary(onOpen: onOpenWork)
+            JevBreakControls()
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(get: { enabled }, set: { if $0 { confirming = true } else { monitor.setEnabled(false) } })
     }
 
     private var monitoringCard: some View {

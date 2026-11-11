@@ -115,6 +115,10 @@ import LocalHistoryCore
         // A protected range may hold the value (same state, nothing published): redraw so the thumb goes back to it.
         objectWillChange.send()
     }
+    func setRedScreenFilterBrightness(_ value: Double) {
+        guard value.isFinite else { return }
+        redScreenControl?.setRedScreenFilterBrightness(value)
+    }
     func openRedScreenSettings() { onOpenSection(.braise) }
     private let redScreenControl: (any RedScreenControlling)?
     private var redScreenWatch: AnyCancellable?

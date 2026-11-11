@@ -600,14 +600,18 @@
         /// False only where the value drives a whole page read (Activité's period): the content changes without
         /// animation and only the pill slides. Elsewhere the content keeps its animated change (R13c).
         var animatesContent = true
+        /// Why an option cannot be chosen here: it stays shown, greyed, with its reason as help (T-050 A1-4).
+        var unavailable: (Value) -> String? = { _ in nil }
 
         init(_ label: String, selection: Binding<Value>, options: [Value], fills: Bool = false,
-             animatesContent: Bool = true, title: @escaping (Value) -> String) {
+             animatesContent: Bool = true, unavailable: @escaping (Value) -> String? = { _ in nil },
+             title: @escaping (Value) -> String) {
             self.label = label
             _selection = selection
             self.options = options
             self.fills = fills
             self.animatesContent = animatesContent
+            self.unavailable = unavailable
             self.title = title
         }
 
@@ -626,7 +630,10 @@
                         Text(title(option)).lineLimit(1)
                             .frame(maxWidth: fills ? .infinity : nil)
                     }
-                    .buttonStyle(GoalongSegmentStyle(selected: selected))
+                    .buttonStyle(GoalongSegmentStyle(selected: selected, unavailable: unavailable(option) != nil && !selected))
+                    .disabled(unavailable(option) != nil && !selected)
+                    .help(unavailable(option) ?? "")
+                    .accessibilityHint(unavailable(option) ?? "")
                     // The raised pill slides between segments instead of jumping.
                     .background {
                         if (pillHold ?? selection) == option {
@@ -666,6 +673,8 @@
 
     private struct GoalongSegmentStyle: ButtonStyle {
         let selected: Bool
+        /// A choice this screen does not allow: struck through, so it never looks like a choice (no fade: contrast stays ≥ 4.5:1).
+        var unavailable = false
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.controlSize) private var controlSize
         @Environment(\.isFocused) private var isFocused
@@ -676,6 +685,7 @@
             let shape = RoundedRectangle(cornerRadius: LHTheme.controlRadius - 2, style: .continuous)
             let small = controlSize == .small || controlSize == .mini
             configuration.label
+                .strikethrough(unavailable)
                 .font(.system(size: small ? 12 : 13, weight: selected ? .semibold : .medium))
                 .padding(.horizontal, small ? 10 : 14)
                 .frame(minHeight: small ? 22 : 26)

@@ -13,22 +13,22 @@ import Combine
     /// « Plage protégée jusqu’à 07:00 : 80 % au moins », under the slider while a protected range holds it.
     let noticeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let intensityItem = NSMenuItem(title: "Intensité", action: nil, keyEquivalent: "")
-    let scheduleItem = NSMenuItem(title: "Suivre mes horaires", action: nil, keyEquivalent: "")
     let restoreItem = NSMenuItem(title: "Rétablir les couleurs", action: nil, keyEquivalent: "r")
-    let settingsItem = NSMenuItem(title: "Plages et réglages de l’écran rouge…", action: nil, keyEquivalent: "")
+    /// T-050: the ranges are rules of the page « Blocages »; this item opens their list.
+    let settingsItem = NSMenuItem(title: "Règles de l’écran rouge…", action: nil, keyEquivalent: "")
     let separator = NSMenuItem.separator()
     let slider: RedScreenMenuSliderView
     private let intensityMenu = NSMenu(title: "Intensité")
     private var watch: AnyCancellable?
 
-    var items: [NSMenuItem] { [toggleItem, sliderItem, noticeItem, intensityItem, scheduleItem, restoreItem, settingsItem] }
+    var items: [NSMenuItem] { [toggleItem, sliderItem, noticeItem, intensityItem, restoreItem, settingsItem] }
 
     init(control: any RedScreenControlling, onOpenSettings: @escaping () -> Void) {
         self.control = control; self.onOpenSettings = onOpenSettings
         slider = RedScreenMenuSliderView(onChange: { _ in })
         super.init()
         slider.onChange = { [weak self] in self?.slide($0) }
-        for (item, action) in [(toggleItem, #selector(toggle)), (scheduleItem, #selector(followSchedule)),
+        for (item, action) in [(toggleItem, #selector(toggle)),
                                (restoreItem, #selector(restore)), (settingsItem, #selector(openSettings))] {
             item.target = self; item.action = action
         }
@@ -48,16 +48,14 @@ import Combine
     func refresh(_ state: RedScreenState) {
         toggleItem.state = state.on ? .on : .off
         toggleItem.setAccessibilityValueDescription(state.on ? "activé" : "désactivé")
-        scheduleItem.state = state.followsSchedule ? .on : .off
         restoreItem.isEnabled = state.on
-        restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par Garde-fous › Écran rouge." : nil
+        restoreItem.toolTip = state.isProtected ? "Plage protégée : l’arrêt passe par la page Blocages, « En cours »." : nil
         slider.value = state.intensity
         noticeItem.title = state.notice ?? ""; noticeItem.isHidden = state.notice == nil
         let percent = Int((state.intensity * 100).rounded())
         for item in intensityMenu.items { item.state = Int(((item.representedObject as? Double ?? 0) * 100).rounded()) == percent ? .on : .off }
     }
     @objc private func toggle() { control.setRedScreen(!control.redScreen.on) }
-    @objc private func followSchedule() { control.setRedScreenFollowsSchedule(!control.redScreen.followsSchedule) }
     /// The menu auto-enables items with a target: « Rétablir les couleurs » is greyed here while red is off.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         item === noticeItem ? false : item === restoreItem ? control.redScreen.on : true
