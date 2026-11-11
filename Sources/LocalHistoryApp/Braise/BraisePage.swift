@@ -526,8 +526,10 @@ private struct RedScreenChallenge: Identifiable {
     @State private var error: String?
     @State private var unreadableFields: Set<String> = []
     @Environment(\.dismiss) private var dismiss
+    /// What the sheet opened with: a click outside asks first when the range differs from it or a time field holds unread text.
+    private let initial: RedScreenRangeDraft
     init(controller: BraiseController, initial: RedScreenRangeDraft) {
-        self.controller = controller; _draft = State(initialValue: initial)
+        self.controller = controller; _draft = State(initialValue: initial); self.initial = initial
     }
     private var lock: Binding<BlockLock> { Binding(get: { draft.range.effectiveLock }, set: { draft.range.lock = $0 == .free ? nil : $0 }) }
     private var startMinute: Binding<Int> { Binding(get: { draft.range.startMinute }, set: { draft.range.startMinute = $0 }) }
@@ -613,6 +615,8 @@ private struct RedScreenChallenge: Identifiable {
             }
         }.font(.system(size: 13)).padding(28).frame(width: 590)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
+            // Not the stop or password sheets of Braise: those stay out of this mechanism.
+            .goalongDismissOnOutsideClick(isDirty: { draft != initial || !unreadableFields.isEmpty }, onCancel: { dismiss() })
     }
     /// A protected range (any stop rule but « Libre ») shows `GuardConsent.text` while consent is needed; saving it accepts.
     static func showsConsent(lock: BlockLock, needed: Bool) -> Bool { lock != .free && needed }

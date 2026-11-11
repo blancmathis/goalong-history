@@ -108,6 +108,8 @@ import SwiftUI
     let list: BlockList
     let now: Date
     var onDone: () -> Void = {}
+    /// T-052 lot 1c: tells the sheet that a site, exception or word was typed and not added yet (closing would drop it).
+    var hasPendingEntry: Binding<Bool>? = nil
     @State private var newSite = ""
     @State private var siteError: String?
     @State private var newException = ""
@@ -124,17 +126,24 @@ import SwiftUI
     @State private var lockingProgram = false
     @State private var moreOpen: Bool
 
-    init(controller: BlockingController, list: BlockList, now: Date, onDone: @escaping () -> Void = {}) {
+    init(controller: BlockingController, list: BlockList, now: Date, onDone: @escaping () -> Void = {},
+         hasPendingEntry: Binding<Bool>? = nil) {
         self.controller = controller
         self.list = list
         self.now = now
         self.onDone = onDone
+        self.hasPendingEntry = hasPendingEntry
         _moreOpen = State(initialValue: list.mode == .allowOnly || list.quotaMinutesPerDay != nil || list.breaks != nil)
         _reasonDraft = State(initialValue: list.reason ?? "")
         _nameDraft = State(initialValue: list.name)
     }
 
     private var stricterOnly: Bool { controller.isStricterOnly(list.id) }
+
+    /// Typed, not added: the only input this editor can lose (names and reasons save when it closes, the rest saves at once).
+    private var hasPending: Bool {
+        [newSite, newException, newKeyword].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -330,6 +339,7 @@ import SwiftUI
             }
         }
         .font(.system(size: 13))
+        .onChange(of: hasPending) { hasPendingEntry?.wrappedValue = $0 }
         .alert("Supprimer « \(list.name) » ?", isPresented: $confirmingDelete) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer", role: .destructive) { controller.delete(list.id); onDone() }
@@ -580,6 +590,7 @@ import SwiftUI
     /// Tallest the sheet may grow before it scrolls (760 pt in the app). `.infinity` lets the content decide, which the gallery uses to capture the whole list.
     var maxHeight: CGFloat = 760
     var onDone: () -> Void
+    @State private var hasPendingEntry = false
 
     /// The sheet's title: a locked list says why it can only get stricter.
     nonisolated static func title(locked: Bool) -> String { locked ? "Liste verrouillée" : "Modifier la liste" }
@@ -598,7 +609,7 @@ import SwiftUI
                     }
                     .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 4)
                     ScrollView {
-                        BlockListEditor(controller: controller, list: list, now: now, onDone: onDone).padding(28)
+                        BlockListEditor(controller: controller, list: list, now: now, onDone: onDone, hasPendingEntry: $hasPendingEntry).padding(28)
                     }
                 }
             } else {
@@ -608,6 +619,8 @@ import SwiftUI
         .frame(width: 600).frame(minHeight: 420, idealHeight: maxHeight.isFinite ? min(640, maxHeight) : nil, maxHeight: maxHeight)
         .background(LHTheme.pageBackground)
         .background(Button("") { onDone() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
+        // T-052 lot 1c: « Fermer ». A locked list only gets stricter whatever closes it; nested password sheets and alerts block the click.
+        .goalongDismissOnOutsideClick(isDirty: { hasPendingEntry }, onCancel: onDone)
     }
 }
 
