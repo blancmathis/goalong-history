@@ -102,12 +102,12 @@ final class GoalongWorkRulesTests: XCTestCase {
 
     func testEveryContextHasExactlyOneState() throws {
         let events = minutes(0...10, from: 36_000, app: "Pages", title: "Rapport")
-            + minutes(11...20, from: 36_000, app: "Mail", title: "Inbox")
+            + minutes(11...20, from: 36_000, app: "Mail", title: "Devis Atlas")
             + minutes(21...30, from: 36_000, app: "Secret", title: "Coffre")
             + minutes(31...40, from: 36_000, app: "Notes", title: "Idées")
             + [event(36_000 + 41 * 60, app: "Calc", title: "1+1"), event(36_000 + 41 * 60 + 5, app: "Pages", title: "Rapport")]
         let observation = observe(events)
-        let pages = label("Pages", nil, "Rapport"), mail = label("Mail", nil, "Inbox"), notes = label("Notes", nil, "Idées")
+        let pages = label("Pages", nil, "Rapport"), mail = label("Mail", nil, "Devis Atlas"), notes = label("Notes", nil, "Idées")
         let calc = label("Calc", nil, "1+1")
         let verdicts = GoalongWorkVerdicts([pages.key: .init(verdict: .work, task: "Rapport"), mail.key: .init(verdict: .unclear)])
         let summary = GoalongWorkClassification.states(day: observation.day, labels: observation.labels, verdicts: verdicts,

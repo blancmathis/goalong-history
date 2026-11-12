@@ -333,7 +333,12 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 case .call:
                     waiting = nil
                 }
-                let reasks = Set(pending.keys.filter { store.verdicts.contexts[$0]?.verdict == .unclear })
+                // A re-ask, or a context whose content changes (AI chat, messaging, untitled page), goes with what is
+                // visible in it: its title alone never decides (T-055).
+                let reasks = Set(pending.keys.filter { key in
+                    store.verdicts.contexts[key]?.verdict == .unclear
+                        || pending.labels[key].map(GoalongWorkContext.variesWithContent) == true
+                })
                 let rawExcerpts = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkReassessment.excerpts(root: root, day: start, keys: reasks, calendar: calendar,
                         permits: filter.permitsVisibleContext, shouldContinue: { !Task.isCancelled })

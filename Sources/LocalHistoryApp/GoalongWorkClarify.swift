@@ -38,7 +38,7 @@ enum GoalongWorkPassLine {
         case .notConnected: return "Connecter ChatGPT"
         case .historyOff: return "Voir les réglages"
         case .backgroundConsentMissing: return "Autoriser le classement automatique"
-        case .notYetPassed, .paused, .dailyCapReached, .sharingBlocked, .accountLimitNear, .codexBusy: return nil
+        case .notYetPassed, .judgedByContent, .paused, .dailyCapReached, .sharingBlocked, .accountLimitNear, .codexBusy: return nil
         }
     }
 
@@ -196,7 +196,9 @@ enum GoalongWorkPassLine {
                 finalState[key] = state
             }
             for (key, state) in summary.states {
-                if case .waiting = state, let label = observation.labels[key] { pending.insert(GoalongWorkContext.groupKey(label)) }
+                // Contexts judged on their content, or excluded from sharing, are not sent by the next pass (T-055).
+                if case .waiting(let reason) = state, reason != .judgedByContent, reason != .sharingBlocked || blocker == .sharingBlocked,
+                   let label = observation.labels[key] { pending.insert(GoalongWorkContext.groupKey(label)) }
             }
         }
         for (key, state) in finalState {
@@ -288,6 +290,59 @@ enum GoalongWorkPassLine {
     }
 }
 
+/// The answers given in one opening of « À préciser », in order (T-055): « Précédent » shows an earlier one with its
+/// answer, which can be kept, changed (verdict or scope) or removed. Each answer keeps how to take it back.
+@MainActor struct GoalongWorkClarifyLog {
+    struct Entry {
+        let question: GoalongWorkStateModel.Question
+        let verdict: GoalongWorkVerdict
+        let scope: GoalongWorkSource
+        let undo: GoalongWorkAnswering.Undo
+    }
+    private(set) var entries: [Entry] = []
+    /// The answer shown instead of the next question; nil: the next question.
+    private(set) var reviewing: Int?
+
+    var shown: Entry? { reviewing.map { entries[$0] } }
+    var canGoBack: Bool { (reviewing ?? entries.count) > 0 }
+    var keys: Set<String> { Set(entries.map(\.question.id)) }
+
+    /// Saves an answer to a new question; false when nothing was written.
+    mutating func answer(_ question: GoalongWorkStateModel.Question, _ verdict: GoalongWorkVerdict, scope: GoalongWorkSource,
+                         store: GoalongWorkStore = .shared, day: String) -> Bool {
+        guard let undo = GoalongWorkAnswering.answer(question, verdict: verdict, scope: scope, store: store, day: day) else { return false }
+        entries.append(Entry(question: question, verdict: verdict, scope: scope, undo: undo))
+        return true
+    }
+
+    mutating func back() { if canGoBack { reviewing = (reviewing ?? entries.count) - 1 } }
+    mutating func forward() { reviewing = reviewing.flatMap { $0 + 1 < entries.count ? $0 + 1 : nil } }
+
+    /// Replaces the answer shown by another verdict or scope, then moves on. The same answer simply moves on.
+    mutating func change(to verdict: GoalongWorkVerdict, scope: GoalongWorkSource, store: GoalongWorkStore = .shared, day: String) {
+        guard let index = reviewing else { return }
+        let entry = entries[index]
+        if entry.verdict != verdict || entry.scope != scope {
+            entry.undo.run()
+            if let undo = GoalongWorkAnswering.answer(entry.question, verdict: verdict, scope: scope, store: store, day: day) {
+                entries[index] = Entry(question: entry.question, verdict: verdict, scope: scope, undo: undo)
+            } else {
+                entries.remove(at: index); reviewing = index < entries.count ? index : nil; return
+            }
+        }
+        forward()
+    }
+
+    /// Takes the answer shown back: its question returns among those to answer. Returns its key.
+    mutating func remove() -> String? {
+        guard let index = reviewing else { return nil }
+        let entry = entries.remove(at: index)
+        entry.undo.run()
+        reviewing = index < entries.count ? index : nil
+        return entry.question.id
+    }
+}
+
 // MARK: - The sheet
 
 /// « À préciser (N) » opens this sheet: one question at a time, the longest first.
@@ -298,7 +353,8 @@ enum GoalongWorkPassLine {
     @State private var skipped: Set<String> = []
     /// Answered keys wait here until the states are read again, so a quick second click never answers twice.
     @State private var answered: Set<String> = []
-    @State private var history: [(key: String, undo: GoalongWorkAnswering.Undo)] = []
+    @State private var log = GoalongWorkClarifyLog()
+    @State private var showingAnswers = false
     @State private var scope: GoalongWorkSource = .context
     @State private var initialTotal = 0
     @State private var editingDefinition = false
@@ -326,11 +382,14 @@ enum GoalongWorkPassLine {
                     if editingDefinition {
                         JevWorkContextControls(purpose: .workDefinition)
                         Button("Retour aux questions") { editingDefinition = false }.buttonStyle(LHSecondaryButtonStyle())
+                    } else if let entry = log.shown {
+                        questionView(entry.question, given: entry.verdict)
                     } else if let question = current {
                         questionView(question)
                     } else {
                         finished
                     }
+                    if !editingDefinition { pastAnswers }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading).padding(24)
             }
@@ -345,7 +404,8 @@ enum GoalongWorkPassLine {
         .accessibilityIdentifier("clarify-sheet")
     }
 
-    private func questionView(_ question: GoalongWorkStateModel.Question) -> some View {
+    /// `given`: the answer already saved for this question, shown by « Précédent » (T-055).
+    private func questionView(_ question: GoalongWorkStateModel.Question, given: GoalongWorkVerdict? = nil) -> some View {
         let label = question.label
         let name = label.title ?? label.host ?? label.application
         let scopes = GoalongWorkAnswering.scopes(for: label)
@@ -367,14 +427,30 @@ enum GoalongWorkPassLine {
                 Text(GoalongWorkAnswering.scopeHelp(scopes.contains(scope) ? scope : .context, label: label))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
+            if let given {
+                Text("Votre réponse : \(given == .work ? "Travail" : "Pas du travail"). Choisissez-en une autre pour la changer.")
+                    .font(.system(size: 12, weight: .medium)).accessibilityIdentifier("clarify-given")
+            }
             HStack(spacing: 10) {
-                Button("Travail") { answer(question, .work) }.buttonStyle(LHPrimaryButtonStyle()).accessibilityIdentifier("clarify-work")
-                Button("Pas du travail") { answer(question, .other) }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("clarify-other")
-                Button("Passer") { skipped.insert(question.id) }.buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("clarify-skip")
+                verdictButton("Travail", .work, question: question, given: given, id: "clarify-work")
+                verdictButton("Pas du travail", .other, question: question, given: given, id: "clarify-other")
+                if given == nil {
+                    Button("Passer") { skipped.insert(question.id) }.buttonStyle(LHQuietButtonStyle()).accessibilityIdentifier("clarify-skip")
+                }
                 Spacer(minLength: 0)
             }
-            undoButton
+            navigation(reviewing: given != nil)
         }
+    }
+
+    /// The answer already given is the filled button; with no answer yet, « Travail » is.
+    @ViewBuilder private func verdictButton(_ title: String, _ verdict: GoalongWorkVerdict, question: GoalongWorkStateModel.Question,
+                                            given: GoalongWorkVerdict?, id: String) -> some View {
+        let filled = given.map { $0 == verdict } ?? (verdict == .work)
+        let button = Button { answer(question, verdict) } label: {
+            if given == verdict { Label(title, systemImage: "checkmark") } else { Text(title) }
+        }.accessibilityIdentifier(id).accessibilityAddTraits(given == verdict ? .isSelected : [])
+        if filled { button.buttonStyle(LHPrimaryButtonStyle()) } else { button.buttonStyle(LHSecondaryButtonStyle()) }
     }
 
     private var progress: some View {
@@ -386,12 +462,37 @@ enum GoalongWorkPassLine {
         }
     }
 
-    @ViewBuilder private var undoButton: some View {
-        if !history.isEmpty {
-            Button("Annuler la dernière réponse") {
-                guard let last = history.popLast() else { return }
-                last.undo.run(); answered.remove(last.key); skipped.remove(last.key)
-            }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("clarify-undo")
+    /// « Précédent » goes back through this opening's answers; on one of them, « Suivant » goes on and
+    /// « Effacer cette réponse » puts its question back among those to answer.
+    @ViewBuilder private func navigation(reviewing: Bool) -> some View {
+        if log.canGoBack || reviewing {
+            HStack(spacing: 16) {
+                if log.canGoBack {
+                    Button { goBack() } label: { Label("Précédent", systemImage: "chevron.left") }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("clarify-previous")
+                }
+                if reviewing {
+                    Button("Effacer cette réponse") {
+                        if let key = log.remove() { answered.remove(key); skipped.remove(key) }
+                        scope = log.shown?.scope ?? .context; states.reload()
+                    }.buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("clarify-remove")
+                    Button { log.forward(); scope = log.shown?.scope ?? .context } label: { Label("Suivant", systemImage: "chevron.right") }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("clarify-next")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func goBack() { log.back(); scope = log.shown?.scope ?? .context }
+
+    /// Every answer kept, from any opening: « Vos réponses », changeable and removable here too.
+    @ViewBuilder private var pastAnswers: some View {
+        if !work.answers.isEmpty {
+            Divider()
+            Button(showingAnswers ? "Masquer vos réponses" : "Revoir toutes vos réponses (\(work.answers.count))") { showingAnswers.toggle() }
+                .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12)).accessibilityIdentifier("clarify-answers")
+            if showingAnswers { GoalongWorkAnswersCard() }
         }
     }
 
@@ -405,17 +506,20 @@ enum GoalongWorkPassLine {
                                   message: "Vous pouvez y répondre maintenant ou plus tard : elles restent dans « À préciser ».")
                 Button("Revoir les questions passées") { skipped = [] }.buttonStyle(LHSecondaryButtonStyle())
             }
-            undoButton
+            navigation(reviewing: false)
         }
     }
 
     private func answer(_ question: GoalongWorkStateModel.Question, _ verdict: GoalongWorkVerdict) {
         let chosen = GoalongWorkAnswering.scopes(for: question.label).contains(scope) ? scope : .context
-        guard let undo = GoalongWorkAnswering.answer(question, verdict: verdict, scope: chosen,
-                                                     day: GoalongWorkAgent.dayString(GoalongToday.now)) else { return }
-        answered.insert(question.id)
-        history.append((question.id, undo))
-        scope = .context
+        let day = GoalongWorkAgent.dayString(GoalongToday.now)
+        if log.shown?.question.id == question.id {
+            log.change(to: verdict, scope: chosen, day: day)
+        } else {
+            guard log.answer(question, verdict, scope: chosen, day: day) else { return }
+            answered.insert(question.id)
+        }
+        scope = log.shown?.scope ?? .context
         states.reload()
     }
 }

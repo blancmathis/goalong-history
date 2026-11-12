@@ -102,11 +102,64 @@ extension GoalongWorkContext {
     }
 }
 
+extension GoalongWorkContext {
+    /// Apps and sites whose page stays the same while what is written in it changes: AI chats, messaging, mail.
+    /// Their app, site or title never says whether a moment is work (T-055).
+    static let contentVaryingHosts: Set<String> = [
+        "chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "perplexity.ai", "copilot.microsoft.com",
+        "chat.mistral.ai", "chat.deepseek.com", "poe.com", "grok.com", "mail.google.com", "outlook.live.com",
+        "outlook.office.com", "outlook.office365.com", "web.whatsapp.com", "web.telegram.org", "discord.com",
+        "app.slack.com", "messenger.com", "teams.microsoft.com", "teams.live.com",
+    ]
+    static let contentVaryingBundles: Set<String> = [
+        "com.openai.chat", "com.anthropic.claudefordesktop", "com.google.gemini", "ai.perplexity.mac",
+        "com.tinyspeck.slackmacgap", "com.apple.mobilesms", "net.whatsapp.whatsapp", "desktop.whatsapp",
+        "com.hnc.discord", "ru.keepcoder.telegram", "org.telegram.desktop", "com.facebook.archon",
+        "com.apple.mail", "com.microsoft.outlook", "com.microsoft.teams2", "com.microsoft.teams", "com.readdle.smartemail-mac",
+    ]
+    /// Words that name no content: a home page, a new chat, an empty document.
+    static let genericTitleWords: Set<String> = [
+        "home", "accueil", "new chat", "nouveau chat", "nouvelle discussion", "nouvelle conversation", "new conversation",
+        "untitled", "sans titre", "untitled document", "document sans titre", "new document", "nouveau document",
+        "new tab", "nouvel onglet", "inbox", "boîte de réception", "messages", "chats", "discussions", "start page",
+        "page de démarrage", "dashboard", "tableau de bord", "search", "recherche",
+    ]
+
+    /// True when the title names nothing the user did: empty once the app and site names are taken out, or a home,
+    /// a new chat, an untitled document… A nil title (no window seen) is not generic: it names the app.
+    public static func isGenericTitle(_ label: Label) -> Bool {
+        guard let title = displayTitle(label.title)?.lowercased() else { return false }
+        var brands = Set(label.application.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        if let host = label.host?.lowercased() {
+            // « docs.google.com » names « docs » and « google »; the last label (« com ») names nothing.
+            brands.formUnion(host.split(separator: ".").dropLast().map(String.init))
+        }
+        let words = title.split(whereSeparator: { $0.isWhitespace || "-–—|·:•()[]".contains($0) }).map(String.init)
+            .filter { !brands.contains($0) }
+        let rest = words.joined(separator: " ")
+        return rest.isEmpty || genericTitleWords.contains(rest)
+    }
+
+    /// The content changes while the context stays the same: an AI chat, messaging or mail, or any page whose title
+    /// names nothing (« ChatGPT Home », « Sans titre »). One answer for the whole context would classify every moment
+    /// alike, so these are never asked to the user: the classification judges them on what is visible (T-055).
+    public static func variesWithContent(_ label: Label) -> Bool {
+        if let bundle = label.bundleIdentifier?.lowercased(), contentVaryingBundles.contains(bundle) { return true }
+        if let host = label.host?.lowercased() {
+            let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            if contentVaryingHosts.contains(bare) { return true }
+        }
+        return isGenericTitle(label)
+    }
+}
+
 /// What the user sees for one context. Computed in one place for every screen.
 public enum GoalongWorkState: Equatable, Hashable, Sendable {
     public enum Waiting: String, CaseIterable, Sendable {
         /// The agent has not run on it yet.
         case notYetPassed
+        /// Its content changes (AI chat, messaging, untitled page): judged on what is visible, never asked (T-055).
+        case judgedByContent
         case noDefinition, historyOff, noConsent, notConnected, paused
         case dailyCapReached
         /// Background passes need their own consent.
@@ -119,6 +172,7 @@ public enum GoalongWorkState: Equatable, Hashable, Sendable {
         public var message: String {
             switch self {
             case .notYetPassed: "Pas encore classé : le prochain passage s’en chargera."
+            case .judgedByContent: "Le contenu change : le classement le juge sur ce qui est écrit, pas sur le titre."
             case .noDefinition: "Écrivez d’abord ce qui compte comme du travail."
             case .historyOff: "L’historique est arrêté."
             case .noConsent: "L’envoi à ChatGPT n’est pas autorisé."
@@ -175,11 +229,15 @@ extension GoalongWorkClassification {
         for (key, value) in seconds {
             guard let label = labels[key] else { continue }
             let state: GoalongWorkState
+            // A context whose content changes is never one question for the whole page (T-055): left unsure, it waits
+            // for the classification to see its content; excluded from sharing, nothing can judge it.
+            // Tested only where it changes the state: the view switches compute this for every context.
             if let resolution = verdicts.resolution(key: key, label: label) {
-                state = resolution.assignment.verdict == .unclear
-                    ? .toClarify(.agentUnsure) : .classified(resolution.assignment.verdict, resolution.source)
+                state = resolution.assignment.verdict != .unclear ? .classified(resolution.assignment.verdict, resolution.source)
+                    : !GoalongWorkContext.variesWithContent(label) ? .toClarify(.agentUnsure)
+                    : permits(label) ? .waiting(.judgedByContent) : .waiting(.sharingBlocked)
             } else if !permits(label) {
-                state = .toClarify(.neverSent)
+                state = GoalongWorkContext.variesWithContent(label) ? .waiting(.sharingBlocked) : .toClarify(.neverSent)
             } else if (groupSeconds[GoalongWorkContext.groupKey(label)] ?? 0) < minimumContextSeconds {
                 state = .tooShort
             } else {
