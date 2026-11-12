@@ -65,6 +65,17 @@ import LocalHistoryCore
         XCTAssertTrue(store.document.sessions.isEmpty)
     }
 
+    /// The « Pendant » input: 5-minute steps, 5 min to 12 h; an old end time becomes a length.
+    func testCustomDurationIsSteppedAndBounded() {
+        XCTAssertEqual(BlockRuleEditor.clampedCustom(0), 5)
+        XCTAssertEqual(BlockRuleEditor.clampedCustom(47), 45)
+        XCTAssertEqual(BlockRuleEditor.clampedCustom(90), 90)
+        XCTAssertEqual(BlockRuleEditor.clampedCustom(24 * 60), 12 * 60)
+        XCTAssertEqual(BlockRuleEditor.minutes(of: .minutes(480), now: now), 480)
+        let end = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now) + 95
+        XCTAssertEqual(BlockRuleEditor.minutes(of: .until(minute: end % 1_440), now: now), 95)
+    }
+
     /// The window becomes a session and back with the same « Quoi », « Pendant », « Rythme » and stop (point 3).
     func testPoint3WindowRoundTripsThroughAPreparedSession() {
         var value = session("Rédaction", lock: .password)
@@ -75,7 +86,8 @@ import LocalHistoryCore
         let back = editor.preparedSession(id: value.id, name: value.name)
         XCTAssertEqual(back.listIDs, [social.id])
         XCTAssertEqual(back.lock, .password)
-        XCTAssertEqual(back.span, .until(minute: 11 * 60 + 30))
+        XCTAssertEqual(back.span, .minutes(BlockRuleEditor.clampedCustom(value.minutes(now: now))),
+                       "an old « jusqu’à » end opens as the time left, in minutes")
         XCTAssertFalse(back.red, "no red screen controller: the screen part is not kept")
         XCTAssertEqual(back.composer.blockListIds, [social.id])
     }
@@ -216,9 +228,9 @@ import LocalHistoryCore
     // MARK: Extra point 2 — the rule window closes on an outside click, and asks first once changed
 
     func testRuleWindowAsksBeforeAnOutsideClickOnlyOnceChanged() {
-        let start = BlockRuleEditor.Snapshot(trigger: .session, draft: BlockRuleDraft(), session: FocusComposerDraft(), later: false,
-                                             span: .minutes(60), wholeMac: false, freezeMode: .shield, kept: [], name: "")
-        var changed = start; changed.span = .minutes(90)
+        let start = BlockRuleEditor.Snapshot(trigger: .session, draft: BlockRuleDraft(), session: FocusComposerDraft(),
+                                             minutes: 60, wholeMac: false, freezeMode: .shield, kept: [], name: "")
+        var changed = start; changed.minutes = 90
         XCTAssertFalse(BlockRuleEditor.isDirty(initial: nil, now: start), "not yet shown")
         XCTAssertFalse(BlockRuleEditor.isDirty(initial: start, now: start))
         XCTAssertTrue(BlockRuleEditor.isDirty(initial: start, now: changed))

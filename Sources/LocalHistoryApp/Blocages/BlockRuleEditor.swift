@@ -78,7 +78,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static let hoursAlwaysLockedReason = "Tous les jours, de 00:00 à 24:00, c’est une règle « Toujours » : verrouillée, elle ne s’arrêterait jamais. Changez les heures ou le niveau d’arrêt."
     static let focusLockReason = "Une séance Pomodoro ou avec intention s’arrête librement ou se verrouille, sans autre niveau."
     static let focusScreenReason = "Une séance Pomodoro ou avec intention ne porte pas encore l’écran rouge ni la luminosité."
-    static let laterScreenReason = "Un blocage programmé plus tard ne porte pas l’écran rouge ni la luminosité."
     static let freezeScreenReason = "Tout le Mac couvre déjà l’écran."
     static let freezeLockReason = "Tout le Mac est toujours verrouillé."
     static let wholeMacReason = "Tout le Mac ne se bloque que pendant une séance en Continu, sans intention."
@@ -107,10 +106,9 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     @State private var confirmingDelete = false
     // Séance
     @State private var sessionDraft: FocusComposerDraft
-    @State private var later = false
-    @State private var startAt: Date
-    @State private var span: BlockingNowComposer.Span = .minutes(60)
-    @State private var until: Date
+    /// « Pendant »: a length in minutes. « Autre… » opens the precise input; the four shortcuts leave it closed.
+    @State private var minutes = 60
+    @State private var otherDuration = false
     @State private var wholeMac = false
     @State private var freezeMode: BlockFreeze.Mode = .shield
     @State private var kept: [BlockAppRule] = []
@@ -164,24 +162,19 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         case .new, .session, .jev: if (trigger ?? first) == .session { rule.surveillance = Self.sessionSurveillance }
         }
         let clock = now ?? GoalongToday.now
-        var start = Snapshot(trigger: trigger ?? first, draft: startDraft ?? rule, session: composer ?? .remembered(), later: false,
-                             span: .minutes(60), wholeMac: false, freezeMode: .shield, kept: [], name: "")
-        var end = Calendar.current.date(byAdding: .hour, value: 2, to: clock) ?? clock
-        if case .preset(let value) = subject, let minutes = value.minutes { start.span = .minutes(minutes) }
+        var start = Snapshot(trigger: trigger ?? first, draft: startDraft ?? rule, session: composer ?? .remembered(),
+                             minutes: 60, wholeMac: false, freezeMode: .shield, kept: [], name: "")
+        if case .preset(let value) = subject, let minutes = value.minutes { start.minutes = minutes }
         if case .prepared(let value) = subject {
             (start.name, start.wholeMac, start.freezeMode, start.kept) = (value.name, value.wholeMac, value.freezeMode, value.kept)
-            switch value.span {
-            case .minutes(let minutes): start.span = .minutes(minutes)
-            case .until(let minute): start.span = .until; end = PreparedSession.untilDate(minute: minute, now: clock)
-            }
+            start.minutes = Self.minutes(of: value.span, now: clock)
         }
         initial = start
         _trigger = State(initialValue: start.trigger)
         _sessionDraft = State(initialValue: start.session)
         _draft = State(initialValue: start.draft)
-        _startAt = State(initialValue: Calendar.current.date(byAdding: .hour, value: 1, to: clock) ?? clock)
-        _until = State(initialValue: end)
-        _span = State(initialValue: start.span)
+        _minutes = State(initialValue: start.minutes)
+        _otherDuration = State(initialValue: !Self.shortcuts.contains(start.minutes))
         _name = State(initialValue: start.name)
         _wholeMac = State(initialValue: start.wholeMac)
         _freezeMode = State(initialValue: start.freezeMode)
@@ -244,8 +237,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         var trigger: Trigger
         var draft: BlockRuleDraft
         var session: FocusComposerDraft
-        var later: Bool
-        var span: BlockingNowComposer.Span
+        var minutes: Int
         var wholeMac: Bool
         var freezeMode: BlockFreeze.Mode
         var kept: [BlockAppRule]
@@ -256,7 +248,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static func isDirty(initial: Snapshot?, now: Snapshot) -> Bool { initial.map { $0 != now } ?? false }
 
     private var snapshot: Snapshot {
-        Snapshot(trigger: trigger, draft: draft, session: sessionDraft, later: later, span: span, wholeMac: wholeMac,
+        Snapshot(trigger: trigger, draft: draft, session: sessionDraft, minutes: minutes, wholeMac: wholeMac,
                  freezeMode: freezeMode, kept: kept, name: name)
     }
 
@@ -273,12 +265,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                                                         sessionDraft.longBreak, sessionDraft.every)
         value.cycles = sessionDraft.cycles
         value.intent = intent
-        switch span {
-        case .minutes(let minutes): value.span = .minutes(minutes)
-        case .until:
-            let parts = Calendar.current.dateComponents([.hour, .minute], from: until)
-            value.span = .until(minute: (parts.hour ?? 0) * 60 + (parts.minute ?? 0))
-        }
+        value.span = .minutes(minutes)
         value.listIDs = freezing ? [] : chosenIDs
         value.blockDuringBreaks = sessionDraft.blockDuringBreaks
         value.wholeMac = freezing
@@ -302,8 +289,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     /// Pomodoro, or an intention: the session runs in Concentration. Continu without an intention is a block.
     var usesFocus: Bool { focus != nil && (sessionDraft.kind == .pomodoro || !intent.isEmpty) }
     private var freezing: Bool { trigger == .session && wholeMac && !usesFocus }
-    /// Lists only: the whole Mac always starts now.
-    private var scheduling: Bool { trigger == .session && later && !wholeMac && !usesFocus }
     private var lists: [BlockList] { blocking?.lists ?? [] }
     private var chosenIDs: [UUID] { lists.map(\.id).filter(draft.listIDs.contains) }
 
@@ -318,7 +303,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         case .session:
             if usesFocus { return Self.focusScreenReason }
             if wholeMac { return Self.freezeScreenReason }
-            if later { return Self.laterScreenReason }
         case .always, .schedule: break
         }
         if braise == nil { return "L’écran rouge n’est pas prêt sur ce Mac." }
@@ -424,7 +408,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                         // A1: a template fills the window; nothing is saved before « Enregistrer ».
                                         BlockRuleTemplatesRow(lists: lists) { preset in
                                             trigger = preset.trigger; draft = preset.draft
-                                            if let minutes = preset.minutes { span = .minutes(minutes) }
+                                            if let length = preset.minutes {
+                                                minutes = length; otherDuration = !Self.shortcuts.contains(length)
+                                            }
+                                            if preset.trigger == .session { sessionDraft.kind = .free }
                                         }
                                     }
                                     box("Quand", id: "when") { whenBox(now: now) }
@@ -652,23 +639,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 GoalongNote("Une séance est déjà en cours. Terminez-la pour en lancer une autre.")
                     .accessibilityIdentifier("block-rule-session-running")
             }
-            row("Début") {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        GoalongSegmentedControl("Début", selection: $later, options: [false, true],
-                                                unavailable: { $0 ? laterUnavailable : nil }) { $0 ? "Plus tard" : "Tout de suite" }
-                            .accessibilityIdentifier("block-rule-start")
-                        if scheduling {
-                            DatePicker("Début", selection: $startAt, in: now..., displayedComponents: [.date, .hourAndMinute])
-                                .goalongDateField().labelsHidden()
-                                .environment(\.locale, Locale(identifier: "fr_FR"))
-                                .accessibilityIdentifier("blocking-start-at")
-                        }
-                    }
-                    .frame(minHeight: 32)
-                    if let reason = laterUnavailable { greyed(reason, id: "later") }
-                }
-            }
             row("Rythme") {
                 VStack(alignment: .leading, spacing: 10) {
                     GoalongSegmentedControl("Rythme", selection: $sessionDraft.kind, options: [.free, .pomodoro],
@@ -698,12 +668,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
     }
 
-    private var laterUnavailable: String? {
-        if usesFocus { return "Une séance Pomodoro ou avec intention commence tout de suite." }
-        if wholeMac { return "Tout le Mac se bloque tout de suite." }
-        return nil
-    }
-
     @ViewBuilder private var durationRow: some View {
         if sessionDraft.kind == .pomodoro {
             GoalongSegmentedControl("Cycles", selection: $sessionDraft.cycles, options: [nil, 2, 4, 6]) {
@@ -711,21 +675,67 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             }
             .frame(minHeight: 32, alignment: .leading)
         } else {
-            HStack(spacing: 10) {
-                GoalongSegmentedControl("Durée", selection: $span,
-                                        options: [.minutes(25), .minutes(60), .minutes(120), .minutes(240), .until]) {
+            HStack(spacing: 14) {
+                GoalongSegmentedControl("Durée", selection: durationChoice,
+                                        options: Self.shortcuts.map(DurationChoice.minutes) + [.other]) {
                     switch $0 {
                     case .minutes(let value): return BlockingFormat.duration(minutes: value)
-                    case .until: return "Jusqu’à…"
+                    case .other: return "Autre…"
                     }
                 }
-                if span == .until {
-                    DatePicker("Heure de fin", selection: $until, displayedComponents: .hourAndMinute)
-                        .goalongDateField().labelsHidden()
-                        .environment(\.locale, Locale(identifier: "fr_FR"))
-                }
+                .accessibilityIdentifier("block-rule-duration")
+                if otherDuration { otherDurationInput }
             }
             .frame(minHeight: 32, alignment: .leading)
+        }
+    }
+
+    /// The four shortcuts, in minutes.
+    static let shortcuts = [25, 60, 120, 240]
+    /// « Autre… »: from 5 min to 12 h, in 5-minute steps.
+    static let customRange = 5...720
+
+    enum DurationChoice: Hashable { case minutes(Int), other }
+
+    private var durationChoice: Binding<DurationChoice> {
+        Binding(get: { otherDuration ? .other : .minutes(minutes) },
+                set: {
+                    switch $0 {
+                    case .minutes(let value): otherDuration = false; minutes = value
+                    case .other: otherDuration = true
+                    }
+                })
+    }
+
+    private var otherDurationInput: some View {
+        HStack(spacing: 14) {
+            Stepper(value: Binding(get: { minutes / 60 }, set: { setCustom(hours: $0, minutes: minutes % 60) }), in: 0...12) {
+                Text("\(minutes / 60) h").monospacedDigit()
+            }
+            .fixedSize().accessibilityLabel("Heures").accessibilityIdentifier("block-rule-duration-hours")
+            Stepper(value: Binding(get: { minutes % 60 }, set: { setCustom(hours: minutes / 60, minutes: $0) }), in: 0...55, step: 5) {
+                Text("\(minutes % 60) min").monospacedDigit()
+            }
+            .fixedSize().accessibilityLabel("Minutes").accessibilityIdentifier("block-rule-duration-minutes")
+        }
+    }
+
+    private func setCustom(hours: Int, minutes value: Int) {
+        minutes = Self.clampedCustom(hours * 60 + value)
+    }
+
+    static func clampedCustom(_ total: Int) -> Int {
+        let stepped = (total / 5) * 5
+        return min(max(stepped, customRange.lowerBound), customRange.upperBound)
+    }
+
+    /// A prepared session saved with an end time (older versions) opens as the time left until that end.
+    static func minutes(of span: PreparedSession.Span, now: Date) -> Int {
+        switch span {
+        case .minutes(let value): return value
+        case .until(let minute):
+            let left = PreparedSession.untilDate(minute: minute, now: now).timeIntervalSince(now) / 60
+            return clampedCustom(Int(left.rounded()))
         }
     }
 
@@ -1167,7 +1177,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private func focusEnd(now: Date) -> Date? {
         var mode = sessionDraft
-        if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: now)) }
+        if mode.kind == .free { mode.free = .minutes(minutes) }
         var session = FocusSession(intent: "·", mode: mode.mode, startedAt: now, events: [.init(kind: .start, at: now)])
         session.plannedEndAt = nil
         return FocusPhases.plannedEnd(session)
@@ -1204,8 +1214,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 Button("Enregistrer") { savePrepared(id: saved.id, name: name) }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .accessibilityIdentifier("block-rule-session-save")
-            } else if trigger == .session, !scheduling {
-                // A prepared session starts when it is launched: « Plus tard » has nothing to keep, the button is hidden.
+            } else if trigger == .session {
+                // A prepared session starts when it is launched by hand.
                 Button("Enregistrer pour plus tard…") { name = ""; naming = true }
                     .buttonStyle(LHSecondaryButtonStyle())
                     .disabled(primaryDisabled)
@@ -1220,7 +1230,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     func primaryTitle(now: Date) -> String {
         guard trigger == .session else { return "Enregistrer" }
-        return scheduling && blockPlan(at: now).startsLater ? "Programmer" : "Démarrer"
+        return "Démarrer"
     }
 
     /// What the main button will do, in words: the end of the session, or why it cannot start.
@@ -1326,14 +1336,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     /// The page's `now` moves every 30 s only: it draws the labels; a click reads the clock again.
     private func blockPlan(at date: Date) -> BlockingNowPlan {
-        if case .minutes(let value) = span { return BlockingNowPlan(later: scheduling, startAt: startAt, minutes: value, now: date) }
-        return BlockingNowPlan(later: scheduling, startAt: startAt, until: until, now: date)
-    }
-
-    private func continuousMinutes(now: Date) -> Int {
-        if case .minutes(let value) = span { return value }
-        let plan = BlockingNowPlan(later: false, startAt: now, until: until, now: now)
-        return max(1, Int((plan.end.timeIntervalSince(plan.start) / 60).rounded()))
+        BlockingNowPlan(later: false, startAt: date, minutes: minutes, now: date)
     }
 
     private var pendingFreeze: BlockingFreezePromise {
@@ -1348,9 +1351,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
         let date = Date() // wall: page input; the controller moves it to its trusted frame
         if watchOnly {
-            let plan: BlockingNowPlan?
-            if case .minutes = span { plan = blockPlan(at: date) } else { plan = blockPlan(at: now).confirmed(at: date) }
-            guard let plan else { refusal = BlockingNowComposer.refusal(span, freeze: false); return }
+            let plan = blockPlan(at: date)
             // « Surveillance » alone with a protected stop asks the same confirmation as the lists (F2).
             pending = plan
             if stopLevel.protectsLists { confirmingLock = true } else { startWatch(plan) }
@@ -1358,19 +1359,14 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         }
         guard let blocking else { return }
         if freezing {
-            let shown: BlockingNowPlan
-            if case .minutes = span { shown = blockPlan(at: date) } else { shown = blockPlan(at: now) }
+            let shown = blockPlan(at: date)
             pending = shown
             pendingFreezePromise = BlockingFreezePromise.alert(end: shown.end, click: date)
             pendingFreezeAt = date
             confirmingFreeze = true
             return
         }
-        let promised: BlockingNowPlan?
-        if case .minutes = span { promised = blockPlan(at: date) } else { promised = blockPlan(at: now).confirmed(at: date) }
-        guard let shown = promised else {
-            blocking.error = BlockingNowComposer.refusal(span, freeze: false); return
-        }
+        let shown = blockPlan(at: date)
         pending = shown
         if stopLevel.protectsLists { confirmingLock = true } else { startBlock(shown, blocking) }
     }
@@ -1386,7 +1382,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         var session: UUID?
         if BlockingNowStart.run(promised, listIDs: chosenIDs, lock: stopLevel, pause: draft.pause, controller: blocking, braise: holds,
                                 red: draft.red, intensity: draft.intensity, brightness: draft.brightness,
-                                refusal: BlockingNowComposer.refusal(span, freeze: false), started: { session = $0 }) {
+                                refusal: BlockingNowComposer.refusal(.minutes(minutes), freeze: false), started: { session = $0 }) {
             // A block session carries the mark; the red screen alone has no session: the mark keeps its own end.
             if let session { markSession(.block, id: session) }
             else { markSession(.own, id: UUID(), start: promised.start, end: promised.end) }
@@ -1400,7 +1396,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         blocking.recordGuardConsent()
         // Never later than the alert said: an end the engine would push back is refused (B01-R1-02).
         guard let end = pendingFreeze.end(at: Date()) else { // wall: page input; the controller moves it to its trusted frame
-            blocking.error = BlockingNowComposer.refusal(span, freeze: true); return
+            blocking.error = BlockingNowComposer.refusal(.minutes(minutes), freeze: true); return
         }
         blocking.startFreeze(until: end, mode: freezeMode, allowedApps: freezeMode == .shield ? kept : [])
         if blocking.freeze != nil { markSession(.own, id: UUID(), start: Date(), end: end); recordLast(); close() } // wall: same frame as `end`
@@ -1410,7 +1406,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     private func beginFocus() {
         guard let focus else { return }
         var mode = sessionDraft
-        if mode.kind == .free { mode.free = .minutes(continuousMinutes(now: GoalongToday.now)) }
+        if mode.kind == .free { mode.free = .minutes(minutes) }
         let ids = chosenIDs
         do {
             focus.refresh()  // a new day replaces the plan before the link is checked
