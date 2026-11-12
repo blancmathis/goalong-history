@@ -1,0 +1,42 @@
+name: PR fast gate
+
+# T-058 (2026-11-12): the only required PR check, ~1 min wall time on a Linux runner.
+# Heavy checks run after the merge on main and nightly; publication requires them green
+# on the exact main commit (continuous-release.yml → scripts/wait_main_gates.py).
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-fast-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Scripts, policies and privacy audit
+        run: bash scripts/fast_gate.sh
+
+  # TEMPORARY (T-058 measurement, removed before review): can a macOS job compile and
+  # run the pure-Swift core tests within ~1 min?
+  probe-macos-core:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Resolve
+        run: time swift package resolve
+      - name: Build LocalHistoryCore
+        run: time swift build --target LocalHistoryCore
+      - name: Build LocalHistoryCoreTests
+        run: time swift build --target LocalHistoryCoreTests
