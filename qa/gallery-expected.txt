@@ -3273,3 +3273,4 @@ blocages/regles-   # T-056 : ligne de règle d’un seul tenant, interrupteur sa
 blocages/seances-preparees-   # T-056 : idem
 blocages/blocage-en-cours-   # T-056 : idem
 blocages/mot-de-passe-   # T-056 : idem
+blocages/depliants-   # T-056 : lignes de règle dépliées, interrupteur seul à droite
