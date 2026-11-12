@@ -420,6 +420,7 @@ import AppleScreenTime
                 // A protected red-screen range arms the guard like a severe block (T-048 B4).
                 BraiseRuntime.shared.guardSink = { BlockingRuntime.shared.setRedScreenGuard(until: $0, lock: $1) }
                 BraiseRuntime.shared.start()
+                KeyboardBacklightLimiter.shared.start()
                 let panel = MenuBarPanelModel(
                     state: captureState, modules: .shared, concentration: { ConcentrationRuntime.shared.controller },
                     ambianceModule: dashboardViewModel.ambianceModule,
@@ -788,7 +789,7 @@ import AppleScreenTime
                 GoalongDefaults.standard.set(dashboardViewModel.navigationStore.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
             }
             MainActor.assumeIsolated {
-                ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown()
+                ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown(); KeyboardBacklightLimiter.shared.stop()
                 MenuBarHelperHost.shared.stop()
             }
             SoftwareUpdateManager.shared.stop()

@@ -61,6 +61,15 @@ extension GalleryCatalog {
                 LaunchAtLoginManager.galleryState = .disabled
                 ctx.cleanups.append { LaunchAtLoginManager.galleryState = nil }
             }),
+            // T-060: « Luminosité max du clavier » on, a ceiling under macOS's first step, only at night.
+            dashboard("settings/accueil-clavier", section: .settings, pane: .home, sizes: [.full(1240)],
+                      configure: { _, ctx in
+                ctx.defaults.set(true, forKey: KeyboardBacklightLimit.enabledKey)
+                ctx.defaults.set(0.01, forKey: KeyboardBacklightLimit.maximumKey)
+                ctx.defaults.set(true, forKey: KeyboardBacklightLimit.scheduledKey)
+                ctx.defaults.set(22 * 60, forKey: KeyboardBacklightLimit.startMinuteKey)
+                ctx.defaults.set(7 * 60, forKey: KeyboardBacklightLimit.endMinuteKey)
+            }),
             // UI-9 (58): Avancé with developer mode on, its switch and help shown.
             dashboard("settings/avance-developpeur", section: .settings, pane: .advanced, sizes: [.window, .full(1240)],
                       configure: { _, ctx in ctx.defaults.set(true, forKey: GoalongDeveloperPreferences.enabledKey) }),

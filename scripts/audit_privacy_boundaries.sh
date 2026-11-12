@@ -180,18 +180,30 @@ if [[ -f "$BRAISE_GAMMA" ]]; then
   fi
 fi
 
-# The brightness lock (T-048 D2) is the only private-framework load: DisplayServices, read-only path, in one file.
+# Two private-framework loads, each in one reviewed file at a fixed path: the brightness lock (T-048 D2,
+# DisplayServices) and the keyboard backlight ceiling (T-060, CoreBrightness KeyboardBrightnessClient).
 BRIGHTNESS_DRIVER="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BrightnessLock.swift"
+KEYBOARD_DRIVER="$ROOT_DIR/Sources/LocalHistoryApp/KeyboardBacklight/KeyboardBrightnessDriver.swift"
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$BRIGHTNESS_DRIVER" ]]; then
-    echo "dlopen or DisplayServices outside the reviewed brightness driver: $match" >&2
+  if [[ "$file" != "$BRIGHTNESS_DRIVER" && "$file" != "$KEYBOARD_DRIVER" ]]; then
+    echo "dlopen or private brightness framework outside the reviewed drivers: $match" >&2
     failed=true
   fi
-done < <(grep -R -nE '(^|[^[:alnum:]_])dlopen[[:space:]]*\(|DisplayServices\.framework|"DisplayServices[A-Z]' "${CODE_ROOTS[@]}" || true)
+done < <(grep -R -nE '(^|[^[:alnum:]_])dlopen[[:space:]]*\(|DisplayServices\.framework|"DisplayServices[A-Z]|CoreBrightness\.framework|KeyboardBrightnessClient' "${CODE_ROOTS[@]}" | grep -v '^[^:]*:[0-9]*:[[:space:]]*///' || true)
 if [[ -f "$BRIGHTNESS_DRIVER" ]] && ! grep -Fq 'static let path = "/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices"' "$BRIGHTNESS_DRIVER"; then
   echo "Brightness driver must load only the fixed DisplayServices path." >&2
   failed=true
+fi
+if [[ -f "$KEYBOARD_DRIVER" ]]; then
+  if ! grep -Fq 'static let path = "/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness"' "$KEYBOARD_DRIVER"; then
+    echo "Keyboard backlight driver must load only the fixed CoreBrightness path." >&2
+    failed=true
+  fi
+  if [[ "$(grep -cE 'dlopen[[:space:]]*\(' "$KEYBOARD_DRIVER")" != 1 ]] || grep -nE 'dlopen\([^S]|URLSession|Process\(|CGEventTap' "$KEYBOARD_DRIVER"; then
+    echo "Keyboard backlight driver: one dlopen of its fixed path, no network, process or event tap." >&2
+    failed=true
+  fi
 fi
 
 # User-confirmed recovery may only DELETE one Goalong approval. No grant, shell,
