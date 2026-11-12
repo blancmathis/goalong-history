@@ -16,6 +16,8 @@ permissions:
   id-token: write
   attestations: write
   artifact-metadata: write
+  actions: read
+  checks: read
 
 concurrency:
   group: goalong-history-release-${{ github.ref }}
@@ -32,6 +34,15 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
+
+      - name: Refuse a release before the full suite is green on this commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # T-058: PRs only run the fast gate; the full suite runs once on main.
+          python3 -c 'import sys; sys.path.insert(0, "scripts"); import wait_main_gates as w; f = w.latest_checks(sys.argv[1]); s = w.decide(f); print(s, sorted((n, c["conclusion"]) for n, c in f.items())); sys.exit(0 if s == "ready" else 1)' "$GITHUB_SHA"
 
       - name: Refuse a manual release from a non-main or stale commit
         if: github.event_name == 'workflow_dispatch'
