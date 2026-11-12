@@ -8,6 +8,9 @@ import AppleScreenTime
 /// not restore an earlier level (one press of the key does).
 @MainActor final class KeyboardBacklightLimiter {
     static let shared = KeyboardBacklightLimiter()
+    /// The limiter the app started, nil before (gallery, tests): views read it without creating `shared`, whose
+    /// creation reads the real preferences.
+    private(set) static weak var running: KeyboardBacklightLimiter?
 
     private let driver: KeyboardBrightnessDriving
     private let defaults: UserDefaults
@@ -35,6 +38,7 @@ import AppleScreenTime
     func start() {
         guard !started else { return }
         started = true
+        Self.running = self
         let center = NotificationCenter.default
         tokens.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.settingsMayHaveChanged() }
@@ -52,6 +56,7 @@ import AppleScreenTime
         boundary?.invalidate(); boundary = nil
         if observing { driver.stopObserving(); observing = false }
         started = false
+        if Self.running === self { Self.running = nil }
         limit = nil
     }
 

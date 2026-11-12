@@ -11,7 +11,7 @@ struct KeyboardBacklightSettings: View {
     @AppStorage(Limit.startMinuteKey) private var startMinute = Limit.defaultStartMinute
     @AppStorage(Limit.endMinuteKey) private var endMinute = Limit.defaultEndMinute
     /// Nil = not known (gallery, tests): no warning shown.
-    var available: Bool? = KeyboardBacklightLimiter.shared.isAvailable
+    var available: Bool? = KeyboardBacklightLimiter.running?.isAvailable
 
     static func matches(_ raw: String) -> Bool {
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
