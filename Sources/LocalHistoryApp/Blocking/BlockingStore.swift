@@ -6,10 +6,13 @@ import LocalHistoryCore
 /// All path components are opened without following links; operations remain relative to the held fd.
 struct BlockingStore {
     var directory: URL
+    /// T-059 lot 2: the protected rules' copy outside this folder (`ProtectedFloor`). Nil = none (tests, tools).
+    var floor: ProtectedFloor? = nil
     static var standard: BlockingStore { standard(channel: .current, base: GoalongBuildChannel.applicationSupportBase) }
     /// The channel's own Blocking folder: `LocalHistory-Dev/Blocking` in Goalong Dev, never the real stakes.
     static func standard(channel: GoalongBuildChannel, base: URL) -> BlockingStore {
-        BlockingStore(directory: channel.dataRoot(base: base).appendingPathComponent("Blocking", isDirectory: true))
+        BlockingStore(directory: channel.dataRoot(base: base).appendingPathComponent("Blocking", isDirectory: true),
+                      floor: .standard)
     }
     enum Failure: Error { case unsafePath, unreadable, invalidDocument }
     /// How `loadRecovering` obtained its document.
@@ -48,7 +51,16 @@ struct BlockingStore {
 
     /// A damaged or missing file gives way to the previous generation; a damaged file is set aside, never
     /// deleted. When neither is usable the store starts empty. Only an unusable directory throws.
-    func loadRecovering() throws -> (document: BlockingDocument, recovery: Recovery) {
+    /// Then the protected rules the files lost or weakened come back from `floor` (`restored` > 0), and are written.
+    func loadRecovering(now: Date = Date()) throws -> (document: BlockingDocument, recovery: Recovery, restored: Int) { // wall: the document's ends are wall dates
+        let loaded = try loadFile()
+        guard let kept = floor?.load(BlockingFloor.self, key: ProtectedFloor.blockingKey) else { return (loaded.document, loaded.recovery, 0) }
+        let result = BlockingFloor.restore(loaded.document, floor: kept, now: now)
+        if result.restored > 0 { try save(result.document, now: now) }
+        return (result.document, loaded.recovery, result.restored)
+    }
+
+    private func loadFile() throws -> (document: BlockingDocument, recovery: Recovery) {
         guard let directoryFD = try openDirectory(create: false) else { return (BlockingDocument(), .none) }
         defer { close(directoryFD) }
         var damaged = false
@@ -57,7 +69,7 @@ struct BlockingStore {
         let restored: BlockingDocument?
         do { restored = try readDocument(Self.previous, in: directoryFD) }
         catch { damaged = true; restored = nil; guard setAside(Self.previous, in: directoryFD) else { throw Failure.unsafePath } }
-        if let restored { try save(restored); return (restored, .previous) }
+        if let restored { try saveFile(restored); return (restored, .previous) }
         return (BlockingDocument(), damaged ? .reset : .none)
     }
 
@@ -99,7 +111,12 @@ struct BlockingStore {
         return document
     }
 
-    func save(_ document: BlockingDocument) throws {
+    func save(_ document: BlockingDocument, now: Date = Date()) throws { // wall: the floor keeps what is not over in the document's wall frame
+        try saveFile(document)
+        floor?.save(BlockingFloor.of(document, now: now), key: ProtectedFloor.blockingKey)
+    }
+
+    private func saveFile(_ document: BlockingDocument) throws {
         guard BlockingRules.validate(document), let directoryFD = try openDirectory(create: true) else { throw Failure.invalidDocument }
         defer { close(directoryFD) }
         // Refuse an existing link or other special file rather than replacing it silently.

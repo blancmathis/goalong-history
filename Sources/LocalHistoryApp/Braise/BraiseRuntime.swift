@@ -62,7 +62,7 @@ struct RedScreenState: Equatable {
          factory: @escaping @MainActor () throws -> BraiseController = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let store = BraiseStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Braise", isDirectory: true),
-                               legacySettings: support.appendingPathComponent("Braise/settings.json"))
+                               legacySettings: support.appendingPathComponent("Braise/settings.json"), floor: .standard)
         let value = try BraiseController(store: store, gamma: GammaController(directory: store.directory), brightness: DisplayServicesBrightness())
         value.askStop = { RuleStopGrant.confirm($0) }
         return value

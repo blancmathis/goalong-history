@@ -65,7 +65,7 @@ import SwiftUI
     private func row(_ module: GoalongModule) -> some View {
         let parts = Self.parts(of: module)
         let on = parts.contains { modules.isEnabled($0) }
-        let locked = (parts.contains(.blocking) && (blockingController ?? blocking.controller)?.moduleOffRefusal != nil) || (parts.contains(.concentration) && concentration.controller?.hasLockedBlock == true)
+        let locked = (parts.contains(.blocking) && ((blockingController ?? blocking.controller)?.moduleOffRefusal != nil || (blockingController ?? blocking.controller)?.moduleOffRuleStop == .locked)) || (parts.contains(.concentration) && concentration.controller?.hasLockedBlock == true)
         return HStack(alignment: .center, spacing: 12) {
             // R-98 (R4d-13): the icon sits on the title's line in every row, also in the taller Concentration row.
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -116,6 +116,14 @@ import SwiftUI
     /// A refusal or a cancelled stop changes nothing.
     private func switchRow(_ module: GoalongModule, _ value: Bool) {
         let parts = Self.parts(of: module)
+        // T-059 lot 2: switching Garde-fous off stops its protected rules, running or not: their stop first.
+        var askedRuleStop = false
+        if !value, parts.contains(.blocking), let lock = (blockingController ?? blocking.controller)?.moduleOffRuleStop, lock != .locked,
+           !RuleStopGrant.shared.covers(lock) {
+            guard RuleStopGrant.confirm(lock, action: "Désactiver \(module.title)") else { return }
+            askedRuleStop = true
+        }
+        defer { if askedRuleStop { RuleStopGrant.shared.revoke() } }
         // The runtime's own check reads this flag; the stops come next, so the refusal test lets them through.
         concentration.surveillanceOffConfirmed = !value
         let plan = GuardrailSwitchPlan.plan(parts: parts, turningOn: value, isEnabled: { modules.isEnabled($0) },

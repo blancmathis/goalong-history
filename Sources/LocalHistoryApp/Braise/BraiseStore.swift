@@ -7,6 +7,8 @@ import Foundation
 struct BraiseStore {
     let directory: URL
     let legacySettings: URL
+    /// T-059 lot 2: the protected ranges' copy outside this folder (`ProtectedFloor`). Nil = none (tests, tools).
+    var floor: ProtectedFloor? = nil
     var settingsURL: URL { directory.appendingPathComponent("settings.json") }
 
     func load() throws -> Preferences { try loadRecovering().preferences }
@@ -49,7 +51,22 @@ struct BraiseStore {
 
     /// The red screen's ranges (T-048 B2). Absent: migrated once from the Braise rules of `preferences`
     /// and written. Unreadable: set aside, migrated again from the rules, and said in `notice`.
-    func loadRanges(migratingFrom preferences: Preferences) throws -> (ranges: RedScreenProgram, notice: String?) {
+    /// Then a file that differs from the protected copy (`floor`, written by every save) gives way to that copy.
+    func loadRanges(migratingFrom preferences: Preferences, now: Date = Date()) throws -> (ranges: RedScreenProgram, notice: String?) {
+        let loaded = try loadRangesFile(migratingFrom: preferences)
+        guard let kept = floor?.load(RedScreenProgram.self, key: ProtectedFloor.redScreenKey), kept != loaded.ranges else { return loaded }
+        try saveRanges(kept, now: now)
+        return (kept, [loaded.notice, ProtectedFloor.restoredText].compactMap { $0 }.joined(separator: " "))
+    }
+
+    /// Something protected: a range stronger than « Libre », a protected hold or brightness lock not over. Pure.
+    static func isProtected(_ value: RedScreenProgram, now: Date) -> Bool {
+        value.program.ranges.contains { $0.effectiveLock != .free } || (value.program.lockedUntil ?? .distantPast) > now
+            || value.holds.values.contains { $0.lock != .free && $0.end > now }
+            || BrightnessLockRules.protection(value.brightnessLock, now: now, hasPassword: true) != nil
+    }
+
+    private func loadRangesFile(migratingFrom preferences: Preferences) throws -> (ranges: RedScreenProgram, notice: String?) {
         var notice: String?
         if Self.exists(rangesURL) {
             if var decoded = try? JSONDecoder().decode(RedScreenProgram.self, from: Self.read(rangesURL, maximumBytes: 256 * 1024)),
@@ -83,9 +100,10 @@ struct BraiseStore {
         if let data = try? JSONEncoder().encode(value) { try? Self.write(data, to: previewBrightnessURL) }
     }
 
-    func saveRanges(_ value: RedScreenProgram) throws {
+    func saveRanges(_ value: RedScreenProgram, now: Date = Date()) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try Self.write(encoder.encode(value), to: rangesURL)
+        floor?.save(Self.isProtected(value, now: now) ? value : nil, key: ProtectedFloor.redScreenKey)
     }
 
     /// Compares paths, not URLs: macOS 15 resolves an absent folder without its trailing slash, so URL

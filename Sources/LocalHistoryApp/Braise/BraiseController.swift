@@ -507,7 +507,8 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     func cancelBrightnessStop() { pendingBrightness = nil; stateChanged?() }
 
     private func applyBrightness(_ value: BrightnessLockState?) {
-        ranges.brightnessLock = value; errorMessage = nil; brightnessNotice = nil
+        var next = ranges; next.brightnessLock = value
+        ranges.brightnessLock = RedScreenRules.snappingBrightness(next, from: ranges).brightnessLock; errorMessage = nil; brightnessNotice = nil
         saveRangesNow(); evaluate()
     }
 
@@ -699,7 +700,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         }
         defer { if asked { stopGrant.revoke() } }
         if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
-        var value = next; value.sanitize()
+        var value = RedScreenRules.snappingBrightness(next, from: ranges); value.sanitize()
         ranges = value; errorMessage = nil; saveRangesNow(); evaluate()
     }
 

@@ -46,7 +46,7 @@ import SwiftUI
                     .keyboardShortcut(.cancelAction).accessibilityIdentifier("jev-connection-close")
                 Button("Enregistrer") {
                     // T-050 B1: a wrong key would cut Jev; replacing one goes through the running surveillance's stop.
-                    if monitor.hasKey, !JevStopGate.confirm(action: "Remplacer la clé") { return }
+                    if monitor.hasKey, !JevStopGate.confirm(action: "Remplacer la clé", step: JevStopGate.protectedStep()) { return }
                     monitor.saveKey(key)
                     // Do not discard the typed value when validation or storage failed.
                     keyError = monitor.error
@@ -66,7 +66,7 @@ import SwiftUI
             Button("Annuler", role: .cancel) {}
             Button("Supprimer la clé", role: .destructive) {
                 // T-050 B1 correction 3: without a key Jev stops; the running surveillance's stop first.
-                guard JevStopGate.confirm(action: "Supprimer la clé") else { return }
+                guard JevStopGate.confirm(action: "Supprimer la clé", step: JevStopGate.protectedStep()) else { return }
                 monitor.removeKey(); keyError = monitor.error
             }
         } message: {

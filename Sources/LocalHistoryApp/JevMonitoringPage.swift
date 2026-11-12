@@ -119,13 +119,17 @@ struct JevActivationAvailability: Equatable {
                 Label(error, systemImage: "exclamationmark.circle").font(.system(size: 12))
                     .foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
             }
+            if let restored = JevSurveillanceStore.shared.restoredNotice {
+                Label(restored, systemImage: "lock.shield").font(.system(size: 12))
+                    .foregroundStyle(LHTheme.warning).fixedSize(horizontal: false, vertical: true)
+            }
             GoalongWorkDefinitionSummary(onOpen: onOpenWork)
             JevBreakControls()
         }
     }
 
     private var enabledBinding: Binding<Bool> {
-        Binding(get: { enabled }, set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } })
+        Binding(get: { enabled }, set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev", step: JevStopGate.protectedStep()) { monitor.setEnabled(false) } })
     }
 
     private var monitoringCard: some View {
@@ -142,7 +146,7 @@ struct JevActivationAvailability: Equatable {
                     VStack(alignment: .trailing, spacing: 4) {
                         Toggle("Activer", isOn: Binding(
                             get: { enabled },
-                            set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev") { monitor.setEnabled(false) } }))
+                            set: { if $0 { confirming = true } else if JevStopGate.confirm(action: "Désactiver Jev", step: JevStopGate.protectedStep()) { monitor.setEnabled(false) } }))
                             .toggleStyle(.goalongSwitchOnly).fixedSize()
                             .disabled(!availability.canToggle(isEnabled: enabled))
                             .accessibilityHint(availability.canToggle(isEnabled: enabled) || availability.hasKey ? "" : "Connectez d’abord Jev, plus bas.")

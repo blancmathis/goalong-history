@@ -139,6 +139,7 @@ import LocalHistoryQueryCLI
                 case .previous: self.error = "Le fichier de blocage était abîmé : Goalong a repris sa copie de secours. La dernière modification peut manquer."
                 case .reset: self.error = "Le fichier de blocage et sa copie de secours étaient illisibles : Goalong repart sans listes. Les fichiers abîmés restent dans son dossier."
                 }
+                if loaded.restored > 0 { self.error = ProtectedFloor.restoredText }
             } catch { failStore() }
         }
         let migratedDays = migrateLegacyDayKeys()
@@ -213,6 +214,20 @@ import LocalHistoryQueryCLI
         let running = activeBlocks.contains { $0.lock != .free && $0.start <= now && $0.end > now }
             || document.sessions.contains { $0.lock != .free && $0.start <= now && $0.end > now }
         return running ? "Le module ne peut pas être désactivé pendant un blocage « Difficile » : arrêtez-le d’abord en retapant le texte." : nil
+    }
+    /// T-059 lot 2: the strongest stop of a protected rule that switching the module off would stop: any list range
+    /// (running or not) and any session not over. Nil = nothing protected.
+    var moduleOffRuleStop: BlockLock? {
+        let now = clock()
+        let locks = lists.flatMap { $0.program.ranges.map { effectiveLock($0.effectiveLock) } }
+            + document.sessions.filter { $0.end > now }.map { effectiveLock($0.lock) }
+        return locks.filter { $0 != .free }.max { $0.strength < $1.strength }
+    }
+    /// The module switch passes the protected rules' stop (`stopGrant`); « Verrouillé » refuses. Nil = it may go off.
+    var moduleOffRuleRefusal: String? {
+        guard let lock = moduleOffRuleStop else { return nil }
+        if lock == .locked { return RuleStopGrant.lockedText }
+        return stopGrant.covers(lock) ? nil : "Une règle protégée (« \(lock.title) ») tourne dans Garde-fous : passez son arrêt pour le désactiver."
     }
     /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
     var lockedUntil: Date? {
@@ -1984,6 +1999,15 @@ import LocalHistoryQueryCLI
         guard case .until(let end, _) = redScreen else { return keptMarker(now: now) }
         return GoalongProtection.until(severe: nil, redScreen: end, now: now)
     }
+    /// T-059 lot 2: the strongest stop of every protected rule, running or not, that quitting would stop until the
+    /// next launch: lists and sessions (module on) and red-screen ranges. Nil = none. SIGTERM and « Quitter » read it.
+    func protectedRuleStop() -> BlockLock? {
+        let red = BraiseRuntime.shared.controller?.ranges.program.ranges.map(\.effectiveLock) ?? []
+        return Self.strongestRuleStop([controller?.moduleOffRuleStop].compactMap { $0 } + red)
+    }
+    nonisolated static func strongestRuleStop(_ locks: [BlockLock]) -> BlockLock? {
+        locks.filter { $0 != .free }.max { $0.strength < $1.strength }
+    }
     /// « Quitter », module Blocage on or off: without the module, a protected range is stopped on its page first.
     func quitRule(now: Date = Date()) -> GoalongProtection.Quit { // wall: module off, the red screen's ends are wall dates
         if let controller { controller.refresh(enforceLast: false); return controller.quitRule }
@@ -2024,7 +2048,7 @@ import LocalHistoryQueryCLI
         modules.blockingDisableCheck = { [weak self] in
             guard let controller = self?.controller else { return true }
             controller.refresh(enforceLast: false)
-            if let refusal = controller.moduleOffRefusal {
+            if let refusal = controller.moduleOffRefusal ?? controller.moduleOffRuleRefusal {
                 controller.error = refusal
                 return false
             }
@@ -2056,7 +2080,7 @@ import LocalHistoryQueryCLI
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)
-            if let refusal = controller.moduleOffRefusal {
+            if let refusal = controller.moduleOffRefusal ?? controller.moduleOffRuleRefusal {
                 controller.error = refusal
                 modules?.setEnabled(.blocking, true)
                 return

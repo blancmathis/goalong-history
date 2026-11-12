@@ -89,9 +89,9 @@ enum JevRangeWrite: Equatable {
                                  scope: .shared, settings: JevInterventionPreferences.shared.settings)
 
     /// The store as the app opens it: migrated before anyone can read or write it.
-    static func launched(defaults: UserDefaults = GoalongDefaults.standard, consent: Bool, scope: JevMonitoringPreferences,
-                         settings: JevInterventionSettings) -> JevSurveillanceStore {
-        let store = JevSurveillanceStore(defaults: defaults)
+    static func launched(defaults: UserDefaults = GoalongDefaults.standard, floor: ProtectedFloor? = .standard, consent: Bool,
+                         scope: JevMonitoringPreferences, settings: JevInterventionSettings) -> JevSurveillanceStore {
+        let store = JevSurveillanceStore(defaults: defaults, floor: floor)
         store.migrateIfNeeded(consent: consent, scope: scope, settings: settings)
         return store
     }
@@ -103,16 +103,62 @@ enum JevRangeWrite: Equatable {
     /// P3 (T-059): the proof of a protected rule's stop, read before any weakening write.
     var stopGrant: RuleStopGrant = .shared
     private let defaults: UserDefaults
+    /// T-059 lot 2: the protected ranges' copy outside the defaults. Nil = none (tests without it).
+    private let floor: ProtectedFloor?
+    /// Set when a launch put back protected ranges removed or weakened outside Goalong.
+    private(set) var restoredNotice: String?
 
-    init(defaults: UserDefaults = GoalongDefaults.standard) {
-        self.defaults = defaults
-        guard defaults.object(forKey: Self.storageKey) != nil else { return }
-        guard let data = defaults.data(forKey: Self.storageKey), data.count <= 512_000,
-              let value = try? JSONDecoder().decode(JevSurveillanceDocument.self, from: data), value.schema == 1 else {
-            error = Self.unreadableText
-            return
+    init(defaults: UserDefaults = GoalongDefaults.standard, floor: ProtectedFloor? = nil) {
+        self.defaults = defaults; self.floor = floor
+        if defaults.object(forKey: Self.storageKey) != nil {
+            if let data = defaults.data(forKey: Self.storageKey), data.count <= 512_000,
+               let value = try? JSONDecoder().decode(JevSurveillanceDocument.self, from: data), value.schema == 1 {
+                document = value
+            } else {
+                error = Self.unreadableText
+            }
         }
-        document = value
+        // A protected range removed or weakened in the defaults (or a document made unreadable) comes back from the copy.
+        guard let kept = floor?.load([JevSurveillanceRange].self, key: ProtectedFloor.jevKey), !kept.isEmpty else { return }
+        let restored = Self.restore(error == nil ? document : JevSurveillanceDocument(), floor: kept)
+        guard restored.count > 0 else { return }
+        save(restored.document)
+        restoredNotice = ProtectedFloor.restoredText
+    }
+
+    /// `document` with every range of `floor` it lost or weakened put back (hardening kept). Pure.
+    static func restore(_ document: JevSurveillanceDocument, floor: [JevSurveillanceRange]) -> (document: JevSurveillanceDocument, count: Int) {
+        var next = document, count = 0
+        for old in floor where old.lock != .free {
+            if let index = next.ranges.firstIndex(where: { $0.id == old.id }) {
+                if weakens(old, next.ranges[index]) { next.ranges[index] = old; count += 1 }
+            } else { next.ranges.append(old); count += 1 }
+        }
+        return (next, count)
+    }
+
+    /// `new` asks less than `old`: a weaker stop, fewer days or hours, weaker settings or a looser pause. Pure.
+    static func weakens(_ old: JevSurveillanceRange, _ new: JevSurveillanceRange) -> Bool {
+        let covered = BlockingController.programCoverage(BlockProgram(ranges: [old.program]))
+            .isSubset(of: BlockingController.programCoverage(BlockProgram(ranges: [new.program])))
+        let pauseKept = old.pause == new.pause || PauseEngine.weakening(old.pause, new.pause) == nil
+        return !(new.lock.strength >= old.lock.strength && covered && isAtLeast(new.settings, old.settings) && pauseKept)
+    }
+
+    /// `new` reminds at least as much as `old`, stage by stage (T-059 lot 2: a sum of intensities let one stage drop
+    /// while another rose). Effects and the move stay on, each enabled stage stays on, no later, no lighter, same veil
+    /// or the stronger « voile et rouge ». Pure.
+    static func isAtLeast(_ new: JevInterventionSettings, _ old: JevInterventionSettings) -> Bool {
+        if old.effectsEnabled && !new.effectsEnabled { return false }
+        if old.moveAfterSecondAppearance && !new.moveAfterSecondAppearance { return false }
+        guard old.effectsEnabled else { return true }
+        for (index, stage) in old.stages.enumerated() where stage.enabled {
+            guard index < new.stages.count else { return false }
+            let next = new.stages[index]
+            guard next.enabled, next.afterMinutes <= stage.afterMinutes, next.intensity >= stage.intensity,
+                  next.effect == stage.effect || next.effect == .dimAndRed else { return false }
+        }
+        return true
     }
 
     /// The document exists: the migration ran on this Mac, or a block was saved.
@@ -121,6 +167,8 @@ enum JevRangeWrite: Equatable {
     @discardableResult func save(_ next: JevSurveillanceDocument) -> Bool {
         guard let data = try? JSONEncoder().encode(next) else { return false }
         defaults.set(data, forKey: Self.storageKey)
+        let protected = next.ranges.filter { $0.lock != .free }
+        floor?.save(protected.isEmpty ? nil : protected, key: ProtectedFloor.jevKey)
         document = next; error = nil
         NotificationCenter.default.post(name: .jevSurveillanceDidChange, object: self)
         return true
@@ -244,10 +292,7 @@ enum JevRangeWrite: Equatable {
         switch write {
         case .delete: break
         case .save(let range):
-            let covered = BlockingController.programCoverage(BlockProgram(ranges: [old.program]))
-                .isSubset(of: BlockingController.programCoverage(BlockProgram(ranges: [range.program])))
-            if range.lock.strength >= old.lock.strength, covered, Self.score(range.settings) >= Self.score(old.settings),
-               old.pause == range.pause || PauseEngine.weakening(old.pause, range.pause) == nil { return .allow }
+            if !Self.weakens(old, range) { return .allow }
         }
         if old.lock == .locked {
             return .refused(Self.isRunning(old, now: now, calendar: calendar) ? Self.protectedText : RuleStopGrant.lockedText)

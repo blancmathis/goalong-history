@@ -117,6 +117,23 @@ struct RedScreenWindow: Equatable {
 /// The rules of the ranges, pure: what is red now, and what a change may do while a window is protected.
 /// Same rules as a blocking program (docs/BLOCKING.md « Range lock », « stricter only »).
 enum RedScreenRules {
+    /// T-059 lot 2: a brightness raised by no more than `BrightnessLockRules.tolerance` keeps its old value, on a
+    /// protected range and on the brightness lock. The tolerance absorbs the hardware's rounding; it must not add up
+    /// over many small saves into a brighter screen. Pure.
+    static func snappingBrightness(_ next: RedScreenProgram, from current: RedScreenProgram) -> RedScreenProgram {
+        var value = next
+        let tolerance = BrightnessLockRules.tolerance
+        for range in current.program.ranges where range.effectiveLock != .free {
+            guard let old = current.brightness(of: range.id), let new = value.brightness(of: range.id),
+                  new > old, new <= old + tolerance else { continue }
+            value.brightness?[range.id] = old
+        }
+        if let old = current.brightnessLock?.level, let new = value.brightnessLock?.level, new > old, new <= old + tolerance {
+            value.brightnessLock?.level = old
+        }
+        return value
+    }
+
     /// A « Mot de passe » range without a usable blocking password cannot be stopped: it counts as « Verrouillé ».
     static func effectiveLock(_ lock: BlockLock, hasPassword: Bool) -> BlockLock {
         lock == .password && !hasPassword ? .locked : lock
