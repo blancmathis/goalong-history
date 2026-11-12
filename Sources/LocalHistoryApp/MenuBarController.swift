@@ -133,7 +133,7 @@
             panelModel = model
             popover.behavior = Self.panelBehavior
             popover.delegate = self
-            popover.animates = true
+            popover.animates = !GoalongMotionPreference.reduced()
             let host = NSHostingController(rootView: MenuBarPanelView(model: model) { [weak self] height in
                 self?.resizePanel(to: height)
             })
@@ -262,6 +262,7 @@
                 }
             }
             panelDismissal.begin()
+            popover.animates = !GoalongMotionPreference.reduced()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in

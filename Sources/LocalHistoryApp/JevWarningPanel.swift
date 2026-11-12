@@ -52,7 +52,7 @@ import LocalHistoryCore
             let host = NSHostingView(rootView: JevWarningView(content: content, onClose: { [weak self] in
                 self?.dismissPopup(); self?.onDismiss()
             })
-                .frame(width: target.width, height: target.height))
+                .frame(width: target.width, height: target.height).goalongMotion())
             host.sizingOptions = []
             host.frame = NSRect(origin: .zero, size: target.size)
             host.autoresizingMask = [.width, .height]

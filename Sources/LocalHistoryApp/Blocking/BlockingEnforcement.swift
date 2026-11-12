@@ -249,7 +249,7 @@ enum BlockingAppQuit {
             guard let self else { return }
             let panel = self.veil
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2; panel?.animator().alphaValue = 0
+                context.duration = GoalongMotionPreference.reduced() ? 0 : 0.2; panel?.animator().alphaValue = 0
             } completionHandler: { panel?.close() }
             self.veil = nil; self.veilHost = nil; self.veilPresentation = nil; self.veilTarget = nil; self.veilClear = nil
         }

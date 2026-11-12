@@ -173,6 +173,9 @@ struct GoalongAnalyticsPage: View {
                                 onRecap: openRecap,
                                 detail: $detail)
                                 .id(selectionID)
+                                // T-054: the lazy stack gives a period shown again its old state back (thread already
+                                // traced); the thread traces again when the period it shows is not the last one shown.
+                                .environment(\.goalongTraceKey, selectionID)
                         } else if analytics.paused {
                             EmptyView()
                         } else if analytics.error == nil && !loadRequest.permitsLoading {

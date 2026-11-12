@@ -151,10 +151,34 @@
         }
     }
 
-    /// Reveals a thread from left to right, once. Reduce Motion shows it complete at once.
+    #if DEBUG
+    /// Tests only (T-054): traces started with motion, and traces shown complete at once (animations off).
+    enum GoalongThreadTraceProbe {
+        @MainActor static var animated = 0
+        @MainActor static var still = 0
+    }
+    #endif
+
+    private struct GoalongTraceKey: EnvironmentKey { static let defaultValue: String? = nil }
+
+    extension EnvironmentValues {
+        /// The period a thread shows (T-054). A lazy stack gives a period shown again its old state back, its thread
+        /// already traced: the key tells such a return from a scroll back or a return to the page.
+        var goalongTraceKey: String? {
+            get { self[GoalongTraceKey.self] }
+            set { self[GoalongTraceKey.self] = newValue }
+        }
+    }
+
+    /// Reveals a thread from left to right at each switch of period, including back to a period shown before (T-054).
+    /// A scroll back or a return to the page keeps the thread as it is. Reduce Motion, or « Animations » off in
+    /// Réglages, shows it complete at once.
     private struct GoalongThreadTrace: ViewModifier {
+        /// The period traced last, on any thread: a period shown again after another one traces again.
+        @MainActor private static var lastTraced: String?
         @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
         @Environment(\.goalongReduceMotion) private var localReduceMotion
+        @Environment(\.goalongTraceKey) private var key
         @State private var traced: CGFloat = 0
 
         func body(content: Content) -> some View {
@@ -162,8 +186,27 @@
             content
                 .mask(alignment: .leading) { Rectangle().scaleEffect(x: still ? 1 : traced, anchor: .leading) }
                 .onAppearWhenShown {
-                    guard traced == 0, !still else { traced = 1; return }
-                    withAnimation(LHTheme.draw.delay(0.08)) { traced = 1 }
+                    let switched = key != nil && key != Self.lastTraced
+                    if key != nil { Self.lastTraced = key }
+                    guard !still else {
+                        #if DEBUG
+                        GoalongThreadTraceProbe.still += 1
+                        #endif
+                        traced = 1; return
+                    }
+                    guard traced == 0 || switched else { return }
+                    #if DEBUG
+                    GoalongThreadTraceProbe.animated += 1
+                    #endif
+                    if traced == 0 {
+                        withAnimation(LHTheme.draw.delay(0.08)) { traced = 1 }
+                    } else {
+                        // Back to the start without motion, then traced in the next turn: in one turn the two
+                        // changes would merge into none.
+                        var reset = Transaction(); reset.disablesAnimations = true
+                        withTransaction(reset) { traced = 0 }
+                        DispatchQueue.main.async { withAnimation(LHTheme.draw.delay(0.08)) { traced = 1 } }
+                    }
                 }
         }
     }

@@ -150,7 +150,7 @@ struct BlockingTimerCapsule: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(timer.accessibilityLabel)
         .onChange(of: pulse) { _ in
-            guard !systemReduceMotion, !localReduceMotion, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            guard !systemReduceMotion, !localReduceMotion, !GoalongMotionPreference.reduced() else { return }
             withAnimation(.easeOut(duration: 0.3)) { flash = 1 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(.easeIn(duration: 0.3)) { flash = 0 } }
         }
