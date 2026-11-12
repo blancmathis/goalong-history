@@ -56,27 +56,33 @@ enum BlockRuleSwitchAction {
     }
 
     /// The text to retype for a « Difficile » rule: the engine's own for a list block, a fresh one for the red screen.
-    @MainActor static func challenge(_ rule: BlockRule, blocking: BlockingController?) -> String {
+    /// The red screen's text is issued by `grant`, which checks it (P3, T-059).
+    @MainActor static func challenge(_ rule: BlockRule, blocking: BlockingController?, grant: RuleStopGrant = .shared) -> String {
         if let first = blockIDs(rule, blocking: blocking).first, let blocking { return blocking.typingChallenge(for: first) }
-        return BlockingController.newTypingChallenge()
+        return grant.newChallenge()
     }
 
     @MainActor static func turnOff(_ rule: BlockRule, proof: BlockRuleStopProof, blocking: BlockingController?,
-                                   braise: BraiseController?) -> String? {
+                                   braise: BraiseController?, grant: RuleStopGrant = .shared) -> String? {
         guard case .on(let stop) = BlockRuleSwitch.of(rule, canVerifyPassword: blocking != nil) else {
             return "Cette règle ne s’arrête pas ici."
         }
         if rule.lists.isEmpty, let red = rule.red {
+            // The stop is passed in the shared grant: the red engine checks it again before it writes (P3, T-059).
             switch (stop, proof) {
-            case (.free, _): break
-            case (.typing, .typed(let typed, let challenge)): if typed != challenge { return "Le texte ne correspond pas." }
-            case (.password, .password(let password)):
-                guard let blocking else { return "Le mot de passe vient du module Garde-fous." }
-                if let refusal = passwordWords(blocking.verifyRedScreenPassword(password)) { return refusal }
+            case (.free, _), (.locked, _): break
+            case (.typing, .typed(let typed, let challenge)):
+                if typed != challenge || challenge != grant.challenge { return "Le texte ne correspond pas." }
+            case (.password, .password):
+                guard blocking != nil else { return "Le mot de passe vient du module Garde-fous." }
             default: return "L’arrêt de cette règle est demandé d’abord."
             }
+            if let refusal = grant.pass(stop, proof: proof, verify: blocking.map { blocking in { blocking.verifyRedScreenPassword($0) } }) {
+                return refusal
+            }
+            defer { grant.revoke() }
             guard let braise else { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
-            do { try braise.setRangeEnabled(red.rangeID, false) } catch { return words(error) }
+            do { try braise.setRangeEnabled(red.rangeID, false, asking: false) } catch { return words(error) }
             return nil
         }
         let ids = blockIDs(rule, blocking: blocking)

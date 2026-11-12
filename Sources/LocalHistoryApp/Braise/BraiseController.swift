@@ -50,6 +50,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @Published private(set) var displayCount = 0
     @Published private(set) var nextEvent = ""
     @Published private(set) var errorMessage: String?
+    /// P3 (T-059): the proof of a protected range's stop, read before any weakening write.
+    var stopGrant: RuleStopGrant = .shared
+    /// Asks the member for a stop (the app sets a modal alert; nil in tests = refuse without asking).
+    var askStop: ((BlockLock) -> Bool)?
     /// Set once when unreadable settings were reset at start.
     @Published private(set) var recoveryNotice: String?
     @Published var shortcutAvailable = false
@@ -633,31 +637,67 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     }
     static let maximumOneTimeWindows = 8
 
-    func deleteRange(_ id: UUID) throws {
+    /// `asking: false` = never show the stop's alert (the command line, or a caller that passed the stop itself).
+    func deleteRange(_ id: UUID, asking: Bool = true) throws {
         var next = ranges
         next.program.ranges.removeAll { $0.id == id }; next.intensities[id] = nil; next.disabled.remove(id); next.brightness?[id] = nil
         next.holds[id] = nil; next.skips[id] = nil
-        try commitRanges(next)
+        try commitRanges(next, asking: asking)
     }
-    func setRangeEnabled(_ id: UUID, _ enabled: Bool) throws {
+    func setRangeEnabled(_ id: UUID, _ enabled: Bool, asking: Bool = true) throws {
         guard let range = ranges.program.ranges.first(where: { $0.id == id }) else { throw RedScreenRefusal(message: "Plage introuvable.", isLock: false) }
         if enabled, !RedScreenProgram.isUsable(range) { throw RedScreenRefusal(message: "Cette plage n’a pas de jour ou dure zéro minute.", isLock: false) }
         var next = ranges
         if enabled { next.disabled.remove(id) } else { next.disabled.insert(id) }
-        try commitRanges(next)
+        try commitRanges(next, asking: asking)
     }
     /// The refusal text of a change, nil when allowed (the editor shows it before saving).
     /// Read-only: the editor asks it from its body, where publishing or writing ranges.json is not allowed.
     func refusal(for next: RedScreenProgram) -> String? {
+        if let reason = runningRefusal(for: next) { return reason }
+        if let need = weakeningStop(for: next), !stopGrant.covers(need) { return RuleStopGrant.needText(need) }
+        return nil
+    }
+
+    /// The refusal no stop can pass now: a protected window in progress, or a « Verrouillé » range weakened.
+    /// The editor disables « Enregistrer » on it; a weakening a stop can pass asks that stop on save.
+    func lockedRefusal(for next: RedScreenProgram) -> String? {
+        if let reason = runningRefusal(for: next) { return reason }
+        return weakeningStop(for: next) == .locked ? RuleStopGrant.lockedText : nil
+    }
+
+    private func runningRefusal(for next: RedScreenProgram) -> String? {
         let now = clock()
         let current = brought(now)
         guard let strong = RedScreenRules.strongest(current.windows),
               let reason = RedScreenRules.weakening(from: current.value, to: next, hasPassword: passwordAvailable()) else { return nil }
         return "Plage protégée en cours (\(strong.lock.title.lowercased())) : \(reason) \(Self.lockedText(until: strong.end, now: now))"
     }
-    private func commitRanges(_ next: RedScreenProgram) throws {
+
+    /// P3 (T-059): the stop `next` needs while no protected window runs (a running one refuses outright). Nil = free.
+    func weakeningStop(for next: RedScreenProgram) -> BlockLock? {
+        let current = brought(clock())
+        if RedScreenRules.strongest(current.windows) != nil, RedScreenRules.weakening(from: current.value, to: next, hasPassword: passwordAvailable()) != nil {
+            return nil
+        }
+        return RedScreenRules.weakeningStop(from: current.value, to: next, hasPassword: passwordAvailable())
+    }
+
+    /// The stop `saveRanges(writes, deleting:)` would need (the page « Blocages » asks it once for every engine).
+    func weakeningStop(_ writes: [RangeWrite], deleting removed: Set<UUID> = []) -> BlockLock? {
+        guard let next = try? staged(writes, deleting: removed) else { return nil }
+        return weakeningStop(for: next)
+    }
+
+    private func commitRanges(_ next: RedScreenProgram, asking: Bool = true) throws {
         // A stopped engine says so: a silent no-op would let the page show a rule that was never written.
         guard running else { throw Self.stopped }
+        var asked = false
+        if asking, runningRefusal(for: next) == nil, let need = weakeningStop(for: next), need != .locked,
+           !stopGrant.covers(need), let askStop {
+            asked = askStop(need) && stopGrant.covers(need)
+        }
+        defer { if asked { stopGrant.revoke() } }
         if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
         var value = next; value.sanitize()
         ranges = value; errorMessage = nil; saveRangesNow(); evaluate()

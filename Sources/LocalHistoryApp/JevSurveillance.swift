@@ -100,6 +100,8 @@ enum JevRangeWrite: Equatable {
     static let protectedText = "La surveillance de cette règle est en cours et « Verrouillé » : elle ne peut pas être retirée ni affaiblie tant qu’elle tourne."
     @Published private(set) var document = JevSurveillanceDocument()
     @Published private(set) var error: String?
+    /// P3 (T-059): the proof of a protected rule's stop, read before any weakening write.
+    var stopGrant: RuleStopGrant = .shared
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = GoalongDefaults.standard) {
@@ -229,8 +231,8 @@ enum JevRangeWrite: Equatable {
 
     // MARK: Writes
 
-    /// A running protected block: removing it, or changing its days, hours, stop or settings for weaker ones, goes through
-    /// its stop; « Verrouillé » refuses. Stronger settings or stop are immediate.
+    /// A protected range, running or not (P3, T-059): removing it, or changing its days, hours, stop or settings for
+    /// weaker ones, goes through its stop (`stopGrant`); « Verrouillé » refuses. Stronger settings or stop are immediate.
     func check(_ write: JevRangeWrite, now: Date, calendar: Calendar = .current) -> JevWriteCheck {
         if error != nil { return .allow } // the next save replaces an unreadable document
         let id: UUID
@@ -238,16 +240,19 @@ enum JevRangeWrite: Equatable {
         case .save(let range): id = range.id
         case .delete(let value): id = value
         }
-        guard let old = document.ranges.first(where: { $0.id == id }), old.lock != .free,
-              Self.isRunning(old, now: now, calendar: calendar) else { return .allow }
+        guard let old = document.ranges.first(where: { $0.id == id }), old.lock != .free else { return .allow }
         switch write {
         case .delete: break
         case .save(let range):
-            if range.lock.strength >= old.lock.strength, range.weekdays == old.weekdays, range.startMinute == old.startMinute,
-               range.endMinute == old.endMinute, Self.score(range.settings) >= Self.score(old.settings),
+            let covered = BlockingController.programCoverage(BlockProgram(ranges: [old.program]))
+                .isSubset(of: BlockingController.programCoverage(BlockProgram(ranges: [range.program])))
+            if range.lock.strength >= old.lock.strength, covered, Self.score(range.settings) >= Self.score(old.settings),
                old.pause == range.pause || PauseEngine.weakening(old.pause, range.pause) == nil { return .allow }
         }
-        return old.lock == .locked ? .refused(Self.protectedText) : .stop(old.lock)
+        if old.lock == .locked {
+            return .refused(Self.isRunning(old, now: now, calendar: calendar) ? Self.protectedText : RuleStopGrant.lockedText)
+        }
+        return stopGrant.covers(old.lock) ? .allow : .stop(old.lock)
     }
 
     /// Nil = the write may be saved without asking. Otherwise the reason it needs the stop or is refused.
@@ -259,7 +264,9 @@ enum JevRangeWrite: Equatable {
         }
     }
 
-    func apply(_ write: JevRangeWrite) {
+    /// Writes a change `check` allows (the stop passed through `stopGrant`). False = refused, nothing written.
+    @discardableResult func apply(_ write: JevRangeWrite, now: Date = Date()) -> Bool {
+        guard check(write, now: now) == .allow else { return false }
         var next = error == nil ? document : JevSurveillanceDocument()
         switch write {
         case .save(let range):
@@ -268,6 +275,7 @@ enum JevRangeWrite: Equatable {
             next.ranges.removeAll { $0.id == id }
         }
         save(next)
+        return true
     }
 
     /// The editor started a session: its choice is kept for this session. A Concentration session's choice becomes the

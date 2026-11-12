@@ -161,42 +161,57 @@ enum BlockRulePlan {
     /// Checks both engines, then writes: the lists in one change, then the red ranges in one change. A refusal
     /// of either engine comes back as its own words and nothing is written. Nil = saved.
     /// The « Surveillance » block is checked with the others and written last.
+    /// P3 (T-059): a weakening of a protected rule, running or not, needs the strongest stop it touches. It is asked
+    /// once (`confirmStop`, which passes it in `grant`), then every engine checks the grant itself; « Verrouillé » refuses.
     @MainActor static func apply(_ writes: Writes, blocking: BlockingController?, braise: BraiseController?,
                                  surveillance: JevSurveillanceStore? = nil, now: Date = Date(),
+                                 grant: RuleStopGrant = .shared,
                                  confirmStop: ((BlockLock) -> Bool)? = nil) -> String? {
-        let confirmStop = confirmStop ?? { lock in
-            JevStopGate.confirm(action: "Modifier la surveillance", step: JevStopGate.step(lock: lock, jevEnabled: JevMonitor.shared.enabled))
-        }
-        // Weakening a running protected « Surveillance » goes through its stop, asked once all engines agree (correction 5-6).
+        let confirmStop = confirmStop ?? { RuleStopGrant.confirm($0, grant: grant) }
+        if !writes.jev.isEmpty, surveillance == nil { return "La surveillance n’a pas pu être enregistrée." }
+        if !writes.lists.isEmpty, blocking == nil { return "Le blocage est désactivé. Activez-le dans Réglages › Modules." }
+        if writes.touchesRed, braise == nil { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
         var stop = BlockLock.free
-        if !writes.jev.isEmpty {
-            guard let surveillance else { return "La surveillance n’a pas pu être enregistrée." }
-            for write in writes.jev {
-                switch surveillance.check(write, now: now) {
-                case .allow: continue
-                case .refused(let reason): return reason
-                case .stop(let lock): if lock.strength > stop.strength { stop = lock }
-                }
+        func raise(_ lock: BlockLock?) { if let lock, lock.strength > stop.strength { stop = lock } }
+        for write in writes.jev {
+            switch surveillance?.check(write, now: now) {
+            case .refused(let reason): return reason
+            case .stop(let lock): raise(lock)
+            default: continue
             }
         }
-        if !writes.lists.isEmpty {
-            guard let blocking else { return "Le blocage est désactivé. Activez-le dans Réglages › Modules." }
+        for list in writes.lists { raise(blocking?.weakeningStop(list)) }
+        if writes.touchesRed { raise(braise?.weakeningStop(writes.red, deleting: writes.deleting)) }
+        if stop == .locked { return RuleStopGrant.lockedText }
+        // The stop is passed before the checks: each engine then reads the same grant, used for this change only.
+        var asked = false
+        defer { if asked { grant.revoke() } }
+        if stop != .free, !grant.covers(stop) {
+            guard confirmStop(stop), grant.covers(stop) else { return RuleStopGrant.keptText }
+            asked = true
+        }
+        for write in writes.jev {
+            switch surveillance?.check(write, now: now) {
+            case .refused(let reason): return reason
+            case .stop(let lock): return RuleStopGrant.needText(lock)
+            default: continue
+            }
+        }
+        if let blocking {
             for list in writes.lists {
                 if case .refused(let reason) = blocking.editCheck(list) { return "« \(list.name) » : \(reason)" }
             }
         }
-        if writes.touchesRed {
-            guard let braise else { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
+        if writes.touchesRed, let braise {
             do { try braise.checkRanges(writes.red, deleting: writes.deleting) } catch { return words(error) }
         }
-        if stop != .free, !confirmStop(stop) { return JevStopGate.keptText }
         if !writes.lists.isEmpty, let refusal = blocking?.saveAll(writes.lists) { return refusal }
         if writes.touchesRed, let braise {
             do { try braise.saveRanges(writes.red, deleting: writes.deleting) } catch {
                 return writes.lists.isEmpty ? words(error) : "Les listes sont enregistrées, pas l’écran rouge. \(words(error))"
             }
         }
-        if let surveillance { for write in writes.jev { surveillance.apply(write) } }
+        if let surveillance { for write in writes.jev { surveillance.apply(write, now: now) } }
         return nil
     }
 

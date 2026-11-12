@@ -185,15 +185,18 @@ import LocalHistoryCore
 
     func testWeakeningThroughTheEditorAsksTheStopOnceAndAPassedStopDeletes() {
         let store = JevSurveillanceStore(defaults: defaults())
+        let grant = RuleStopGrant(verifyPassword: { $0 == "pw" ? .ok : .wrong(remaining: 3) }); store.stopGrant = grant
         let range = JevSurveillanceRange(weekdays: Set(1...7), startMinute: 0, endMinute: 1_440, lock: .password, settings: strong)
         store.apply(.save(range))
         var asked: [BlockLock] = []
         var writes = BlockRulePlan.Writes(); writes.jev = [.delete(range.id)]
-        XCTAssertEqual(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now,
-                                           confirmStop: { asked.append($0); return false }), JevStopGate.keptText)
+        XCTAssertEqual(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now, grant: grant,
+                                           confirmStop: { asked.append($0); return false }), RuleStopGrant.keptText)
         XCTAssertEqual(store.document.ranges, [range], "stop not passed: nothing changes")
-        XCTAssertNil(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now,
-                                         confirmStop: { asked.append($0); return true }))
+        XCTAssertEqual(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now, grant: grant,
+                                           confirmStop: { _ in true }), RuleStopGrant.keptText, "a « yes » without the password is not a stop")
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: nil, braise: nil, surveillance: store, now: now, grant: grant,
+                                         confirmStop: { asked.append($0); return grant.pass($0, proof: .password("pw")) == nil }))
         XCTAssertTrue(store.document.ranges.isEmpty, "stop passed: the rule is removed")
         XCTAssertEqual(asked, [.password, .password])
         var stronger = range; stronger.lock = .locked; store.apply(.save(range))

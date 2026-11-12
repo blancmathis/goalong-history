@@ -194,5 +194,22 @@ enum RedScreenRules {
         }
         return nil
     }
+
+    /// P3 (T-059): the stop a change needs, running or not. Each protected level (« Difficile » and stronger) keeps its
+    /// ranges, minutes, red and brightness unless that level's stop is passed. Nil = the change only adds or hardens.
+    static func weakeningStop(from current: RedScreenProgram, to next: RedScreenProgram, hasPassword: Bool) -> BlockLock? {
+        for lock in [BlockLock.locked, .password, .typing] {
+            func atLeast(_ value: RedScreenProgram) -> RedScreenProgram {
+                var copy = value
+                copy.program.ranges = value.program.ranges.filter { effectiveLock($0.effectiveLock, hasPassword: hasPassword).strength >= lock.strength }
+                copy.follows = current.follows
+                return copy
+            }
+            let old = atLeast(current)
+            guard !old.enabledProgram.ranges.isEmpty else { continue }
+            if weakening(from: old, to: atLeast(next), hasPassword: hasPassword) != nil { return lock }
+        }
+        return nil
+    }
 }
 #endif

@@ -63,7 +63,9 @@ struct RedScreenState: Equatable {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let store = BraiseStore(directory: AppPaths.applicationSupportDirectory.appendingPathComponent("Braise", isDirectory: true),
                                legacySettings: support.appendingPathComponent("Braise/settings.json"))
-        return try BraiseController(store: store, gamma: GammaController(directory: store.directory), brightness: DisplayServicesBrightness())
+        let value = try BraiseController(store: store, gamma: GammaController(directory: store.directory), brightness: DisplayServicesBrightness())
+        value.askStop = { RuleStopGrant.confirm($0) }
+        return value
     }) {
         self.factory = factory; self.registersShortcut = registersShortcut; self.diagnostics = diagnostics; self.defaults = defaults
         let stored = defaults.object(forKey: Self.intensityKey) as? Double
@@ -182,8 +184,8 @@ struct RedScreenState: Equatable {
             let id = UUID(uuidString: o["id"]!)!
             guard controller.ranges.program.ranges.contains(where: { $0.id == id }) else { throw GoalongFocusError.notFound }
             try Self.mapRefusal {
-                if request.command == "braise rule-remove" { try controller.deleteRange(id) }
-                else { try controller.setRangeEnabled(id, request.command == "braise rule-enable") }
+                if request.command == "braise rule-remove" { try controller.deleteRange(id, asking: false) }
+                else { try controller.setRangeEnabled(id, request.command == "braise rule-enable", asking: false) }
             }
         case "braise login": try controller.setLogin(o["value"] == "on")
         default: throw GoalongFocusError.invalidArgument
