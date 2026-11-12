@@ -162,7 +162,7 @@ enum GoalongWorkPassLine {
             }
             guard operation == id else { return }
             apply(Self.snapshot(observations: observations, verdicts: store.verdicts, groups: store.groupVerdicts,
-                                permits: { filter.label($0) != nil }, blocker: agent.waitingReason(background: true, sharingBlocked: filter.policy.blocked),
+                                permits: { filter.label($0) != nil }, permitsContent: filter.permitsVisibleContext, blocker: agent.waitingReason(background: true, sharingBlocked: filter.policy.blocked),
                                 dayCount: days.count))
         }
     }
@@ -172,6 +172,7 @@ enum GoalongWorkPassLine {
     nonisolated static func snapshot(observations: [GoalongWorkClassification.Observation], verdicts: GoalongWorkVerdicts,
                                      groups: [String: GoalongWorkAssignment] = [:],
                                      permits: (GoalongWorkContext.Label) -> Bool = { _ in true },
+                                     permitsContent: ((GoalongWorkContext.Label) -> Bool)? = nil,
                                      blocker: GoalongWorkState.Waiting?, dayCount: Int = 1) -> Snapshot {
         func rank(_ bucket: GoalongWorkState.Bucket) -> Int {
             switch bucket { case .classified: return 0; case .toClarify: return 1; case .waiting: return 2; case .tooShort: return 3 }
@@ -186,7 +187,7 @@ enum GoalongWorkPassLine {
             var withInherited = verdicts
             for (key, assignment) in inherited where withInherited.contexts[key] == nil { withInherited.contexts[key] = assignment }
             let summary = GoalongWorkClassification.states(day: observation.day, labels: observation.labels, verdicts: withInherited,
-                                                           permits: permits, blocker: blocker)
+                                                           permits: permits, permitsContent: permitsContent, blocker: blocker)
             let seconds = GoalongWorkClassification.contextSeconds(observation.day)
             for (key, state) in summary.states {
                 labels[key] = observation.labels[key]
@@ -196,9 +197,8 @@ enum GoalongWorkPassLine {
                 finalState[key] = state
             }
             for (key, state) in summary.states {
-                // Contexts judged on their content, or excluded from sharing, are not sent by the next pass (T-055).
-                if case .waiting(let reason) = state, reason != .judgedByContent, reason != .sharingBlocked || blocker == .sharingBlocked,
-                   let label = observation.labels[key] { pending.insert(GoalongWorkContext.groupKey(label)) }
+                // A context waiting to be judged again on its content is a re-ask, not a new group (T-055).
+                if case .waiting(let reason) = state, reason != .judgedByContent, let label = observation.labels[key] { pending.insert(GoalongWorkContext.groupKey(label)) }
             }
         }
         for (key, state) in finalState {
@@ -232,6 +232,15 @@ enum GoalongWorkPassLine {
         }
     }
 
+    /// Why only the person can answer, after the app and site.
+    static func reasonNote(_ reason: GoalongWorkState.Unclear) -> String {
+        switch reason {
+        case .agentUnsure: return ""
+        case .neverSent: return " · exclu de l’envoi : seule votre réponse peut le classer"
+        case .contentUnseen: return " · le contenu change et le classement n’a pas pu lire ce qui était écrit : seule votre réponse peut le classer"
+        }
+    }
+
     /// One sentence under the scope choice: what the answer will cover.
     static func scopeHelp(_ scope: GoalongWorkSource, label: GoalongWorkContext.Label) -> String {
         switch scope {
@@ -255,7 +264,7 @@ enum GoalongWorkPassLine {
                 store.correct(key: question.id, label: label, verdict: nil, task: nil, day: day)
                 if let previous, !previous.byOwner {
                     store.merge([question.id: GoalongWorkAssignment(verdict: previous.verdict, task: previous.task)],
-                                revision: store.revision, day: previous.seen)
+                                revision: store.revision, day: previous.seen, onContent: previous.onContent == true)
                 }
             }
         case .application, .site:
@@ -319,18 +328,24 @@ enum GoalongWorkPassLine {
     mutating func forward() { reviewing = reviewing.flatMap { $0 + 1 < entries.count ? $0 + 1 : nil } }
 
     /// Replaces the answer shown by another verdict or scope, then moves on. The same answer simply moves on.
-    mutating func change(to verdict: GoalongWorkVerdict, scope: GoalongWorkSource, store: GoalongWorkStore = .shared, day: String) {
-        guard let index = reviewing else { return }
+    /// Returns the key of a question whose new answer could not be saved: its old one is taken back, so it must
+    /// return among those to answer (review of PR #339, M5).
+    @discardableResult
+    mutating func change(to verdict: GoalongWorkVerdict, scope: GoalongWorkSource, store: GoalongWorkStore = .shared,
+                         day: String) -> String? {
+        guard let index = reviewing else { return nil }
         let entry = entries[index]
         if entry.verdict != verdict || entry.scope != scope {
             entry.undo.run()
             if let undo = GoalongWorkAnswering.answer(entry.question, verdict: verdict, scope: scope, store: store, day: day) {
                 entries[index] = Entry(question: entry.question, verdict: verdict, scope: scope, undo: undo)
             } else {
-                entries.remove(at: index); reviewing = index < entries.count ? index : nil; return
+                entries.remove(at: index); reviewing = index < entries.count ? index : nil
+                return entry.question.id
             }
         }
         forward()
+        return nil
     }
 
     /// Takes the answer shown back: its question returns among those to answer. Returns its key.
@@ -416,7 +431,7 @@ enum GoalongWorkPassLine {
                     .font(.system(size: 17, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("clarify-question")
                 Text(([label.application, label.host].compactMap { $0 }).joined(separator: ", ")
-                     + (question.reason == .neverSent ? " · exclu de l’envoi : seule votre réponse peut le classer" : ""))
+                     + GoalongWorkAnswering.reasonNote(question.reason))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -428,7 +443,7 @@ enum GoalongWorkPassLine {
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
             if let given {
-                Text("Votre réponse : \(given == .work ? "Travail" : "Pas du travail"). Choisissez-en une autre pour la changer.")
+                Text("Votre réponse : \(given == .work ? "Travail" : "Pas du travail"). Changez la réponse ou sa portée, puis cliquez sur la réponse voulue.")
                     .font(.system(size: 12, weight: .medium)).accessibilityIdentifier("clarify-given")
             }
             HStack(spacing: 10) {
@@ -514,7 +529,7 @@ enum GoalongWorkPassLine {
         let chosen = GoalongWorkAnswering.scopes(for: question.label).contains(scope) ? scope : .context
         let day = GoalongWorkAgent.dayString(GoalongToday.now)
         if log.shown?.question.id == question.id {
-            log.change(to: verdict, scope: chosen, day: day)
+            if let lost = log.change(to: verdict, scope: chosen, day: day) { answered.remove(lost); skipped.remove(lost) }
         } else {
             guard log.answer(question, verdict, scope: chosen, day: day) else { return }
             answered.insert(question.id)
@@ -642,7 +657,9 @@ enum GoalongWorkUsageText {
         return HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(GoalongWorkUsageText.answerTitle(rule)).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text([GoalongWorkUsageText.scope(rule), rule.day.map { GoalongUIFormat.day(key: $0) }]
+                // An answer on a page whose content changes classifies every moment of it alike: said, never silent (T-055).
+                Text([GoalongWorkUsageText.scope(rule), rule.day.map { GoalongUIFormat.day(key: $0) },
+                      work.coversVaryingContent(rule) ? "contenu variable : vaut pour chaque moment" : nil]
                     .compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
             }

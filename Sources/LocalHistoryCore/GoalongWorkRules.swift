@@ -122,19 +122,23 @@ extension GoalongWorkContext {
         "home", "accueil", "new chat", "nouveau chat", "nouvelle discussion", "nouvelle conversation", "new conversation",
         "untitled", "sans titre", "untitled document", "document sans titre", "new document", "nouveau document",
         "new tab", "nouvel onglet", "inbox", "boîte de réception", "messages", "chats", "discussions", "start page",
-        "page de démarrage", "dashboard", "tableau de bord", "search", "recherche",
+        "page de démarrage", "dashboard", "tableau de bord", "search", "recherche", "page d’accueil", "page d'accueil",
+        "welcome", "bienvenue", "settings", "réglages", "paramètres", "preferences", "préférences", "explore", "explorer",
+        "untitled document", "nouvelle page", "new page", "for you", "pour vous", "feed", "fil d’actualité",
     ]
 
     /// True when the title names nothing the user did: empty once the app and site names are taken out, or a home,
     /// a new chat, an untitled document… A nil title (no window seen) is not generic: it names the app.
     public static func isGenericTitle(_ label: Label) -> Bool {
-        guard let title = displayTitle(label.title)?.lowercased() else { return false }
+        // Counters and numbers name nothing either (« (3) Home / X », « Untitled-1 »): start from the group title.
+        guard displayTitle(label.title) != nil else { return false }
+        let title = groupTitle(label.title, application: label.application) ?? ""
         var brands = Set(label.application.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
         if let host = label.host?.lowercased() {
             // « docs.google.com » names « docs » and « google »; the last label (« com ») names nothing.
             brands.formUnion(host.split(separator: ".").dropLast().map(String.init))
         }
-        let words = title.split(whereSeparator: { $0.isWhitespace || "-–—|·:•()[]".contains($0) }).map(String.init)
+        let words = title.split(whereSeparator: { $0.isWhitespace || "-–—|·:•()[]#/".contains($0) }).map(String.init)
             .filter { !brands.contains($0) }
         let rest = words.joined(separator: " ")
         return rest.isEmpty || genericTitleWords.contains(rest)
@@ -172,7 +176,7 @@ public enum GoalongWorkState: Equatable, Hashable, Sendable {
         public var message: String {
             switch self {
             case .notYetPassed: "Pas encore classé : le prochain passage s’en chargera."
-            case .judgedByContent: "Le contenu change : le classement le juge sur ce qui est écrit, pas sur le titre."
+            case .judgedByContent: "Le contenu change : le prochain passage le juge sur le texte visible, pas sur le titre."
             case .noDefinition: "Écrivez d’abord ce qui compte comme du travail."
             case .historyOff: "L’historique est arrêté."
             case .noConsent: "L’envoi à ChatGPT n’est pas autorisé."
@@ -191,6 +195,9 @@ public enum GoalongWorkState: Equatable, Hashable, Sendable {
         case agentUnsure
         /// Excluded from sharing and covered by no rule: only the user can answer.
         case neverSent
+        /// Its content changes, but the classification cannot read it (visible text not shared, or no try left):
+        /// only the user can say what that moment was (T-055).
+        case contentUnseen
     }
     case classified(GoalongWorkVerdict, GoalongWorkSource)
     case waiting(Waiting)
@@ -219,8 +226,10 @@ extension GoalongWorkClassification {
 
     /// One state per labelled context of the day. `blocker` is why the agent cannot run
     /// now (nil when it can and simply has not yet).
+    /// `permitsContent`: the visible text of the context may be sent (nil: as `permits`).
     public static func states(day: GoalongLocalAnalytics.Day, labels: [String: GoalongWorkContext.Label],
                               verdicts: GoalongWorkVerdicts, permits: (GoalongWorkContext.Label) -> Bool = { _ in true },
+                              permitsContent: ((GoalongWorkContext.Label) -> Bool)? = nil,
                               blocker: GoalongWorkState.Waiting? = nil) -> StateSummary {
         let seconds = contextSeconds(day)
         var groupSeconds: [String: TimeInterval] = [:]
@@ -229,15 +238,22 @@ extension GoalongWorkClassification {
         for (key, value) in seconds {
             guard let label = labels[key] else { continue }
             let state: GoalongWorkState
-            // A context whose content changes is never one question for the whole page (T-055): left unsure, it waits
-            // for the classification to see its content; excluded from sharing, nothing can judge it.
+            // A context whose content changes is judged on what is visible in it (T-055). Left unsure, it waits only
+            // while the next pass can still read it; otherwise the user is asked about it, never left silent.
             // Tested only where it changes the state: the view switches compute this for every context.
-            if let resolution = verdicts.resolution(key: key, label: label) {
-                state = resolution.assignment.verdict != .unclear ? .classified(resolution.assignment.verdict, resolution.source)
-                    : !GoalongWorkContext.variesWithContent(label) ? .toClarify(.agentUnsure)
-                    : permits(label) ? .waiting(.judgedByContent) : .waiting(.sharingBlocked)
+            let varies = GoalongWorkContext.variesWithContent(label)
+            if let resolution = verdicts.resolution(key: key, label: label, varies: varies) {
+                if resolution.assignment.verdict != .unclear {
+                    state = .classified(resolution.assignment.verdict, resolution.source)
+                } else if !varies {
+                    state = .toClarify(.agentUnsure)
+                } else {
+                    let retry = verdicts.retries[key] ?? GoalongWorkRetryState()
+                    let readable = permits(label) && (permitsContent.map { $0(label) } ?? true)
+                    state = readable && retry.attempts < 3 && value >= 300 ? .waiting(.judgedByContent) : .toClarify(.contentUnseen)
+                }
             } else if !permits(label) {
-                state = GoalongWorkContext.variesWithContent(label) ? .waiting(.sharingBlocked) : .toClarify(.neverSent)
+                state = .toClarify(.neverSent)
             } else if (groupSeconds[GoalongWorkContext.groupKey(label)] ?? 0) < minimumContextSeconds {
                 state = .tooShort
             } else {
@@ -256,7 +272,8 @@ extension GoalongWorkClassification {
                                  groups: [String: GoalongWorkAssignment]) -> [String: GoalongWorkAssignment] {
         guard !groups.isEmpty else { return [:] }
         var result: [String: GoalongWorkAssignment] = [:]
-        for (key, label) in labels where verdicts.resolution(key: key, label: label) == nil {
+        // A page whose content changes is judged moment by moment: a verdict on another member says nothing (T-055).
+        for (key, label) in labels where !GoalongWorkContext.variesWithContent(label) && verdicts.resolution(key: key, label: label) == nil {
             if let known = groups[GoalongWorkContext.groupKey(label)] { result[key] = known }
         }
         return result

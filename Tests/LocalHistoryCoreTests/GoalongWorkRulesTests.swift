@@ -91,7 +91,7 @@ final class GoalongWorkRulesTests: XCTestCase {
     }
 
     func testAKnownGroupAnswersItsNewMembersWithoutACall() {
-        let old = label("Mail", nil, "Boîte de réception (4)"), new = label("Mail", nil, "Boîte de réception (9)")
+        let old = label("Numbers", nil, "Budget (4)"), new = label("Numbers", nil, "Budget (9)")
         let inherited = GoalongWorkClassification.inherited(labels: [old.key: old, new.key: new],
             verdicts: GoalongWorkVerdicts([old.key: .init(verdict: .work, task: "Courrier")]),
             groups: [GoalongWorkContext.groupKey(old): .init(verdict: .work, task: "Courrier")])

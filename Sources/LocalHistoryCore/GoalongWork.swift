@@ -136,9 +136,12 @@ public struct GoalongWorkVerdicts: Equatable, Sendable {
     public var contexts: [String: GoalongWorkAssignment]
     public var retries: [String: GoalongWorkRetryState]
     public var rules: GoalongWorkRules
+    /// Agent verdicts given by a classification that judges a page whose content changes on what is visible in it
+    /// (T-055). An older agent verdict on such a page judged its title only: it is not applied, and it is asked again.
+    public var judgedOnContent: Set<String>
     public init(_ contexts: [String: GoalongWorkAssignment] = [:], retries: [String: GoalongWorkRetryState] = [:],
-                rules: GoalongWorkRules = .init()) {
-        self.contexts = contexts; self.retries = retries; self.rules = rules
+                rules: GoalongWorkRules = .init(), judgedOnContent: Set<String> = []) {
+        self.contexts = contexts; self.retries = retries; self.rules = rules; self.judgedOnContent = judgedOnContent
     }
     public var isEmpty: Bool { contexts.isEmpty && rules.isEmpty }
     public func assignment(for key: String?) -> GoalongWorkAssignment? { key.flatMap { contexts[$0] } }
@@ -149,20 +152,30 @@ public struct GoalongWorkVerdicts: Equatable, Sendable {
     }
     /// The most precise answer wins: the user's answer for this context, then their site
     /// rule, then their app rule, then the agent.
-    public func resolution(key: String?, application: String?, bundleIdentifier: String?, host: String?) -> Resolution? {
+    /// `varies`: the context's content changes under the same title; its agent verdict counts only when it was
+    /// judged on that content (T-055).
+    public func resolution(key: String?, application: String?, bundleIdentifier: String?, host: String?,
+                           varies: Bool = false) -> Resolution? {
         let own = assignment(for: key)
         if let own, own.byOwner { return Resolution(assignment: own, source: .context) }
         if let rule = rules.match(application: application, bundleIdentifier: bundleIdentifier, host: host) {
             return Resolution(assignment: rule.assignment, source: rule.scope)
         }
+        if varies, let key, !judgedOnContent.contains(key) { return nil }
         return own.map { Resolution(assignment: $0, source: .agent) }
     }
-    public func resolution(key: String?, label: GoalongWorkContext.Label) -> Resolution? {
-        resolution(key: key, application: label.application, bundleIdentifier: label.bundleIdentifier, host: label.host)
+    /// `varies` defaults to what the label itself says; pass it when the label was masked (the raw one decides).
+    public func resolution(key: String?, label: GoalongWorkContext.Label, varies: Bool? = nil) -> Resolution? {
+        resolution(key: key, application: label.application, bundleIdentifier: label.bundleIdentifier, host: label.host,
+                   varies: varies ?? GoalongWorkContext.variesWithContent(label))
     }
+    /// A segment has no title: only the apps and sites known to change content are recognised here.
     func resolution(of segment: GoalongLocalAnalytics.Segment) -> Resolution? {
-        resolution(key: segment.contextKey, application: segment.application,
-                   bundleIdentifier: segment.bundleIdentifier, host: segment.host)
+        let varies = segment.application.map {
+            GoalongWorkContext.variesWithContent(.init(application: $0, bundleIdentifier: segment.bundleIdentifier, host: segment.host, title: nil))
+        } ?? false
+        return resolution(key: segment.contextKey, application: segment.application,
+                          bundleIdentifier: segment.bundleIdentifier, host: segment.host, varies: varies)
     }
 }
 
@@ -322,6 +335,9 @@ public enum GoalongWorkClassification {
         public var keys: [String]
         /// Representative key → every pending context of its group, representative first.
         public var members: [String: [String]] = [:]
+        /// Contexts whose content changes, read on the raw label (a masked one may have lost its site): they are
+        /// sent with `d` and what is visible in them (T-055).
+        public var varying: Set<String> = []
         public func groupSeconds(_ key: String) -> TimeInterval {
             (members[key] ?? [key]).reduce(0) { $0 + (seconds[$1] ?? 0) }
         }
@@ -341,21 +357,23 @@ public enum GoalongWorkClassification {
     /// True when the agent may be asked about this context: no answer of the user, no rule,
     /// and no agent verdict except an unclear one that may be asked again today.
     static func needsAgent(key: String, label: GoalongWorkContext.Label, seconds: TimeInterval,
-                           verdicts: GoalongWorkVerdicts, dayKey: String) -> Bool {
-        guard let resolution = verdicts.resolution(key: key, label: label) else { return true }
+                           verdicts: GoalongWorkVerdicts, dayKey: String, varies: Bool? = nil) -> Bool {
+        guard let resolution = verdicts.resolution(key: key, label: label, varies: varies) else { return true }
         guard resolution.source == .agent, resolution.assignment.verdict == .unclear else { return false }
         return (verdicts.retries[key] ?? GoalongWorkRetryState()).permitsReassessment(on: dayKey, seconds: seconds)
     }
 
     public static func pending(day: GoalongLocalAnalytics.Day, labels: [String: GoalongWorkContext.Label],
                                verdicts: GoalongWorkVerdicts, permits: (GoalongWorkContext.Label) -> Bool = { _ in true },
-                               calendar: Calendar = .current) -> Pending {
+                               rawLabels: [String: GoalongWorkContext.Label]? = nil, calendar: Calendar = .current) -> Pending {
         let seconds = contextSeconds(day)
         let dayKey = GoalongActivityDayStore.dayKey(day.date, calendar: calendar)
-        var groups: [String: [String]] = [:]
+        var groups: [String: [String]] = [:], varying = Set<String>()
         for (key, value) in seconds {
-            guard let label = labels[key], permits(label),
-                  needsAgent(key: key, label: label, seconds: value, verdicts: verdicts, dayKey: dayKey) else { continue }
+            guard let label = labels[key], permits(label) else { continue }
+            let varies = GoalongWorkContext.variesWithContent(rawLabels?[key] ?? label)
+            guard needsAgent(key: key, label: label, seconds: value, verdicts: verdicts, dayKey: dayKey, varies: varies) else { continue }
+            if varies { varying.insert(key) }
             groups[GoalongWorkContext.groupKey(label), default: []].append(key)
         }
         var members: [String: [String]] = [:]
@@ -364,7 +382,7 @@ public enum GoalongWorkClassification {
             guard ordered.reduce(0, { $0 + (seconds[$1] ?? 0) }) >= minimumContextSeconds else { continue }
             members[ordered[0]] = ordered
         }
-        var pending = Pending(labels: labels, seconds: seconds, keys: [], members: members)
+        var pending = Pending(labels: labels, seconds: seconds, keys: [], members: members, varying: varying)
         pending.keys = members.keys.sorted { a, b in
             let (x, y) = (pending.groupSeconds(a), pending.groupSeconds(b))
             return x == y ? a < b : x > y
@@ -386,7 +404,7 @@ public enum GoalongWorkClassification {
                 minutes: (pending.groupSeconds(key) / 6).rounded() / 10,
                 visible_context_excerpt: contextExcerpts[key].flatMap { ActivitySemanticTextSanitizer.redact($0) }
                     .map { clip($0, GoalongWorkReassessment.maximumExcerptCharacters) },
-                varies: GoalongWorkContext.variesWithContent(label) ? true : nil))
+                varies: pending.varying.contains(key) ? true : nil))
             ids[id] = key
             members[id] = pending.members[key] ?? [key]
             for member in members[id]! { byKey[member] = id }
