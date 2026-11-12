@@ -8,13 +8,12 @@ run-name: Prepare PR ${{ github.event.pull_request.number }} tree for fast promo
 on:
   pull_request:
     branches: [main]
-    # Drafts included and no ready_for_review (2026-11-10, runs 42661662139, 42652639865):
-    # PRs stay draft while they iterate, then are marked ready and merged seconds later.
-    # A draft-skipped preparation therefore started only after the merge, queued behind
-    # the main-push macOS jobs, was never given a runner, and the exact-main promotion
-    # fell back to a full rebuild. ready_for_review does not change the tree, so the
-    # candidate prepared on the last push stays valid; re-running would only cancel it.
-    types: [opened, synchronize, reopened]
+    # T-058 (2026-11-12): not a required check, ready PRs only. A draft push no longer
+    # starts a 20-minute universal build. ready_for_review starts it when the draft is
+    # marked ready; the merge then happens in ~1 min, and this run keeps going after
+    # it. Promotion waits for the full suite on main (~30 min), so the candidate is
+    # normally ready by then; otherwise promotion falls back to a full rebuild.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: write
@@ -28,7 +27,7 @@ concurrency:
 
 jobs:
   prepare:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
     runs-on: macos-15
     timeout-minutes: 60
     env:

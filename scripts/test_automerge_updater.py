@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from automerge_updater import check_outcomes, decide  # noqa: E402
+from automerge_updater import check_outcomes, decide, main_failed  # noqa: E402
 
 REQ = {"build-test-package", "verify"}
 
@@ -24,6 +24,19 @@ def run(name, conclusion="SUCCESS", status="COMPLETED"):
 
 
 class Decide(unittest.TestCase):
+    def test_holds_while_main_is_red(self):
+        action, chosen, reasons = decide([pr(1)], REQ, lambda p: 3, main_red=["build-test-package"])
+        self.assertEqual((action, chosen), ("hold", None))
+
+    def test_main_failed_reads_latest_gate_runs(self):
+        runs = [{"id": 1, "name": "build-test-package", "status": "completed", "conclusion": "failure"},
+                {"id": 2, "name": "build-test-package", "status": "completed", "conclusion": "success"},
+                {"id": 3, "name": "verify", "status": "in_progress", "conclusion": None},
+                {"id": 4, "name": "compare", "status": "completed", "conclusion": "failure"}]
+        self.assertEqual(main_failed(runs), [])
+        runs.append({"id": 5, "name": "verify", "status": "completed", "conclusion": "failure"})
+        self.assertEqual(main_failed(runs), ["verify"])
+
     def test_picks_oldest_behind(self):
         prs = [pr(2, "2026-11-10T12:00:00Z"), pr(1, "2026-11-10T11:00:00Z")]
         action, chosen, _ = decide(prs, REQ, lambda p: 3)

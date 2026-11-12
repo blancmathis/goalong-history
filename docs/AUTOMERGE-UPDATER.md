@@ -1,13 +1,13 @@
 # Auto-merge updater (merge-queue substitute)
 
 GitHub merge queues need an organisation repository; `blancmathis/goalong-history`
-belongs to a user. `main` keeps `strict: true` and its 5 required checks
-(build-test-package, native-sharing, prepare, verify, compare): the tree that
-was tested is the tree that is merged, which also keeps fast promotion.
+belongs to a user. `main` keeps `strict: true`. Since T-058 (2026-11-12) the only required check is
+`fast-gate` (~1 min, Linux); the full suite (`build-test-package`, `verify`) runs
+once per main commit, and publication waits for it on that exact commit.
 Cost of strict: every move of `main` leaves the other PRs behind, and someone
 had to click "Update branch". This agent does that click.
 
-## Rule (each run, every 2 min)
+## Rule (each run, every 30 s)
 1. Open PRs on `main` with auto-merge enabled, same repository, not draft.
    Fork PRs, drafts and PRs without auto-merge are never touched.
 2. If one is already up to date with `main` and a required check is still
@@ -18,6 +18,9 @@ had to click "Update branch". This agent does that click.
    conflicting, with no failed required check, gets
    `PUT /pulls/{n}/update-branch` with its expected head SHA. Its checks re-run
    and auto-merge merges it when green.
+
+4. While `build-test-package` or `verify` failed on `main`'s head: hold, no
+   update. A red `main` is fixed (or reverted) before more PRs land.
 
 It never merges and never enables auto-merge. Failed or conflicting PRs wait for
 a human.

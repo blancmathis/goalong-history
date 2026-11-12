@@ -1,9 +1,8 @@
 name: History sharing acceptance
 
+# T-058: the same test now runs inside macos.yml (build-test-package, --skip-build), so the
+# app is not compiled a second time. This workflow stays for a manual run only.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:

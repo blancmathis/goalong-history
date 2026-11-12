@@ -14,6 +14,9 @@ main before auto-merge can fire. Each run:
    is behind main, not conflicting, with no failed required check, and calls
    `update-branch` with its expected head SHA.
 
+4. Holds (no update) while a post-merge gate failed on main's head (T-058): PRs
+   only pass the fast gate, so a red main must be fixed before more PRs land.
+
 The call uses the owner's `gh` login, so the resulting push triggers the
 workflows (a GITHUB_TOKEN push would not). It never merges and never touches
 fork PRs. See docs/AUTOMERGE-UPDATER.md.
@@ -29,6 +32,7 @@ REPO = "blancmathis/goalong-history"
 BASE = "main"
 FAILED = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR", "STALE"}
 IN_FLIGHT_MAX_AGE = timedelta(minutes=90)
+MAIN_GATES = ("build-test-package", "verify")  # post-merge gates (macos.yml, motion-integration.yml)
 LOG_CAP, LOG_KEEP = 200_000, 50_000
 PR_FIELDS = ("number,title,headRefName,headRefOid,isDraft,isCrossRepository,createdAt,"
              "mergeable,autoMergeRequest,baseRefName,statusCheckRollup,updatedAt")
@@ -95,12 +99,25 @@ def order_key(pr):
     return (enabled, pr.get("createdAt") or "", pr["number"])
 
 
-def decide(prs, required, behind_by, now=None):
+def main_failed(check_runs):
+    """Post-merge gates whose latest check run on main's head did not succeed."""
+    latest = {}
+    for run in check_runs:
+        if run.get("name") in MAIN_GATES and run.get("app", {}).get("slug", "github-actions") == "github-actions":
+            if run["name"] not in latest or run.get("id", 0) > latest[run["name"]].get("id", 0):
+                latest[run["name"]] = run
+    return sorted(n for n, r in latest.items()
+                  if r.get("status") == "completed" and r.get("conclusion") not in ("success", "skipped", "neutral"))
+
+
+def decide(prs, required, behind_by, now=None, main_red=()):
     """Pure decision. `behind_by(pr) -> int` counts main commits missing from the PR.
 
-    Returns (action, pr_or_None, reasons) where action is 'update', 'wait' or 'idle'.
+    Returns (action, pr_or_None, reasons) where action is 'update', 'wait', 'hold' or 'idle'.
     """
     now = now or datetime.now(timezone.utc)
+    if main_red:
+        return "hold", None, [f"{BASE} is red ({', '.join(main_red)}): no update until it is fixed"]
     reasons = []
     candidates = sorted((p for p in prs if eligible(p)), key=order_key)
     for pr in prs:
@@ -189,12 +206,20 @@ def main(argv=None):
     if error_file and error_file.exists():
         error_file.unlink()
 
+    try:
+        head = json.loads(call("api", f"repos/{args.repo}/commits/{BASE}"))["sha"]
+        runs = json.loads(call("api", f"repos/{args.repo}/commits/{head}/check-runs?per_page=100&filter=latest"))
+        main_red = main_failed(runs.get("check_runs", []))
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError, ValueError, KeyError) as error:
+        report_error(error_file, f"cannot read {BASE} gate state, no update: {str(error).strip()[:200]}")
+        return 0
+
     def behind_by(pr):
         cmp = json.loads(call("api", f"repos/{args.repo}/compare/{BASE}...{pr['headRefOid']}"))
         return int(cmp.get("behind_by", 0))
 
     try:
-        action, pr, reasons = decide(prs, required, behind_by)
+        action, pr, reasons = decide(prs, required, behind_by, main_red=main_red)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError, ValueError) as error:
         report_error(error_file, f"gh call failed while deciding: {str(error).strip()[:200]}")
         return 0

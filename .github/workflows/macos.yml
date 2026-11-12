@@ -1,13 +1,23 @@
 name: macOS quality gate
 
+# T-058 (2026-11-12): full suite after the merge, not on PRs (PRs: pr-fast-gate.yml).
+# Each main tree is tested once here; publication and local deploy wait for this job
+# on the exact main commit (scripts/wait_main_gates.py, scripts/local_deploy_policy.py).
 on:
   push:
     branches: [main, motion/integration-20260917]
-  pull_request:
+  schedule:
+    - cron: '17 2 * * *'  # nightly clean build + full suite: catches flaky tests
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# No cancel-in-progress: each running main commit gets a verdict. GitHub keeps at most
+# one pending run per group, so a burst of merges tests the newest commit next.
+concurrency:
+  group: macos-quality-gate-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-test-package:
@@ -89,6 +99,33 @@ jobs:
           # can skip host-dependent tests (display, WindowServer, Keychain) that this Mac does not.
           # `make test` on the owner's Mac is strict.
           python3 scripts/skip_report.py "$LOG" --report-only
+
+      - name: Render the actual sharing window with synthetic data only
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUTPUT="$PWD/qa/sharing-acceptance"
+          mkdir -p "$OUTPUT"
+          git rev-parse HEAD > "$OUTPUT/revision.txt"
+          SAFE_HOME="$(mktemp -d /tmp/goalong-sharing-home-XXXXXX)"
+          trap 'rm -rf "$SAFE_HOME"' EXIT
+          HOME="$SAFE_HOME" CFFIXED_USER_HOME="$SAFE_HOME" \
+          GOALONG_SHARING_TEST_HOME="$SAFE_HOME" \
+          GOALONG_SHARING_SNAPSHOTS="$OUTPUT" \
+            swift test --skip-build --filter GoalongWebsiteSharingRenderingTests \
+            2>&1 | tee "$OUTPUT/native-render.log"
+          for image in sharing-dark-740 sharing-dark-680 sharing-light-740 sharing-light-680 sharing-daily-dark sharing-preview-dark; do
+            test -s "$OUTPUT/$image.png"
+          done
+
+      - name: Retain native sharing evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: history-sharing-acceptance-${{ github.sha }}
+          path: qa/sharing-acceptance/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Skipped-test report and leaked-preference script self tests
         run: |
@@ -221,4 +258,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: 7  # promotion reads PR gate receipts at the main push
+          retention-days: 7  # promotion reads this main-commit receipt
