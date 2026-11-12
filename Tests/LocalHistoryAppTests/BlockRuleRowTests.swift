@@ -109,6 +109,8 @@ import XCTest
         XCTAssertTrue(presets[1].draft.red); XCTAssertEqual(presets[1].draft.weekdays, Set(1...7))
         XCTAssertEqual(presets[2].trigger, .session); XCTAssertEqual(presets[2].minutes, 25)
         XCTAssertEqual(presets[3].draft.listIDs, [social.id, news.id]); XCTAssertEqual(presets[3].draft.lock, .typing)
+        XCTAssertEqual(presets[3].trigger, .session, "a deep day is a séance, not a schedule")
+        XCTAssertEqual(presets[3].minutes, 8 * 60)
         XCTAssertTrue(BlockRulePreset.templates(lists: [])[0].draft.listIDs.isEmpty, "no list: the member picks")
     }
 

@@ -92,6 +92,13 @@ extension GalleryCatalog {
                 BlockRuleEditor(subject: .new, blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,
                                 now: F.sunday, trigger: .session, maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
             },
+            // « Pendant » on « Autre… »: the precise length (hours and minutes, 5-minute steps).
+            sheet("blocages/editeur-maintenant-autre") { ctx in
+                let preset = BlockRulePreset(id: "gallery-autre", title: "Séance de 1 h 30", trigger: .session,
+                                             draft: BlockRuleDraft(), minutes: 90)
+                return BlockRuleEditor(subject: .preset(preset), blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,
+                                       now: F.sunday, maxHeight: 4_000, sessionDraft: FocusComposerDraft(), onClose: {})
+            },
             // « Toujours »: every day, 24 hours a day; « Verrouillé » greyed with its reason.
             sheet("blocages/editeur-toujours") { ctx in
                 BlockRuleEditor(subject: .new, blocking: F.blockingIdle(), braise: try braise(ctx), focus: nil,
