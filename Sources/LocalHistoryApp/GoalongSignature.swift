@@ -162,7 +162,9 @@
 
     struct GoalongToastHost: View {
         @ObservedObject private var center = GoalongToastCenter.shared
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+        @Environment(\.goalongReduceMotion) private var localReduceMotion
+        private var reduceMotion: Bool { systemReduceMotion || localReduceMotion }
 
         var body: some View {
             ZStack {
@@ -182,7 +184,9 @@
 
     private struct GoalongToastView: View {
         let toast: GoalongToastCenter.Toast
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+        @Environment(\.goalongReduceMotion) private var localReduceMotion
+        private var reduceMotion: Bool { systemReduceMotion || localReduceMotion }
         @State private var drawn: CGFloat = 0
 
         var body: some View {

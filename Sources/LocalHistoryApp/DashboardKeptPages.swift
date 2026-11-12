@@ -231,7 +231,7 @@
         init<Root: View>(rootView: Root, sizing: NSHostingSizingOptions = DashboardWindowController.hostingSizing) {
             root = NSHostingView(rootView: AnyView(rootView.environment(\.dashboardToastsAbovePages, true)))
             root.sizingOptions = sizing
-            toasts = DashboardToastLayer(rootView: AnyView(GoalongToastHost().environment(\.locale, GoalongUIFormat.locale)))
+            toasts = DashboardToastLayer(rootView: AnyView(GoalongToastHost().environment(\.locale, GoalongUIFormat.locale).goalongMotion()))
             toasts.sizingOptions = []
             super.init(frame: NSRect(origin: .zero, size: DashboardWindowController.defaultContentSize))
             for layer in [root, pageLayer, toasts] as [NSView] {

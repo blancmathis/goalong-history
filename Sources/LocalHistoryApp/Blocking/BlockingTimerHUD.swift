@@ -8,7 +8,7 @@ import SwiftUI
     private let input: () -> BlockingTimerInput?
     private let clock: () -> Date
     private var panel: NSPanel?
-    private var host: NSHostingView<BlockingTimerCapsule>?
+    private var host: NSHostingView<AnyView>?
     private var shown: BlockingVisibleTimer?
     private var pulse = 0
     private var tick: Timer?
@@ -25,7 +25,7 @@ import SwiftUI
         shown = value
         let view = BlockingTimerCapsule(timer: value, pulse: pulse)
         let panel = self.panel ?? makePanel(view)
-        host?.rootView = view
+        host?.rootView = AnyView(view.goalongMotion())
         let size = host?.fittingSize ?? .zero
         let frame = Self.frame(size: size, on: Self.screen(for: snapshot?.target))
         if panel.frame != frame { panel.setFrame(frame, display: true) }
@@ -62,8 +62,8 @@ import SwiftUI
 
     /// Intrinsic size only: measurable, without min/max constraints on the panel.
     /// With no sizing options `fittingSize` is zero and the capsule never shows.
-    static func makeHost(_ view: BlockingTimerCapsule) -> NSHostingView<BlockingTimerCapsule> {
-        let hosting = NSHostingView(rootView: view)
+    static func makeHost(_ view: BlockingTimerCapsule) -> NSHostingView<AnyView> {
+        let hosting = NSHostingView(rootView: AnyView(view.goalongMotion()))
         hosting.sizingOptions = [.intrinsicContentSize]
         hosting.autoresizingMask = [.width, .height]
         return hosting
@@ -150,7 +150,7 @@ struct BlockingTimerCapsule: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(timer.accessibilityLabel)
         .onChange(of: pulse) { _ in
-            guard !systemReduceMotion, !localReduceMotion, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+            guard !systemReduceMotion, !localReduceMotion, !GoalongMotionPreference.reduced() else { return }
             withAnimation(.easeOut(duration: 0.3)) { flash = 1 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(.easeIn(duration: 0.3)) { flash = 0 } }
         }

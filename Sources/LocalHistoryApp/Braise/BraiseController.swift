@@ -773,7 +773,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         // (T-050 lot A2). The manual red and any real red keep the filter.
         let tints = screen.active && (manual || screen.intensity > 0)
         gamma.set(active: tints, intensity: tints ? screen.intensity : preferences.intensity, brightness: preferences.brightness,
-                  animated: preview == nil && runsTimers && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                  animated: preview == nil && runsTimers && !GoalongMotionPreference.reduced())
         boundaryTimer?.invalidate(); boundaryTimer = nil
         var events: [Date] = []
         if let end = preferences.pauseUntil { events.append(end) }

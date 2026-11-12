@@ -248,6 +248,7 @@ import SwiftUI
                             BlockingAppPicker(excluded: Set(list.apps.map(\.bundleIdentifier))) { app in
                                 var next = list; next.apps.append(app); controller.save(next)
                             }
+                            .goalongMotion()
                         }
                         .accessibilityIdentifier("blocking-add-app")
                 }
@@ -350,6 +351,7 @@ import SwiftUI
                                     controller.lockProgram(listID: list.id, until: date)
                                     lockingProgram = false
                                 }
+                                .goalongMotion()
                             }
                             .accessibilityIdentifier("blocking-lock-program")
                     }
@@ -497,6 +499,7 @@ import SwiftUI
             BlockingAppPicker(excluded: Set(apps.map(\.bundleIdentifier) + (list.mode == .block ? list.apps.map(\.bundleIdentifier) : []))) { app in
                 ruleError = message(controller.addAppTrigger(app, to: list.id))
             }
+            .goalongMotion()
         }
     }
 

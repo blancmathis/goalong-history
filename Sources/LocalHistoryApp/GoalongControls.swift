@@ -1057,6 +1057,7 @@
                 .toggleStyle(.goalongCheckbox)
                 .textFieldStyle(GoalongFieldStyle())
                 .environment(\.locale, GoalongUIFormat.locale)
+                .goalongMotion()
         }
     }
 

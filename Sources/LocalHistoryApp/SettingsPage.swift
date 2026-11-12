@@ -102,7 +102,8 @@ import AppKit
                         if !visiblePanes.isEmpty { GoalongRowDivider() }
                         jevLink.accessibilityIdentifier("settings-jev")
                     }
-                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) && !SettingsPane.matchesJev(search) {
+                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) && !SettingsPane.matchesJev(search)
+                        && !GoalongMotionSettings.matches(search) {
                         Text("Aucun réglage ne correspond à cette recherche.").font(.system(size: 13))
                             .foregroundStyle(LHTheme.secondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(LHTheme.cardInset)
@@ -110,6 +111,7 @@ import AppKit
                 }
             }
             if search.isEmpty || SettingsPane.matchesStartup(search) { BackgroundContinuitySettings() }
+            if search.isEmpty || GoalongMotionSettings.matches(search) { GoalongMotionSettings() }
             if search.isEmpty {
                 // UI-15A (20): the full stop, the report and the version form one group, no longer three loose items.
                 GoalongSettingsList(title: "Aide et confidentialité") {

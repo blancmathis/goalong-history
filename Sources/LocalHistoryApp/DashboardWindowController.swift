@@ -186,7 +186,7 @@
             Self.configure(window)
             window.level = .normal
             window.collectionBehavior = [.managed, .fullScreenPrimary, .participatesInCycle]
-            window.animationBehavior = .documentWindow
+            window.animationBehavior = GoalongMotionPreference.reduced() ? .none : .documentWindow
             window.tabbingMode = .disallowed
             window.hidesOnDeactivate = false
             // R14a: the page has its own hosting view beside the sidebar's; Tab goes from one to the other in reading order.

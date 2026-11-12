@@ -467,6 +467,7 @@ struct BlocagesFoldView<Content: View>: View {
                     self.typing = nil
                     finish(typing.rule, .typed(typed, challenge: typing.text))
                 }, onCancel: { self.typing = nil })
+                .goalongControls()
             }
         }
         .alert("Éteindre cette règle ?", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
