@@ -165,6 +165,7 @@ enum SupportSourceAllowlist {
         "GoalongModules.swift",
         "GoalongModulesSettings.swift",
         "GoalongMotionModel.swift",
+        "GoalongMotionSettings.swift",
         "GoalongMotionView.swift",
         "GoalongPresentationRequests.swift",
         "GoalongProfileStudio.swift",
