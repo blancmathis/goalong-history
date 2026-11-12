@@ -3269,3 +3269,7 @@ programme/mot-de-passe-   # T-050 D1b : bouton « + 15 min »
 programme/feuille-liste-   # T-050 D1b : « Autoriser des pauses » de liste remplacé par l'ancien réglage en lecture seule
 blocages/editeur-seance-   # T-050 D1b : réglage des pauses pour une séance de concentration
 settings/accueil   # T-054 : groupe « Affichage » avec l’interrupteur « Animations » sur l’accueil des Réglages (+134 px de haut)
+blocages/regles-   # T-056 : ligne de règle d’un seul tenant, interrupteur sans libellé
+blocages/seances-preparees-   # T-056 : idem
+blocages/blocage-en-cours-   # T-056 : idem
+blocages/mot-de-passe-   # T-056 : idem
