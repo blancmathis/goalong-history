@@ -211,7 +211,11 @@ enum BlockRulePlan {
                 return writes.lists.isEmpty ? words(error) : "Les listes sont enregistrées, pas l’écran rouge. \(words(error))"
             }
         }
-        if let surveillance { for write in writes.jev { surveillance.apply(write, now: now) } }
+        if let surveillance {
+            for write in writes.jev where !surveillance.apply(write, now: now) && surveillance.restoredNotice == ProtectedFloor.unsavedText {
+                return ProtectedFloor.unsavedText
+            }
+        }
         return nil
     }
 

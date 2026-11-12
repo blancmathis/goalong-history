@@ -701,7 +701,11 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         defer { if asked { stopGrant.revoke() } }
         if let message = refusal(for: next) { throw RedScreenRefusal(message: message, isLock: true) }
         var value = RedScreenRules.snappingBrightness(next, from: ranges); value.sanitize()
-        ranges = value; errorMessage = nil; saveRangesNow(); evaluate()
+        let before = ranges
+        ranges = value; errorMessage = nil; saveRangesNow()
+        // F5: the keychain refused the copy of a change the launch would undo: nothing is kept, the page says why.
+        if errorMessage == ProtectedFloor.unsavedText { ranges = before; throw RedScreenRefusal(message: ProtectedFloor.unsavedText, isLock: false) }
+        evaluate()
     }
 
     // MARK: Evaluation
@@ -867,7 +871,9 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         saveRangesNow()
     }
     private func saveRangesNow() {
-        do { try store.saveRanges(ranges) } catch { errorMessage = "Plages non enregistrées. Vérifiez l’espace et l’accès au dossier Braise." }
+        do { if try !store.saveRanges(ranges) { errorMessage = ProtectedFloor.staleText } }
+        catch is ProtectedFloorUnavailable { errorMessage = ProtectedFloor.unsavedText }
+        catch { errorMessage = "Plages non enregistrées. Vérifiez l’espace et l’accès au dossier Braise." }
     }
     func persistCommand() throws {
         saveNow(); if errorMessage != nil { throw GoalongFocusError.storageFailed }

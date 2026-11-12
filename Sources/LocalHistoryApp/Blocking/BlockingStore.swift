@@ -14,7 +14,7 @@ struct BlockingStore {
         BlockingStore(directory: channel.dataRoot(base: base).appendingPathComponent("Blocking", isDirectory: true),
                       floor: .standard)
     }
-    enum Failure: Error { case unsafePath, unreadable, invalidDocument }
+    enum Failure: Error { case unsafePath, unreadable, invalidDocument, floorUnavailable }
     /// How `loadRecovering` obtained its document.
     enum Recovery: Equatable { case none, previous, reset }
     private static let current = "blocking.json", previous = "blocking.previous.json", lockMarker = "locked-until"
@@ -52,12 +52,15 @@ struct BlockingStore {
     /// A damaged or missing file gives way to the previous generation; a damaged file is set aside, never
     /// deleted. When neither is usable the store starts empty. Only an unusable directory throws.
     /// Then the protected rules the files lost or weakened come back from `floor` (`restored` > 0), and are written.
-    func loadRecovering(now: Date = Date()) throws -> (document: BlockingDocument, recovery: Recovery, restored: Int) { // wall: the document's ends are wall dates
+    /// `copyUnavailable`: the copy could not be read (F5), the files are taken as they are and the member is told.
+    func loadRecovering(now: Date = Date()) throws -> (document: BlockingDocument, recovery: Recovery, restored: Int, copyUnavailable: Bool) { // wall: the document's ends are wall dates
+        let copy = floor?.read(BlockingFloor.self, key: ProtectedFloor.blockingKey) ?? .absent
         let loaded = try loadFile()
-        guard let kept = floor?.load(BlockingFloor.self, key: ProtectedFloor.blockingKey) else { return (loaded.document, loaded.recovery, 0) }
+        if case .unavailable = copy { return (loaded.document, loaded.recovery, 0, true) }
+        guard let kept = copy.value else { return (loaded.document, loaded.recovery, 0, false) }
         let result = BlockingFloor.restore(loaded.document, floor: kept, now: now)
         if result.restored > 0 { try save(result.document, now: now) }
-        return (result.document, loaded.recovery, result.restored)
+        return (result.document, loaded.recovery, result.restored, false)
     }
 
     private func loadFile() throws -> (document: BlockingDocument, recovery: Recovery) {
@@ -111,9 +114,23 @@ struct BlockingStore {
         return document
     }
 
-    func save(_ document: BlockingDocument, now: Date = Date()) throws { // wall: the floor keeps what is not over in the document's wall frame
+    /// The copy first, then the file (F5). A copy not written leaves the older one in place: the file still goes ahead
+    /// when that copy would take nothing back at the next launch (a hardening, or nothing protected); otherwise nothing
+    /// is written and `floorUnavailable` is thrown, so a stop passed in Goalong is never undone later as a tampering.
+    /// False = written, but the copy could not be checked (keychain unavailable since launch): say it.
+    @discardableResult
+    func save(_ document: BlockingDocument, now: Date = Date()) throws -> Bool { // wall: the floor keeps what is not over in the document's wall frame
+        var copied = true
+        if let floor, !floor.save(BlockingFloor.of(document, now: now), key: ProtectedFloor.blockingKey) {
+            switch floor.known(BlockingFloor.self, key: ProtectedFloor.blockingKey) {
+            case .absent: break
+            case .value(let kept):
+                guard BlockingFloor.restore(document, floor: kept, now: now).restored == 0 else { throw Failure.floorUnavailable }
+            case .unavailable: copied = false
+            }
+        }
         try saveFile(document)
-        floor?.save(BlockingFloor.of(document, now: now), key: ProtectedFloor.blockingKey)
+        return copied
     }
 
     private func saveFile(_ document: BlockingDocument) throws {

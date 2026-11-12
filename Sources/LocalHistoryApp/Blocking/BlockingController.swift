@@ -140,6 +140,7 @@ import LocalHistoryQueryCLI
                 case .reset: self.error = "Le fichier de blocage et sa copie de secours étaient illisibles : Goalong repart sans listes. Les fichiers abîmés restent dans son dossier."
                 }
                 if loaded.restored > 0 { self.error = ProtectedFloor.restoredText }
+                if loaded.copyUnavailable { self.error = ProtectedFloor.unavailableText }
             } catch { failStore() }
         }
         let migratedDays = migrateLegacyDayKeys()
@@ -1357,7 +1358,9 @@ import LocalHistoryQueryCLI
         // minute must not lose it (C8-03).
         let locksChanged = locksBefore != (document.sessions, document.heldPrograms, document.freeze, document.lists)
         if !storeFailed, let store, (triggersChanged || locksChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
-            do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
+            do { try store.save(document); lastGood = document; lastSavedAt = now }
+            catch BlockingStore.Failure.floorUnavailable { error = ProtectedFloor.unsavedText } // retried at the next save
+            catch { failStore() }
         }
         document.sessions.removeAll { $0.end <= now }
         document.heldPrograms = document.heldPrograms?.filter { $0.end > now }
@@ -1515,7 +1518,8 @@ import LocalHistoryQueryCLI
     private func commit(reenforce: Bool = true) {
         backend?.invalidateSiteActions()
         if let store {
-            do { try store.save(document); lastGood = document; lastSavedAt = clock(); error = nil }
+            do { error = try store.save(document) ? nil : ProtectedFloor.staleText; lastGood = document; lastSavedAt = clock() }
+            catch BlockingStore.Failure.floorUnavailable { if let lastGood { document = lastGood }; error = ProtectedFloor.unsavedText }
             catch { if let lastGood { document = lastGood }; failStore() }
         } else { error = nil }
         refresh(enforceLast: reenforce)

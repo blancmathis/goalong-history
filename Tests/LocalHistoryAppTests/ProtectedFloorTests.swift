@@ -191,5 +191,112 @@ import XCTest
         next.brightness = [protected.id: 0.20]
         XCTAssertEqual(RedScreenRules.snappingBrightness(next, from: current).brightness?[protected.id], 0.20, "darker is kept")
     }
+
+    // MARK: Lot 3 (re-review of lot 2)
+
+    /// F1: ranges.json deleted while Goalong was closed. The migration (no old range) must not replace the copy first.
+    func testRedScreenFileDeletedOutsideKeepsTheCopyThroughTheMigration() throws {
+        let base = try root(), directory = base.appendingPathComponent("Braise", isDirectory: true)
+        let legacy = base.appendingPathComponent("missing")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let floor = ProtectedFloor.memory(), store = BraiseStore(directory: directory, legacySettings: legacy, floor: floor)
+        var value = RedScreenProgram(); value.program = BlockProgram(ranges: [range(.typing)])
+        try store.saveRanges(value, now: now)
+        try FileManager.default.removeItem(at: store.rangesURL)
+
+        let loaded = try store.loadRanges(migratingFrom: Preferences(), now: now)
+        XCTAssertEqual(loaded.ranges, value, "the protected range comes back")
+        XCTAssertTrue(loaded.notice?.contains(ProtectedFloor.restoredText) == true)
+        XCTAssertEqual(floor.load(RedScreenProgram.self, key: ProtectedFloor.redScreenKey), value, "the copy is still there")
+        try Data("{".utf8).write(to: store.rangesURL)
+        XCTAssertEqual(try store.loadRanges(migratingFrom: Preferences(), now: now).ranges, value, "unreadable: same")
+    }
+
+    /// F2: a protected session's list without a protected range of its own, its start, and a list locked only by
+    /// `lockedUntil` are all compared, content included.
+    func testSessionListsAndStartComeBackFromTheCopy() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let floor = ProtectedFloor.memory()
+        let used = list(nil, name: "Séance")
+        var locked = list(nil, name: "Verrou"); locked.program.lockedUntil = now.addingTimeInterval(7_200)
+        var document = BlockingDocument(lists: [used, locked])
+        let session = BlockSession(listIDs: [used.id], start: now.addingTimeInterval(-600), end: now.addingTimeInterval(3_600), lock: .typing)
+        document.sessions = [session]
+        try BlockingStore(directory: directory, floor: floor).save(document, now: now)
+
+        var emptied = document
+        emptied.lists[0].sites = []; emptied.lists[1].sites = []
+        emptied.sessions[0].start = session.end.addingTimeInterval(-1)
+        try BlockingStore(directory: directory).save(emptied, now: now) // the file, by hand
+
+        let loaded = try BlockingStore(directory: directory, floor: floor).loadRecovering(now: now)
+        XCTAssertEqual(loaded.document.lists.map(\.sites), [used.sites, locked.sites], "both lists keep their sites")
+        XCTAssertEqual(loaded.document.sessions.first?.start, session.start, "the start is not pushed back")
+
+        var harder = document; harder.lists[0].sites.append(BlockSiteRule(pattern: "plus.example"))
+        harder.sessions[0].start = session.start.addingTimeInterval(-60)
+        try BlockingStore(directory: directory).save(harder, now: now)
+        let kept = try BlockingStore(directory: directory, floor: floor).loadRecovering(now: now)
+        XCTAssertEqual(kept.restored, 0, "a longer list and an earlier start are hardening")
+    }
+
+    /// The Jev settings of the review: 2 min at 85 %, then 5 min at 10 %, both « Assombrir + rouge ».
+    private var fallingStages: JevInterventionSettings {
+        var value = JevInterventionSettings(); value.effectsEnabled = true
+        value.stages = [.init(afterMinutes: 2, effect: .dimAndRed, intensity: 85), .init(afterMinutes: 5, effect: .dimAndRed, intensity: 10)]
+        return value
+    }
+
+    /// F3: moving the lighter second stage earlier shows 10 % from 3 to 5 min instead of 85 %: a weakening.
+    func testJevLighterStageMovedEarlierIsAWeakening() {
+        var earlier = fallingStages; earlier.stages[1].afterMinutes = 3
+        XCTAssertTrue(earlier.isValid)
+        XCTAssertFalse(JevSurveillanceStore.isAtLeast(earlier, fallingStages))
+        var range = jevRange(.locked); range.settings = fallingStages
+        var next = range; next.settings = earlier
+        XCTAssertTrue(JevSurveillanceStore.weakens(range, next))
+        XCTAssertTrue(JevSurveillanceStore.restore(.init(ranges: [next]), floor: [range]).count == 1, "the prefs are restored too")
+    }
+
+    /// F4: moving the lighter second stage later keeps 85 % one more minute: a hardening, free under « Verrouillé ».
+    func testJevLighterStageMovedLaterStaysFreeUnderLocked() {
+        var later = fallingStages; later.stages[1].afterMinutes = 6
+        XCTAssertTrue(JevSurveillanceStore.isAtLeast(later, fallingStages))
+        let d = defaults(), store = JevSurveillanceStore(defaults: d)
+        var range = jevRange(.locked); range.settings = fallingStages
+        var document = JevSurveillanceDocument(); document.ranges = [range]
+        store.save(document)
+        var next = range; next.settings = later
+        XCTAssertEqual(store.check(.save(next), now: now, calendar: paris), .allow)
+        XCTAssertTrue(store.apply(.save(next), now: now))
+    }
+
+    /// F5: a keychain that cannot read is said, not taken for « nothing protected »; one that cannot write refuses a
+    /// change the launch would undo (a stop passed), and lets a hardening through.
+    func testKeychainFailureIsToldAndNeverUndoesAStopLater() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let floor = ProtectedFloor.memory(), backing = try XCTUnwrap(floor.backing as? MemoryFloorBacking)
+        let store = BlockingStore(directory: directory, floor: floor)
+        let protected = list(.typing)
+        try store.save(BlockingDocument(lists: [protected]), now: now)
+
+        backing.failsWrites = true
+        var stopped = protected; stopped.program.ranges[0].lock = .free
+        XCTAssertThrowsError(try store.save(BlockingDocument(lists: [stopped]), now: now)) {
+            XCTAssertEqual($0 as? BlockingStore.Failure, .floorUnavailable)
+        }
+        XCTAssertEqual(try BlockingStore(directory: directory).loadRecovering(now: now).document.lists.first?.program.ranges.first?.lock,
+                       .typing, "nothing written")
+        var harder = protected; harder.program.ranges[0].lock = .password
+        XCTAssertTrue(try store.save(BlockingDocument(lists: [harder]), now: now), "hardening stays free")
+
+        backing.failsWrites = false; backing.failsReads = true
+        let unread = try BlockingStore(directory: directory, floor: ProtectedFloor(backing: backing)).loadRecovering(now: now)
+        XCTAssertTrue(unread.copyUnavailable)
+
+        let d = defaults(), jevFloor = ProtectedFloor.memory()
+        (jevFloor.backing as? MemoryFloorBacking)?.failsReads = true
+        XCTAssertEqual(JevSurveillanceStore(defaults: d, floor: jevFloor).restoredNotice, ProtectedFloor.unavailableText)
+    }
 }
 #endif

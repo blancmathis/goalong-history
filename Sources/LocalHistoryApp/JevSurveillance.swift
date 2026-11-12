@@ -119,7 +119,9 @@ enum JevRangeWrite: Equatable {
             }
         }
         // A protected range removed or weakened in the defaults (or a document made unreadable) comes back from the copy.
-        guard let kept = floor?.load([JevSurveillanceRange].self, key: ProtectedFloor.jevKey), !kept.isEmpty else { return }
+        let copy = floor?.read([JevSurveillanceRange].self, key: ProtectedFloor.jevKey) ?? .absent
+        if case .unavailable = copy { restoredNotice = ProtectedFloor.unavailableText; return }
+        guard let kept = copy.value, !kept.isEmpty else { return }
         let restored = Self.restore(error == nil ? document : JevSurveillanceDocument(), floor: kept)
         guard restored.count > 0 else { return }
         save(restored.document)
@@ -145,18 +147,19 @@ enum JevRangeWrite: Equatable {
         return !(new.lock.strength >= old.lock.strength && covered && isAtLeast(new.settings, old.settings) && pauseKept)
     }
 
-    /// `new` reminds at least as much as `old`, stage by stage (T-059 lot 2: a sum of intensities let one stage drop
-    /// while another rose). Effects and the move stay on, each enabled stage stays on, no later, no lighter, same veil
-    /// or the stronger « voile et rouge ». Pure.
+    /// `new` reminds at least as much as `old` at every minute of a streak (T-059 lot 3, F3/F4). The engine shows the
+    /// last stage reached (`stage(at:)`), not the strongest, so stages are not compared index by index: the effect in
+    /// force is compared on each interval bounded by the old and new thresholds. At each one, where `old` shows a veil,
+    /// `new` shows one at least as heavy (same effect or « voile et rouge »). Effects and the move stay on. Pure.
     static func isAtLeast(_ new: JevInterventionSettings, _ old: JevInterventionSettings) -> Bool {
         if old.effectsEnabled && !new.effectsEnabled { return false }
         if old.moveAfterSecondAppearance && !new.moveAfterSecondAppearance { return false }
-        guard old.effectsEnabled else { return true }
-        for (index, stage) in old.stages.enumerated() where stage.enabled {
-            guard index < new.stages.count else { return false }
-            let next = new.stages[index]
-            guard next.enabled, next.afterMinutes <= stage.afterMinutes, next.intensity >= stage.intensity,
-                  next.effect == stage.effect || next.effect == .dimAndRed else { return false }
+        // The effect in force only changes at a threshold: checking each threshold covers every interval.
+        let thresholds = Set((old.stages + new.stages).map(\.afterMinutes)).filter { $0 >= 1 }.sorted()
+        for minute in thresholds {
+            guard let was = old.stage(at: minute * 60) else { continue }
+            guard let now = new.stage(at: minute * 60), now.intensity >= was.intensity,
+                  now.effect == was.effect || now.effect == .dimAndRed else { return false }
         }
         return true
     }
@@ -164,11 +167,20 @@ enum JevRangeWrite: Equatable {
     /// The document exists: the migration ran on this Mac, or a block was saved.
     var exists: Bool { defaults.object(forKey: Self.storageKey) != nil }
 
+    /// The copy first, then the defaults (F5). A copy not written: the defaults go ahead only when the copy in place
+    /// would take nothing back at the next launch; else false, nothing written, and `restoredNotice` says why.
     @discardableResult func save(_ next: JevSurveillanceDocument) -> Bool {
         guard let data = try? JSONEncoder().encode(next) else { return false }
-        defaults.set(data, forKey: Self.storageKey)
         let protected = next.ranges.filter { $0.lock != .free }
-        floor?.save(protected.isEmpty ? nil : protected, key: ProtectedFloor.jevKey)
+        if let floor, !floor.save(protected.isEmpty ? nil : protected, key: ProtectedFloor.jevKey) {
+            switch floor.known([JevSurveillanceRange].self, key: ProtectedFloor.jevKey) {
+            case .absent: break
+            case .value(let kept):
+                guard Self.restore(next, floor: kept).count == 0 else { restoredNotice = ProtectedFloor.unsavedText; return false }
+            case .unavailable: restoredNotice = ProtectedFloor.staleText
+            }
+        }
+        defaults.set(data, forKey: Self.storageKey)
         document = next; error = nil
         NotificationCenter.default.post(name: .jevSurveillanceDidChange, object: self)
         return true
@@ -319,8 +331,7 @@ enum JevRangeWrite: Equatable {
         case .delete(let id):
             next.ranges.removeAll { $0.id == id }
         }
-        save(next)
-        return true
+        return save(next)
     }
 
     /// The editor started a session: its choice is kept for this session. A Concentration session's choice becomes the
