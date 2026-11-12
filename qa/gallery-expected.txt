@@ -3258,3 +3258,13 @@ modules/actifs-verrouille--   # T-050 lot C : un seul module « Garde-fous » (u
 modules/reglages--   # T-050 lot C : un seul module « Garde-fous » (une ligne de moins)
 blocages/editeur-   # T-050 D1a (points 1-8) : case « Arrêt » : ligne « Autoriser des pauses » sous le niveau d'arrêt (budget, période, plus longue, nombre, « Avant », pauses en plus) ; sous « Verrouillé » avec pauses, le texte dit que les pauses du budget restent permises
 blocages/   # T-050 D1a (point 8) : phrase d'une règle « Verrouillé » avec pauses : « Les pauses du budget restent permises, sans pause en plus. »
+blocages/regles-   # T-050 D1b : budget de pauses restant sur la ligne de règle
+blocages/blocage-en-cours-   # T-050 D1b : idem (ligne de règle avec budget)
+blocages/mot-de-passe-   # T-050 D1b : idem
+blocages/seances-preparees-   # T-050 D1b : idem
+blocages/seance-en-cours-   # T-050 D1b : bouton « + 15 min » sur la séance en cours
+programme/blocage-actif-   # T-050 D1b : bouton « + 15 min »
+programme/blocage-ensuite-   # T-050 D1b : bouton « + 15 min »
+programme/mot-de-passe-   # T-050 D1b : bouton « + 15 min »
+programme/feuille-liste-   # T-050 D1b : « Autoriser des pauses » de liste remplacé par l'ancien réglage en lecture seule
+blocages/editeur-seance-   # T-050 D1b : réglage des pauses pour une séance de concentration

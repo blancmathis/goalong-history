@@ -85,6 +85,8 @@ struct FocusPanel: Equatable {
     private var latestInput: Date?
     private var phaseBlockID: UUID?
     private var phaseBlockKey: String?
+    /// The Blocking session this focus session owns now (« + 15 min » leaves it to the focus timer).
+    var ownedPhaseBlockID: UUID? { phaseBlockID }
     private var storageFailed = false
     /// A stop that could not be saved. `retryStorage` writes it before it clears the latch.
     private var pendingStop: (session: FocusSession, end: Date, reason: FocusSession.Event.Reason)?
@@ -253,7 +255,8 @@ struct FocusPanel: Equatable {
         return id
     }
     func startSession(intent: String, mode: FocusMode, planItemId: UUID? = nil, blockListIds: [UUID] = [],
-                      blockDuringBreaks: Bool = false, lock: Bool = false, ambiance: Bool = false) throws {
+                      blockDuringBreaks: Bool = false, lock: Bool = false, ambiance: Bool = false,
+                      pause: PausePolicy? = nil) throws {
         try admit(); refresh()
         guard currentSession == nil else { throw FocusFailure.invalidArgument }
         if let id = planItemId, !plan.items.contains(where: { $0.id == id && $0.status == .open }) { throw FocusFailure.notFound }
@@ -264,6 +267,7 @@ struct FocusPanel: Equatable {
         let now = clock()
         var value = FocusSession(intent: intent, planItemId: planItemId, mode: mode, blockListIds: blockListIds,
             blockDuringBreaks: blockDuringBreaks, lock: lock, ambiance: ambiance, startedAt: now, events: [.init(kind: .start, at: now)])
+        value.pause = blockListIds.isEmpty ? nil : pause
         value.plannedEndAt = FocusPhases.plannedEnd(value)
         guard value.valid else { throw FocusFailure.invalidArgument }
         try persist(value)
@@ -620,7 +624,7 @@ struct FocusPanel: Equatable {
         let existing = Set(b.lists.map(\.id))
         let listIDs = value.blockListIds.filter(existing.contains)
         guard !listIDs.isEmpty else { throw FocusFailure.notFound }
-        try b.startFocusBlock(id: id, listIDs: listIDs, until: end, lock: value.lock && p.isWork ? .locked : .free)
+        try b.startFocusBlock(id: id, listIDs: listIDs, until: end, lock: value.lock && p.isWork ? .locked : .free, pause: value.pause)
         phaseBlockID = id; phaseBlockKey = key
     }
     private func publishStatus() {

@@ -1006,9 +1006,10 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     // MARK: Pauses (T-050 D1)
 
-    /// A pause needs something the rule blocks or watches; a whole-Mac freeze has none (P4: hidden).
+    /// A pause needs something the rule blocks or watches; a whole-Mac freeze has none (P4: hidden). A focus session
+    /// carries its pauses on its blocks (D1b), so it needs a list.
     private var showsPauses: Bool {
-        !freezing && !usesFocus && (!draft.listIDs.isEmpty || draft.surveillance != nil)
+        !freezing && (usesFocus ? !chosenIDs.isEmpty : (!draft.listIDs.isEmpty || draft.surveillance != nil))
     }
 
     /// The rule runs under a protected stop: its pauses can only go down (« Durcir seulement »).
@@ -1415,7 +1416,8 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
             try focus.startSession(intent: intent.isEmpty ? Self.defaultIntent : intent, mode: mode.mode,
                                    planItemId: focus.openPlanItemID(mode.planItemId), blockListIds: ids,
                                    blockDuringBreaks: mode.kind == .pomodoro && mode.blockDuringBreaks,
-                                   lock: stopLevel == .locked && mode.canLock && !ids.isEmpty)
+                                   lock: stopLevel == .locked && mode.canLock && !ids.isEmpty,
+                                   pause: ids.isEmpty ? nil : draft.pause)
             sessionDraft.remember()
             if let id = focus.currentSession?.id { markSession(.focus, id: id) }
             recordLast()

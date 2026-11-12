@@ -87,6 +87,8 @@ import LocalHistoryQueryCLI
     var onTimerInputChanged: (() -> Void)?
     /// True while the running Concentration session blocks this list, breaks included.
     var focusSessionUsesList: (UUID) -> Bool = { _ in false }
+    /// A block owned by the running focus session's phase (its timer moves it, « + 15 min » does not).
+    var isFocusBlock: (UUID) -> Bool = { _ in false }
     private var observing = false
     private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
     var hasTimer: Bool { timer != nil }
@@ -701,7 +703,7 @@ import LocalHistoryQueryCLI
         return storeFailed ? nil : session.id
     }
 
-    func startFocusBlock(id: UUID, listIDs: [UUID], until end: Date, lock: BlockLock) throws {
+    func startFocusBlock(id: UUID, listIDs: [UUID], until end: Date, lock: BlockLock, pause: PausePolicy? = nil) throws {
         refresh(enforceLast: false)
         let end = trusted(end)
         guard !storeFailed else { throw FocusFailure.storageFailed }
@@ -710,7 +712,7 @@ import LocalHistoryQueryCLI
         if let existing = document.sessions.first(where: { $0.id == id }) {
             guard existing.origin == .manual else { throw FocusFailure.locked }; return
         }
-        document.sessions.append(BlockSession(id: id, listIDs: listIDs, start: clock(), end: end, lock: lock))
+        document.sessions.append(BlockSession(id: id, listIDs: listIDs, start: clock(), end: end, lock: lock, pause: pause))
         commit()
         guard !storeFailed else { throw FocusFailure.storageFailed }
     }
@@ -964,6 +966,13 @@ import LocalHistoryQueryCLI
         return Set((document.pauses ?? [:]).filter { $0.value.end.map { $0 > now } == true }.keys)
     }
 
+    /// Sessions whose own pause runs now (T-050 D1b): their « Surveillance » mark rests too. A list's former pause
+    /// (no pause of the session's own) does not stop « Surveillance ».
+    var pausedSessionIDs: Set<UUID> {
+        let pools = runningPausePools
+        return Set(document.sessions.filter { $0.pause.map { pools.contains($0.id) } == true }.map(\.id))
+    }
+
     /// The pool a pause asked from list `listID` takes: the ruling block's. Nil = no pause here.
     private func pausePool(for listID: UUID) -> (policy: PausePolicy, lock: BlockLock)? {
         // A rule's pause stays usable when a stronger rule without pause covers the same list: that rule keeps blocking.
@@ -1010,6 +1019,65 @@ import LocalHistoryQueryCLI
         let pool = PauseEngine.current(document.pauses?[policy.id], policy: policy, now: clock(), calendar: calendar)
         let left = Int(PauseEngine.secondsLeft(policy, usage: pool, now: clock()) / 60)
         return policy.maxPauseMinutes.map { min($0, left) } ?? left
+    }
+
+    /// D1b (point 5): what is left of the pauses of list `listID` now, in words. Nil = no pause here.
+    func pauseBudget(listID: UUID) -> String? {
+        guard let (policy, _) = pausePool(for: listID) else { return nil }
+        return pauseBudgetText(policy, listID: listID)
+    }
+
+    /// The budget of one pause pool, also for a rule row that is not running (the pool is counted all the same).
+    /// `listID` nil = a pool of no list (« Surveillance » alone).
+    func pauseBudgetText(_ policy: PausePolicy, listID: UUID?) -> String {
+        if let listID, isLegacy(policy, listID: listID) {
+            let left = max(0, (policy.maxPauses ?? 0) - (todayUsage().breaksTaken[listID] ?? 0))
+            return left == 0 ? "Pauses du jour prises"
+                : "Pauses : \(left) × \(policy.maxPauseMinutes ?? 0) min \(FrenchCount.word(left, "restante", "restantes")) aujourd’hui"
+        }
+        return PauseEngine.budgetText(policy, usage: document.pauses?[policy.id], now: clock(), calendar: calendar)
+    }
+
+    /// D1 point 5: a pause is running over list `listID` but another block without a pause keeps it blocked.
+    /// Says which one, for the block screen and the page. Nil = nothing holds it.
+    func pauseHolder(listID: UUID) -> String? {
+        let now = clock()
+        let over = activeBlocks.filter { $0.listIDs.contains(listID) }
+        guard over.contains(where: { ($0.breakEnds[listID] ?? .distantPast) > now }),
+              let holder = over.filter({ ($0.breakEnds[listID] ?? .distantPast) <= now })
+                .max(by: { ($0.lock.strength, $0.end) < ($1.lock.strength, $1.end) }) else { return nil }
+        return "Votre pause est en cours, mais \(holderName(holder, listID: listID)) bloque encore."
+    }
+
+    private func holderName(_ block: BlockingActiveBlock, listID: UUID) -> String {
+        let until = BlockingFormat.isOpenEnded(block.end) ? "" : " jusqu’à \(BlockingFormat.endTime(wallFrame(block.end)))"
+        switch block.origin {
+        case .program(let rangeID):
+            guard let range = list(listID)?.program.ranges.first(where: { $0.id == rangeID }) else { return "une autre règle" }
+            let when = range.startMinute == 0 && range.endMinute == 1_440 && range.weekdays.count == 7 ? "Toujours"
+                : "\(BlockingFormat.weekdays(range.weekdays)), \(BlockingFormat.range(range))"
+            return "la règle « \(when) »"
+        case .commitment: return "un engagement\(until)"
+        case .trigger: return "une app déclencheuse"
+        case .focus: return "la séance de concentration\(until)"
+        case .manual: return isFocusBlock(block.id) ? "la séance de concentration\(until)" : "une séance\(until)"
+        }
+    }
+
+    /// D1b « + 15 min »: a running session of the Blocage page lasts longer. Stricter, so allowed at once (P3).
+    /// Not a focus phase (its own timer owns it), a commitment, a trigger or a program window.
+    func canExtend(_ id: UUID) -> Bool {
+        let now = clock()
+        guard freeze == nil, let session = document.sessions.first(where: { $0.id == id }) else { return false }
+        return session.origin == .manual && !isFocusBlock(id) && session.start <= now && session.end > now
+            && !BlockingFormat.isOpenEnded(session.end)
+    }
+
+    @discardableResult func extendSession(_ id: UUID, minutes: Int = 15) -> Bool {
+        guard admitEdit(), canExtend(id), let index = document.sessions.firstIndex(where: { $0.id == id }) else { return false }
+        document.sessions[index].end = document.sessions[index].end.addingTimeInterval(TimeInterval(minutes * 60))
+        commit()
+        return !storeFailed
     }
 
     /// The text of the password sheet for a pause.
@@ -1567,7 +1635,8 @@ import LocalHistoryQueryCLI
                 let reason = special ?? list.quotaMinutesPerDay.map { BlockingVeilPresentation.Reason.quotaUsed(target.url ?? "", minutes: $0) } ?? .site(target.url ?? "")
                 let presentation = BlockingVeilPresentation(reason: reason, listName: list.name, start: wallFrame(block.start), end: wallFrame(block.end),
                     lock: block.lock, breakMinutes: pauseMinutes(listID: list.id), breaksLeft: block.breaksLeft[list.id] ?? 0,
-                    feedback: feedback(for: list.id), extraBreak: offersExtraBreak(listID: list.id))
+                    feedback: feedback(for: list.id), extraBreak: offersExtraBreak(listID: list.id),
+                    pauseBudget: pauseBudget(listID: list.id), heldBy: pauseHolder(listID: list.id))
                 backend.blockSite(target, presentation: presentation) { [weak self] in self?.breakFromVeil(listID: list.id) }
             }
             return
@@ -1905,6 +1974,7 @@ import LocalHistoryQueryCLI
             monitor?.blockingSink = { [weak value] target in value?.observe(target) }
             monitor?.blockingKeywords = { [weak value] in value?.activeKeywords ?? [] }
             value.focusSessionUsesList = { id in ConcentrationRuntime.shared.controller?.currentSession?.blockListIds.contains(id) == true }
+            value.isFocusBlock = { id in ConcentrationRuntime.shared.controller?.ownedPhaseBlockID == id }
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)

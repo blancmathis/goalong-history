@@ -252,7 +252,8 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
                 focus.refresh()
                 try focus.startSession(intent: session.trimmedIntent.isEmpty ? BlockRuleEditor.defaultIntent : session.trimmedIntent,
                                        mode: draft.mode, planItemId: focus.openPlanItemID(nil), blockListIds: ids,
-                                       blockDuringBreaks: session.pomodoro && session.blockDuringBreaks, lock: false)
+                                       blockDuringBreaks: session.pomodoro && session.blockDuringBreaks, lock: false,
+                                       pause: ids.isEmpty ? nil : session.pause)
             } catch {
                 focus.error = FocusUIError.message(error)
                 return .needsEditor

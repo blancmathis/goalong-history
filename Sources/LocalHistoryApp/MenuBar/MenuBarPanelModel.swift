@@ -106,6 +106,12 @@ import LocalHistoryCore
         var detail: String
         var lock: BlockLock
         var stop: Stop
+        /// D1b: what is left of its pauses, and the list a « Pause » button takes one from (nil = no button now).
+        var pauses: String? = nil
+        var pauseList: UUID? = nil
+        var pauseMinutes: Int? = nil
+        /// D1b: a session of the page that « + 15 min » prolongs in one click.
+        var extendable = false
     }
     @Published var blockingEnabled = false
     @Published var live: [LiveItem] = []
@@ -452,7 +458,14 @@ import LocalHistoryCore
             case .on(stop: .free): stop = .now
             default: stop = rule.lock == .locked ? .none : .page
             }
-            return LiveItem(id: rule.id, title: rule.summary, detail: rule.stateText(now: now), lock: rule.lock, stop: stop)
+            var item = LiveItem(id: rule.id, title: rule.summary, detail: rule.stateText(now: now), lock: rule.lock, stop: stop,
+                                pauses: rule.pauseBudget(blocking: controller))
+            if let controller {
+                let ranges = Set(rule.lists.flatMap(\.rangeIDs))
+                let blocks = controller.activeBlocks.filter { if case .program(let id) = $0.origin { return ranges.contains(id) }; return false }
+                Self.offerPause(&item, blocks: blocks, controller: controller)
+            }
+            return item
         }
         // Blocks started outside a rule (a prepared session, a commitment…). A session's own blocks show with the session.
         guard let controller else { return }
@@ -463,10 +476,41 @@ import LocalHistoryCore
             case .manual, .commitment, .trigger: break
             }
             let what = BlockRule.joined(block.listIDs.compactMap { names[$0] })
-            live.append(LiveItem(id: block.id.uuidString, title: what.isEmpty ? "Blocage" : "Bloque \(what)",
-                                 detail: "En cours jusqu’à \(BlockingFormat.endTime(block.end))", lock: block.lock,
-                                 stop: block.lock == .locked ? .none : .page))
+            var item = LiveItem(id: block.id.uuidString, title: what.isEmpty ? "Blocage" : "Bloque \(what)",
+                                detail: "En cours jusqu’à \(BlockingFormat.endTime(block.end))", lock: block.lock,
+                                stop: block.lock == .locked ? .none : .page, extendable: controller.canExtend(block.id))
+            item.pauses = block.listIDs.lazy.compactMap { controller.pauseBudget(listID: $0) }.first
+            Self.offerPause(&item, blocks: [block], controller: controller)
+            live.append(item)
         }
+    }
+
+    /// The first list of `blocks` with a pause to take now, as on the page (budget left, no pause running).
+    private static func offerPause(_ item: inout LiveItem, blocks: [BlockingActiveBlock], controller: BlockingController) {
+        for block in blocks {
+            for id in block.listIDs where (block.breaksLeft[id] ?? 0) > 0 && block.breakEnds[id] == nil && block.pauses[id] != nil {
+                guard let minutes = controller.pauseMinutes(listID: id), minutes > 0 else { continue }
+                item.pauseList = id; item.pauseMinutes = minutes
+                return
+            }
+        }
+    }
+
+    /// « Pause » of a line: the page's own call (a pause behind a text or a password opens its sheet in Goalong).
+    func takeLivePause(_ id: String) {
+        refreshBlocking()
+        guard let list = live.first(where: { $0.id == id })?.pauseList, let controller = blocking() else { return }
+        controller.breakFromVeil(listID: list)
+        refreshBlocking()
+    }
+
+    /// « + 15 min » of a session line: stricter, at once (P3).
+    func extendLive(_ id: String) {
+        refreshBlocking()
+        guard let item = live.first(where: { $0.id == id }), item.extendable, let uuid = UUID(uuidString: id),
+              let controller = blocking() else { return }
+        controller.extendSession(uuid)
+        refreshBlocking()
     }
 
     /// « Arrêter » of a line of « En ce moment ». A « Libre » rule stops with the page switch's own call, which checks the

@@ -488,10 +488,11 @@ struct BlocagesFoldView<Content: View>: View {
         return HStack(spacing: 0) {
             Button { onEdit(.rule(rule)) } label: {
                 BlocagesRuleRow(title: rule.summary, summary: rule.title, lock: rule.lock.title, lockSymbol: rule.lock.symbol,
-                                state: rule.stateText(now: now), running: rule.isRunning)
+                                state: rule.stateText(now: now), running: rule.isRunning,
+                                pauses: rule.pauseBudget(blocking: blocking))
             }
             .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
-            .accessibilityLabel(rule.spokenLabel(now: now))
+            .accessibilityLabel(rule.spokenLabel(now: now) + (rule.pauseBudget(blocking: blocking).map { " \($0)." } ?? ""))
             .accessibilityHint("Ouvre la règle")
             .accessibilityIdentifier("blocages-rule-\(index)")
             if state != .hidden {
@@ -631,6 +632,8 @@ private struct BlocagesRuleRow: View {
     var lockSymbol: String? = nil
     let state: String
     let running: Bool
+    /// D1b: « Pauses : 7 min sur 10 aujourd’hui ». Nil = the rule has no pause.
+    var pauses: String? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -639,6 +642,10 @@ private struct BlocagesRuleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(summary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                if let pauses {
+                    Label(pauses, systemImage: "cup.and.saucer").font(.system(size: 12).monospacedDigit())
+                        .foregroundStyle(LHTheme.secondaryText)
+                }
             }
             Spacer(minLength: 12)
             HStack(spacing: 8) {

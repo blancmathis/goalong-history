@@ -343,10 +343,26 @@
                     Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(item.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                    if let pauses = item.pauses {
+                        Text(pauses).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
+                    }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(item.title). \(item.detail). Sécurité : \(item.lock.title)")
+                .accessibilityLabel("\(item.title). \(item.detail). Sécurité : \(item.lock.title)\(item.pauses.map { ". \($0)" } ?? "")")
                 Spacer(minLength: 8)
+                if let minutes = item.pauseMinutes {
+                    Button("Pause") { model.takeLivePause(item.id) }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                        .help("Pause de \(minutes) min")
+                        .accessibilityLabel("Pause de \(minutes) min : \(item.title)")
+                        .accessibilityIdentifier("menubar-live-pause")
+                }
+                if item.extendable {
+                    Button("+ 15 min") { model.extendLive(item.id) }
+                        .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                        .help("Prolonger cette séance de 15 minutes")
+                        .accessibilityIdentifier("menubar-live-extend")
+                }
                 switch item.stop {
                 case .now:
                     Button("Arrêter") { model.stopLive(item.id) }

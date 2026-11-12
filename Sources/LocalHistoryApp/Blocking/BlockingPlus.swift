@@ -67,6 +67,10 @@ struct BlockingVeilPresentation: Equatable {
     var feedback: BlockingListFeedback?
     /// No break left, but the password block grants one more (« Pause supplémentaire… »).
     var extraBreak = false
+    /// D1b: « Pauses : 7 min sur 10 aujourd’hui ». Nil = no pause here.
+    var pauseBudget: String?
+    /// D1b: a pause runs, but another rule keeps this blocked (« … bloque encore. »).
+    var heldBy: String?
 }
 
 extension BlockingRules {

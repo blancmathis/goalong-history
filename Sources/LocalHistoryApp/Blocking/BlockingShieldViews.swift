@@ -39,23 +39,29 @@ struct BlockedSiteVeil: View {
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("blocking-veil-attempts")
                 }
-                if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
+                if let held = presentation.heldBy {
+                    // D1 point 5: the pause runs, another rule keeps this page blocked. Say which one.
+                    Text(held).font(.system(size: 13, weight: .medium)).multilineTextAlignment(.center)
+                        .frame(maxWidth: 420).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("blocking-veil-held")
+                } else if let minutes = presentation.breakMinutes, presentation.breaksLeft > 0 {
                     VStack(spacing: 6) {
                         Button(action: onBreak) { Label("Pause de \(minutes) min", systemImage: "cup.and.saucer") }
                             .accessibilityIdentifier("blocking-veil-break")
-                        Text(presentation.breaksLeft == 1 ? "Dernière pause du jour" : "\(presentation.breaksLeft) pauses restantes aujourd’hui")
+                        Text(Self.breakNote(presentation))
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityIdentifier("blocking-veil-budget")
                     }
                 } else if presentation.breakMinutes != nil, presentation.extraBreak {
                     VStack(spacing: 6) {
                         Button(action: onBreak) { Label("Pause supplémentaire…", systemImage: "key") }
                             .accessibilityIdentifier("blocking-veil-extra-break")
-                        Text("Pauses du jour prises. Le mot de passe en accorde une de plus.")
+                        Text(Self.breakNote(presentation))
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                 } else if presentation.breakMinutes != nil {
                     // No break left and no extra one: say it. The end time is already on the state line (R-85).
-                    Text("Pauses du jour prises.")
+                    Text(Self.breakNote(presentation))
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         .accessibilityIdentifier("blocking-veil-no-break")
                 }
@@ -99,6 +105,16 @@ struct BlockedSiteVeil: View {
         // A timed block shows its end on the thread under the line, never twice (R-85).
         if BlockingFormat.isOpenEnded(presentation.end) { return "Bloqué pendant que vous travaillez" }
         return presentation.lock == .locked ? "Verrouillé" : "Bloqué"
+    }
+
+    /// The line under the pause button: the pool's budget when known (any period), else the former day count.
+    static func breakNote(_ presentation: BlockingVeilPresentation) -> String {
+        if presentation.breaksLeft > 0, presentation.breakMinutes != nil {
+            if let budget = presentation.pauseBudget { return budget }
+            return presentation.breaksLeft == 1 ? "Dernière pause du jour" : "\(presentation.breaksLeft) pauses restantes aujourd’hui"
+        }
+        let used = presentation.pauseBudget.map { "\($0)." } ?? "Pauses du jour prises."
+        return presentation.extraBreak ? "\(used) Le mot de passe en accorde une de plus." : used
     }
 
     /// The attempt count and the earned break, on one line (R-98).

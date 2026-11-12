@@ -73,10 +73,6 @@ import XCTest
     func testLockedStepperRangesStopAtTheCurrentValue() {
         XCTAssertEqual(BlockListEditor.quotaRange(current: 30, stricterOnly: true), 5...30)
         XCTAssertEqual(BlockListEditor.quotaRange(current: 30, stricterOnly: false), 5...720)
-        XCTAssertEqual(BlockListEditor.breakCountRange(current: 3, stricterOnly: true), 1...3)
-        XCTAssertEqual(BlockListEditor.breakCountRange(current: 3, stricterOnly: false), 1...12)
-        XCTAssertEqual(BlockListEditor.breakMinutesRange(current: 5, stricterOnly: true), 1...5)
-        XCTAssertEqual(BlockListEditor.breakMinutesRange(current: 5, stricterOnly: false), 1...30)
     }
 
     // L3: a lock refusal is shown as is, not rewritten as « n’est pas un mot-clé ».
