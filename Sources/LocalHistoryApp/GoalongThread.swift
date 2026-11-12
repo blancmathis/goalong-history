@@ -159,14 +159,25 @@
     }
     #endif
 
-    private struct GoalongTraceKey: EnvironmentKey { static let defaultValue: String? = nil }
+    private struct GoalongTraceGeneration: EnvironmentKey { static let defaultValue: Int? = nil }
 
     extension EnvironmentValues {
-        /// The period a thread shows (T-054). A lazy stack gives a period shown again its old state back, its thread
-        /// already traced: the key tells such a return from a scroll back or a return to the page.
-        var goalongTraceKey: String? {
-            get { self[GoalongTraceKey.self] }
-            set { self[GoalongTraceKey.self] = newValue }
+        /// Counts the switches of period (T-054). A lazy stack gives a period shown again its old state back, its thread
+        /// already traced: the number tells such a return from a scroll back or a return to the page.
+        var goalongTraceGeneration: Int? {
+            get { self[GoalongTraceGeneration.self] }
+            set { self[GoalongTraceGeneration.self] = newValue }
+        }
+    }
+
+    /// Holds the switch count of a page: one more each time the period it shows differs from the last one.
+    /// Read from the page's body; asking twice for the same period gives the same number.
+    final class GoalongTraceCounter {
+        private var last: String?
+        private var count = 0
+        func generation(for period: String) -> Int {
+            if period != last { last = period; count += 1 }
+            return count
         }
     }
 
@@ -174,20 +185,20 @@
     /// A scroll back or a return to the page keeps the thread as it is. Reduce Motion, or « Animations » off in
     /// Réglages, shows it complete at once.
     private struct GoalongThreadTrace: ViewModifier {
-        /// The period traced last, on any thread: a period shown again after another one traces again.
-        @MainActor private static var lastTraced: String?
         @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
         @Environment(\.goalongReduceMotion) private var localReduceMotion
-        @Environment(\.goalongTraceKey) private var key
+        @Environment(\.goalongTraceGeneration) private var generation
         @State private var traced: CGFloat = 0
+        /// The switch this thread last showed: each thread keeps its own, so one thread cannot hide a switch from another.
+        @State private var seen: Int?
 
         func body(content: Content) -> some View {
             let still = systemReduceMotion || localReduceMotion
             content
                 .mask(alignment: .leading) { Rectangle().scaleEffect(x: still ? 1 : traced, anchor: .leading) }
                 .onAppearWhenShown {
-                    let switched = key != nil && key != Self.lastTraced
-                    if key != nil { Self.lastTraced = key }
+                    let switched = generation != nil && generation != seen
+                    seen = generation
                     guard !still else {
                         #if DEBUG
                         GoalongThreadTraceProbe.still += 1

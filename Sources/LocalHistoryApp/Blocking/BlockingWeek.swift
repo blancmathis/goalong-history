@@ -185,6 +185,7 @@ import SwiftUI
         .coordinateSpace(name: "blocking-week")
         .popover(item: $editing, attachmentAnchor: .rect(.rect(editing?.anchor ?? .zero)), arrowEdge: .bottom) { draft in
             BlockingRangePopover(controller: controller, draft: draft, now: now) { editing = nil }
+                .goalongMotion()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilitySummary)

@@ -718,6 +718,7 @@ struct BlockingMeter: View {
                                     .accessibilityIdentifier("blocking-freeze-keep")
                                     .popover(isPresented: $picking) {
                                         BlockingAppPicker(excluded: Set(kept.map(\.bundleIdentifier))) { kept.append($0) }
+                                            .goalongMotion()
                                     }
                             }
                         }

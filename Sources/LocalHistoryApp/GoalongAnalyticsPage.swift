@@ -33,6 +33,8 @@ struct GoalongAnalyticsPage: View {
     @StateObject private var system = GoalongSystemSourcesModel()
     /// The last complete read of calls, agenda, devices, Health and note, with its day; kept while the next one runs.
     @State private var shownSystem: (day: Date, value: GoalongSystemSourcesDay)?
+    /// T-054: counts the switches of period, for the thread trace (GoalongThread.swift).
+    @State private var traceCounter = GoalongTraceCounter()
     @State private var editingNote = false
     @State private var importingHealth = false
     @State private var focusMinutes = 25
@@ -174,8 +176,8 @@ struct GoalongAnalyticsPage: View {
                                 detail: $detail)
                                 .id(selectionID)
                                 // T-054: the lazy stack gives a period shown again its old state back (thread already
-                                // traced); the thread traces again when the period it shows is not the last one shown.
-                                .environment(\.goalongTraceKey, selectionID)
+                                // traced); a thread traces again when the switch count moved since it last showed.
+                                .environment(\.goalongTraceGeneration, traceCounter.generation(for: selectionID))
                         } else if analytics.paused {
                             EmptyView()
                         } else if analytics.error == nil && !loadRequest.permitsLoading {
