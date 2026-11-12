@@ -271,6 +271,38 @@ import XCTest
         XCTAssertTrue(store.apply(.save(next), now: now))
     }
 
+    /// N1: two surveillances at the same hours. A (« Verrouillé ») 85 % then 10 %, B 45 % then 45 %: A wins. Turning off
+    /// A's second stage is locally stronger, but A then loses to B, and 45 % applies instead of 85 %: refused. The same
+    /// edit made outside comes back at launch. Moving the light stage later (F4) stays free; a new free rule that would
+    /// win with a lighter veil is refused too.
+    func testJevTwoSurveillancesAreJudgedOnTheEffectApplied() {
+        var a = jevRange(.locked); a.settings = fallingStages
+        var b = jevRange(.free); b.settings = fallingStages
+        b.settings.stages[0].intensity = 45; b.settings.stages[1].intensity = 45
+        XCTAssertEqual(JevSurveillanceStore.strongest([a.settings, b.settings]), a.settings)
+        let d = defaults(), store = JevSurveillanceStore(defaults: d)
+        store.save(JevSurveillanceDocument(ranges: [a, b]))
+
+        var off = a; off.settings.stages[1].enabled = false
+        XCTAssertFalse(JevSurveillanceStore.weakens(a, off), "alone, a hardening")
+        XCTAssertEqual(JevSurveillanceStore.strongest([off.settings, b.settings]), b.settings, "B now wins: 45 % at 3 min")
+        XCTAssertEqual(JevSurveillanceStore.combinedLoss(old: a, new: off, in: store.document), .locked)
+        XCTAssertNotEqual(store.check(.save(off), now: now, calendar: paris), .allow)
+        XCTAssertFalse(store.apply(.save(off), now: now))
+        XCTAssertEqual(store.document.ranges.first?.settings, a.settings, "nothing written")
+        XCTAssertEqual(JevSurveillanceStore.restore(.init(ranges: [off, b]), floor: [a]).count, 1, "the prefs are restored too")
+
+        var later = a; later.settings.stages[1].afterMinutes = 6
+        XCTAssertEqual(store.check(.save(later), now: now, calendar: paris), .allow, "F4 stays free beside B")
+
+        var thief = jevRange(.free); thief.settings = b.settings; thief.settings.stages[1].intensity = 60
+        XCTAssertTrue(JevSurveillanceStore.score(thief.settings) > JevSurveillanceStore.score(a.settings))
+        XCTAssertEqual(store.check(.save(thief), now: now, calendar: paris), .refused(JevSurveillanceStore.combinedText))
+        var elsewhere = thief; elsewhere.weekdays = [6, 7]
+        XCTAssertEqual(store.check(.save(elsewhere), now: now, calendar: paris), .allow, "never at the same time")
+        XCTAssertEqual(store.check(.delete(b.id), now: now, calendar: paris), .allow, "removing the free one stays free")
+    }
+
     /// F5: a keychain that cannot read is said, not taken for « nothing protected »; one that cannot write refuses a
     /// change the launch would undo (a stop passed), and lets a hardening through.
     func testKeychainFailureIsToldAndNeverUndoesAStopLater() throws {

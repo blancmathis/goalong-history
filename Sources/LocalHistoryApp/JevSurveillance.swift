@@ -98,6 +98,7 @@ enum JevRangeWrite: Equatable {
     static let storageKey = "goalong.jev.surveillance.v1"
     static let unreadableText = "Réglages de surveillance illisibles : aucune surveillance jusqu’au prochain enregistrement."
     static let protectedText = "La surveillance de cette règle est en cours et « Verrouillé » : elle ne peut pas être retirée ni affaiblie tant qu’elle tourne."
+    static let combinedText = "Ce changement affaiblirait l’effet appliqué par une surveillance « Verrouillé » qui tourne en même temps : il ne peut pas être fait."
     @Published private(set) var document = JevSurveillanceDocument()
     @Published private(set) var error: String?
     /// P3 (T-059): the proof of a protected rule's stop, read before any weakening write.
@@ -133,7 +134,8 @@ enum JevRangeWrite: Equatable {
         var next = document, count = 0
         for old in floor where old.lock != .free {
             if let index = next.ranges.firstIndex(where: { $0.id == old.id }) {
-                if weakens(old, next.ranges[index]) { next.ranges[index] = old; count += 1 }
+                let now = next.ranges[index]
+                if weakens(old, now) || combinedLoss(old: old, new: now, in: next) != .free { next.ranges[index] = old; count += 1 }
             } else { next.ranges.append(old); count += 1 }
         }
         return (next, count)
@@ -162,6 +164,43 @@ enum JevRangeWrite: Equatable {
                   now.effect == was.effect || now.effect == .dimAndRed else { return false }
         }
         return true
+    }
+
+    /// N1 (T-059 lot 3): the settings in force are one rule's whole, the highest `score` (`strongest`), never a blend. A
+    /// rule kept at least as strong can still lose its rank, and the effect applied then falls (85 % → 45 %). So a change
+    /// of one rule (`old` → `new`, nil = absent) is also judged on what is applied with each rule that can run at the same
+    /// time: the other ranges whose hours meet it, and the session marks or default, which can run at any hour. The
+    /// winner of a set only depends on the winner of the others and this rule, so each other rule alone covers every
+    /// set. Returns the strongest stop of a rule whose applied effect would fall; `.free` = none. Pure.
+    static func combinedLoss(old: JevSurveillanceRange?, new: JevSurveillanceRange?,
+                             in document: JevSurveillanceDocument) -> BlockLock {
+        guard let id = old?.id ?? new?.id else { return .free }
+        func coverage(_ range: JevSurveillanceRange) -> Set<Int> {
+            BlockingController.programCoverage(BlockProgram(ranges: [range.program]))
+        }
+        let position = document.ranges.firstIndex { $0.id == id } ?? document.ranges.count
+        let minutes = [old, new].compactMap { $0 }.reduce(into: Set<Int>()) { $0.formUnion(coverage($1)) }
+        // `first` = listed before this rule: it wins a tie (`strongest` keeps the first of equal scores).
+        var others: [(settings: JevInterventionSettings, lock: BlockLock, first: Bool)] = []
+        for (index, range) in document.ranges.enumerated() where range.id != id && !coverage(range).isDisjoint(with: minutes) {
+            others.append((range.settings, range.lock, index < position))
+        }
+        if document.sessionDefault { others.append((document.sessionSettings, .free, false)) }
+        for mark in document.marks where mark.on { others.append((mark.settings, mark.lock, false)) }
+        var lost = BlockLock.free
+        func lose(_ lock: BlockLock) { if lock.strength > lost.strength { lost = lock } }
+        if let old, let new, !isAtLeast(new.settings, old.settings) { lose(old.lock) }
+        for other in others {
+            func wins(_ range: JevSurveillanceRange?) -> Bool {
+                guard let range else { return false }
+                let mine = score(range.settings), theirs = score(other.settings)
+                return mine > theirs || (mine == theirs && !other.first)
+            }
+            let before = wins(old) ? old!.settings : other.settings
+            let after = wins(new) ? new!.settings : other.settings
+            if !isAtLeast(after, before) { lose(wins(old) ? old!.lock : other.lock) }
+        }
+        return lost
     }
 
     /// The document exists: the migration ran on this Mac, or a block was saved.
@@ -300,16 +339,20 @@ enum JevRangeWrite: Equatable {
         case .save(let range): id = range.id
         case .delete(let value): id = value
         }
-        guard let old = document.ranges.first(where: { $0.id == id }), old.lock != .free else { return .allow }
-        switch write {
-        case .delete: break
-        case .save(let range):
-            if !Self.weakens(old, range) { return .allow }
-        }
-        if old.lock == .locked {
+        let old = document.ranges.first { $0.id == id }
+        var new: JevSurveillanceRange?
+        if case .save(let range) = write { new = range }
+        // The rule's own stop when it is removed or weakened; else the stop of a rule whose applied effect falls (N1).
+        var lock = BlockLock.free, own = false
+        if let old, old.lock != .free, new.map({ Self.weakens(old, $0) }) ?? true { lock = old.lock; own = true }
+        let shared = Self.combinedLoss(old: old, new: new, in: document)
+        if shared.strength > lock.strength { lock = shared; own = false }
+        guard lock != .free else { return .allow }
+        if lock == .locked {
+            guard own, let old else { return .refused(Self.combinedText) }
             return .refused(Self.isRunning(old, now: now, calendar: calendar) ? Self.protectedText : RuleStopGrant.lockedText)
         }
-        return stopGrant.covers(old.lock) ? .allow : .stop(old.lock)
+        return stopGrant.covers(lock) ? .allow : .stop(lock)
     }
 
     /// Nil = the write may be saved without asking. Otherwise the reason it needs the stop or is refused.
