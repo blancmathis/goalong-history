@@ -11,6 +11,15 @@ final class ActivityPeriodMotionTests: XCTestCase {
     func testEveryPeriodSwitchAnimatesAgainWhenThePeriodWasShownBefore() throws {
         let traces = try switchPeriods(animationsOff: false)
         XCTAssertEqual(traces.count, 4)
+        // macOS « Réduire les animations » wins over the app switch (the GitHub macOS runners have it on): then every
+        // switch must show a still thread, as with the switch off.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            for (index, trace) in traces.enumerated() {
+                XCTAssertEqual(trace.animated, 0, "switch \(index + 1) (\(trace.label)) animated under system Reduce Motion")
+                XCTAssertGreaterThan(trace.still, 0, "switch \(index + 1) (\(trace.label)) showed no thread at all")
+            }
+            return
+        }
         for (index, trace) in traces.enumerated() {
             XCTAssertGreaterThan(trace.animated, 0, "switch \(index + 1) (\(trace.label)) drew its thread without motion")
             XCTAssertEqual(trace.still, 0, "switch \(index + 1) (\(trace.label)) showed a still thread")
