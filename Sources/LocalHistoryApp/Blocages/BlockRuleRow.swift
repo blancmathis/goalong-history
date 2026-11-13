@@ -142,13 +142,12 @@ struct BlockRulePreset: Equatable {
         var evening = BlockRuleDraft(); evening.weekdays = Set(1...7); evening.startMinute = 21 * 60; evening.endMinute = 7 * 60
         evening.red = true; evening.intensity = 0.6
         var session = BlockRuleDraft(); session.listIDs = all
-        var deep = BlockRuleDraft(); deep.weekdays = Set(1...5); deep.startMinute = 9 * 60; deep.endMinute = 17 * 60
-        deep.listIDs = all; deep.lock = .typing
+        var deep = BlockRuleDraft(); deep.listIDs = all; deep.lock = .typing
         return [
             BlockRulePreset(id: "social-work", title: "Réseaux sociaux aux heures de travail", trigger: .schedule, draft: work),
             BlockRulePreset(id: "red-evening", title: "Écran rouge le soir", trigger: .schedule, draft: evening),
             BlockRulePreset(id: "session-25", title: "Séance de 25 min", trigger: .session, draft: session, minutes: 25),
-            BlockRulePreset(id: "deep-day", title: "Journée profonde", trigger: .schedule, draft: deep),
+            BlockRulePreset(id: "deep-day", title: "Journée profonde", trigger: .session, draft: deep, minutes: 8 * 60),
         ]
     }
 

@@ -493,12 +493,13 @@ struct BlocagesFoldView<Content: View>: View {
                                 pauses: rule.pauseBudget(blocking: blocking))
             }
             .buttonStyle(LHNavigationButtonStyle(cornerRadius: 0))
+            .frame(maxWidth: .infinity)
             .accessibilityLabel(rule.spokenLabel(now: now) + (rule.pauseBudget(blocking: blocking).map { " \($0)." } ?? ""))
             .accessibilityHint("Ouvre la règle")
             .accessibilityIdentifier("blocages-rule-\(index)")
             if state != .hidden {
                 Toggle("Règle active", isOn: Binding(get: { state != .off }, set: { toggle(rule, on: $0) }))
-                    .labelsHidden().toggleStyle(.goalongSwitch)
+                    .toggleStyle(.goalongSwitchOnly).fixedSize()
                     .padding(.trailing, LHTheme.cardInset)
                     .accessibilityIdentifier("blocages-rule-switch-\(index)")
             }
