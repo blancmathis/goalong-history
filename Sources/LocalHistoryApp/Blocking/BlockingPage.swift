@@ -768,11 +768,11 @@ struct BlockingMeter: View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("Écran rouge", isOn: $red).toggleStyle(.goalongSwitchInline).accessibilityIdentifier("blocking-now-red")
             if red { level("Rouge à", value: $intensity, range: BraiseController.minimumHoldIntensity...1) }
-            Toggle("Luminosité bloquée", isOn: Binding(get: { brightness != nil }, set: { brightness = $0 ? 0.4 : nil }))
+            Toggle("Luminosité limitée", isOn: Binding(get: { brightness != nil }, set: { brightness = $0 ? 0.4 : nil }))
                 .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("blocking-now-brightness")
                 .disabled(brightness == nil && !braise.canControlBrightness)
             if let value = brightness {
-                level("Luminosité à", value: Binding(get: { value }, set: { brightness = $0 }), range: BrightnessLockRules.levelRange)
+                level("Au plus", value: Binding(get: { value }, set: { brightness = $0 }), range: BrightnessLockRules.levelRange)
             } else if !braise.canControlBrightness {
                 Text("Aucun écran de ce Mac ne peut être réglé par Goalong.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }

@@ -164,8 +164,8 @@ a range keeps or raises its lock, never lowers it (« le verrou d’une plage pe
 Lengthening a range or adding a range at any lock stays allowed.
 
 The red screen's ranges and its brightness lock reuse this rule (docs/BRAISE.md « Garde-fous et
-plages protégées », « Verrou de luminosité »): a protected brightness lock can only get darker
-or stricter until its end, and arms the guard like a protected range.
+plages protégées », « Limite de luminosité »): a protected brightness limit (an upper limit: below
+it is free) can only get lower or stricter until its end, and arms the guard like a protected range.
 
 Any block in progress whose lock is not `free` (manual session or program window, `typing`,
 `password` or `locked`) also makes its lists stricter-only until its end.

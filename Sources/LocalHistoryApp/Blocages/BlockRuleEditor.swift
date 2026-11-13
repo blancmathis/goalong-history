@@ -945,15 +945,15 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         let reason = screenUnavailable ?? (braise?.canControlBrightness == false && draft.brightness == nil
             ? "Aucun écran de ce Mac ne peut être réglé par Goalong." : nil)
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Niveau fixé", isOn: Binding(get: { reason == nil && draft.brightness != nil },
+            Toggle("Limite", isOn: Binding(get: { reason == nil && draft.brightness != nil },
                                                        set: { draft.brightness = $0 ? 0.4 : nil }))
                 .toggleStyle(.goalongSwitchInline).frame(minHeight: 32)
                 .disabled(reason != nil)
-                .accessibilityLabel("Luminosité bloquée")
+                .accessibilityLabel("Luminosité limitée")
                 .accessibilityIdentifier("block-rule-brightness")
             if reason == nil, let value = draft.brightness {
-                level("Luminosité à", value: Binding(get: { value }, set: { draft.brightness = $0 }),
-                      in: BrightnessLockRules.levelRange, spoken: "Luminosité bloquée") { value, holding in
+                level("Au plus", value: Binding(get: { value }, set: { draft.brightness = $0 }),
+                      in: BrightnessLockRules.levelRange, spoken: "Luminosité au plus") { value, holding in
                     braise?.showPreview(brightness: value, holding: holding)
                 }
             }

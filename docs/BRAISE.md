@@ -40,7 +40,7 @@ Code : `RedScreenProgram.swift` (modèle et règles pures), `BraiseController.sw
   l’horloge, changer de fuseau ou modifier le fichier ne l’abrège pas. Au changement
   d’heure, la fin prend la seconde occurrence de l’heure répétée.
 - La **luminosité logicielle** du filtre est un confort : jamais verrouillée. La luminosité
-  matérielle se verrouille à part, avec le verrou de luminosité ci-dessous.
+  matérielle se limite à part, avec la limite de luminosité ci-dessous.
 - Une **panne technique** (écran incompatible, gamma refusé, gardien perdu) rend les
   couleurs tout de suite, même pendant une plage verrouillée.
 - 32 plages au maximum. Une plage qui passe minuit compte pour le jour où elle commence.
@@ -52,11 +52,14 @@ intensité reprise, mode Auto → « Suivre mes horaires ». `settings.json` n�
 une version plus ancienne de Goalong retrouve ses horaires. Un `ranges.json` abîmé est mis
 de côté puis reconstruit depuis `settings.json`. Tests : `RedScreenRangesTests`.
 
-## Verrou de luminosité (T-048 D2)
+## Limite de luminosité (T-048 D2 ; limite haute depuis T-059, 2026-11-13)
 
-Page Écran rouge, section **Verrou de luminosité**. Mathis choisit un niveau de luminosité
-matérielle (5–100 %). Tant que le verrou est allumé, tout changement (touches F1/F2, Centre
-de contrôle, Réglages, luminosité automatique) est ramené au niveau en 100 ms environ.
+Page Écran rouge, section **Limite de luminosité**. Mathis choisit une limite haute de
+luminosité matérielle (5–100 %). Plus bas reste libre (touches, Centre de contrôle) et
+gardé. Au-dessus, tout changement (touches F1/F2, Centre de contrôle, Réglages, luminosité
+automatique) est ramené à la limite en 100 ms environ. Allumer la limite ne monte jamais
+l’écran. L’aperçu de l’éditeur montre le niveau lui-même, puis rend le niveau d’avant
+(au plus la limite).
 Code : `BrightnessLock.swift` (état, règles pures, pilote, `BrightnessEnforcer`),
 `BraiseController` (« Brightness lock »). Tests : `BrightnessLockTests` (faux pilote).
 
@@ -67,17 +70,19 @@ Code : `BrightnessLock.swift` (état, règles pures, pilote, `BrightnessEnforcer
   général) sont listés « ne peut pas être réglé par Goalong » et laissés tels quels.
 - **Protection** : le verrou peut être protégé jusqu’à une heure (24 h au plus) avec la
   règle d’arrêt d’une plage (Difficile, Mot de passe, Verrouillé ; sans mot de passe =
-  Verrouillé). Pendant la protection, baisser le niveau ou renforcer agit tout de suite ;
-  éteindre, monter le niveau ou affaiblir la protection suit la règle d’arrêt. La fin suit
+  Verrouillé). Pendant la protection, baisser la limite ou renforcer agit tout de suite ;
+  retirer la limite, la monter ou affaiblir la protection suit la règle d’arrêt. La fin suit
   l’horloge continue des plages (avancer l’horloge ne l’abrège pas). À la fin, le verrou reste
   allumé, « Libre ». La protection arme le gardien et « Quitter » comme une plage protégée
   (`guardUntil`, `guardLock`).
-- **Plages** : une plage peut aussi tenir une luminosité (« Verrouiller aussi la
-  luminosité »). Le niveau à l’écran est le plus sombre du verrou et des plages en cours.
-  Pendant une plage protégée, la luminosité d’une plage peut seulement baisser.
-- Éteindre le verrou ne remet pas l’ancienne luminosité : l’écran reste au niveau verrouillé.
-- Stockage : `Braise/ranges.json` (`brightnessLock`, `brightness` par plage ; champs
-  optionnels, un ancien fichier se lit toujours).
+- **Plages** : une plage (ou une règle de Blocages) peut aussi porter une limite (« Limiter
+  aussi la luminosité »). La limite en vigueur est la plus basse de la limite manuelle et des
+  plages en cours. Pendant une plage protégée, la limite d’une plage peut seulement baisser
+  (la monter ou la retirer passe par l’arrêt de la règle).
+- Retirer la limite ne change pas la luminosité : l’écran reste où il est.
+- Stockage : `Braise/ranges.json` (`brightnessLock.level`, `brightness` par plage ; champs
+  optionnels, un ancien fichier se lit toujours). Un niveau fixe d’avant 2026-11-13 se lit
+  comme une limite à la même valeur, sans migration.
 
 Écrans : l’origine gamma de chaque écran est gardée par clé stable (fabricant, modèle,
 numéro de série). Un écran rebranché pendant le rouge retrouve sa vraie origine. Sans clé,

@@ -645,7 +645,7 @@ import AppleScreenTime
             case .locked(let redScreen):
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
-                alert.messageText = redScreen ? "Une plage d’écran rouge ou le verrou de luminosité est verrouillé" : "Un blocage est verrouillé"
+                alert.messageText = redScreen ? "Une plage d’écran rouge ou la limite de luminosité est verrouillée" : "Un blocage est verrouillé"
                 alert.informativeText = "Goalong reste ouvert jusqu’à la fin du verrou. Vous pouvez fermer la fenêtre."
                 alert.addButton(withTitle: "Fermer la fenêtre")
                 alert.addButton(withTitle: "Annuler")
@@ -654,8 +654,8 @@ import AppleScreenTime
             case .redScreenPage:
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 let alert = NSAlert()
-                alert.messageText = "Une plage d’écran rouge ou le verrou de luminosité est protégé"
-                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou le verrou de luminosité dans Garde-fous, « En cours »."
+                alert.messageText = "Une plage d’écran rouge ou la limite de luminosité est protégée"
+                alert.informativeText = "Pour quitter Goalong, arrêtez d’abord la plage ou la limite de luminosité dans Garde-fous, « En cours »."
                 alert.addButton(withTitle: "Ouvrir Écran rouge")
                 alert.addButton(withTitle: "Annuler")
                 if alert.runModal() == .alertFirstButtonReturn { BraiseRuntime.shared.onOpen?() }

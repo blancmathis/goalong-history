@@ -26,7 +26,7 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
     func userSets(_ value: Double, of display: UInt32 = 1) { lock.withLock { levels[display] = value } }
 }
 
-/// T-048 D2 « Verrou de luminosité ».
+/// T-048 D2 « Limite de luminosité » (an upper limit since T-059, 2026-11-13).
 @MainActor final class BrightnessLockTests: XCTestCase {
     private var paris: Calendar {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Europe/Paris")!; return calendar
@@ -67,7 +67,10 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
         c.enforceBrightnessNow()
         XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.3, accuracy: 0.0001)
         screens.userSets(0.9); c.enforceBrightnessNow()
-        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.3, accuracy: 0.0001, "F2 is undone")
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.3, accuracy: 0.0001, "F2 above the limit is undone")
+        screens.userSets(0.1); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.1, accuracy: 0.0001, "F1 below the limit stays")
+        screens.userSets(0.3)
         let corrections = c.brightnessCorrections
         c.enforceBrightnessNow(); XCTAssertEqual(c.brightnessCorrections, corrections, "nothing to do at the target")
         try c.setBrightnessLock(nil); screens.userSets(0.9); c.enforceBrightnessNow()
@@ -186,6 +189,87 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
         }
         let state = BrightnessLockState(level: 0.4, lock: .typing, end: wednesday22h, deadline: 12, boot: "b")
         XCTAssertEqual(try JSONDecoder().decode(BrightnessLockState.self, from: JSONEncoder().encode(state)), state)
+    }
+
+    // MARK: Upper limit (T-059, 2026-11-13)
+
+    func testBelowTheLimitIsLeftAloneAboveIsBroughtBack() throws {
+        let screens = FakeBrightness(level: 0.4), c = try controller(Clocks(wednesday22h), screens: screens)
+        try c.setBrightnessLock(BrightnessLockState(level: 0.6)); c.enforceBrightnessNow()
+        XCTAssertEqual(screens.sets, 0, "turning the limit on never raises the screen")
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.4, accuracy: 0.0001)
+        screens.userSets(0.2); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.2, accuracy: 0.0001, "lower is free")
+        screens.userSets(0.6 + BrightnessLockRules.tolerance / 2); c.enforceBrightnessNow()
+        XCTAssertEqual(screens.sets, 0, "at the limit (rounding included) nothing moves")
+        screens.userSets(0.9); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.6, accuracy: 0.0001, "higher comes back to the limit")
+        XCTAssertNil(BrightnessLockRules.correction(current: 0.1, limit: 0.6))
+        XCTAssertEqual(BrightnessLockRules.correction(current: 0.7, limit: 0.6), 0.6)
+        XCTAssertEqual(BrightnessLockRules.correction(current: 0.1, limit: 0.6, exact: true), 0.6, "a preview shows its level")
+    }
+
+    func testProtectedLimitRaisedOrRemovedNeedsTheStopLoweredIsFree() throws {
+        let clocks = Clocks(wednesday22h), screens = FakeBrightness(level: 0.2), c = try controller(clocks, screens: screens)
+        let start = protected(0.5, .typing, hours: 2, from: clocks.now)
+        try c.setBrightnessLock(start)
+        let end = try XCTUnwrap(c.brightnessProtection?.end)
+        var lower = try XCTUnwrap(c.brightnessLock); lower.level = 0.3
+        XCTAssertEqual(try c.setBrightnessLock(lower), .applied, "lowering the limit is a strengthening")
+        XCTAssertEqual(try XCTUnwrap(c.brightnessLock?.level), 0.3, accuracy: 0.0001)
+        var higher = try XCTUnwrap(c.brightnessLock); higher.level = 0.8
+        XCTAssertEqual(try c.setBrightnessLock(higher), .needsStop(lock: .typing, end: end), "raising the limit is a weakening")
+        XCTAssertEqual(try XCTUnwrap(c.brightnessLock?.level), 0.3, accuracy: 0.0001, "nothing changes before the stop")
+        XCTAssertEqual(c.pendingBrightness, .set(higher))
+        XCTAssertEqual(c.stopBrightnessLock(typed: "t", challenge: "t"), .stopped)
+        XCTAssertEqual(try XCTUnwrap(c.brightnessLock?.level), 0.8, accuracy: 0.0001, "the stop passed: the raise applies")
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.2, accuracy: 0.0001, "the member's lower level stays")
+        // Rules alone, under « Verrouillé ».
+        let held = protected(0.5, .locked, hours: 1, from: clocks.now)
+        var up = held; up.level = 0.6
+        var down = held; down.level = 0.4
+        XCTAssertNotNil(BrightnessLockRules.weakening(from: held, to: up, now: clocks.now, hasPassword: false))
+        XCTAssertNotNil(BrightnessLockRules.weakening(from: held, to: nil, now: clocks.now, hasPassword: false), "removing it")
+        XCTAssertNil(BrightnessLockRules.weakening(from: held, to: down, now: clocks.now, hasPassword: false))
+    }
+
+    /// A rule's range limit raised while it runs goes through its stop, even when a lower manual limit hides the effect.
+    func testProtectedRangeLimitRaisedNeedsTheStop() throws {
+        let clocks = Clocks(wednesday22h), screens = FakeBrightness(level: 0.1), c = try controller(clocks, screens: screens)
+        let range = BlockProgramRange(weekdays: [3], startMinute: 21 * 60, endMinute: 23 * 60, lock: .locked)
+        try c.saveRange(range, intensity: 0.5, brightness: .some(0.4))
+        c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.1, accuracy: 0.0001, "below the range's limit: free")
+        XCTAssertThrowsError(try c.saveRange(range, intensity: 0.5, brightness: .some(0.7)), "raised during a « Verrouillé » range")
+        XCTAssertNoThrow(try c.saveRange(range, intensity: 0.5, brightness: .some(0.3)), "lowered: free")
+        screens.userSets(0.9); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.3, accuracy: 0.0001)
+    }
+
+    /// Files written when the lock held one exact level decode unchanged; that level is read as the limit.
+    func testLegacyFixedLevelsDecodeAsTheLimit() throws {
+        // Same keys as before: `level` (manual) and `brightness` (ranges) are now limits, no migration.
+        let state = try JSONDecoder().decode(BrightnessLockState.self, from: Data(#"{"level":0.45,"lock":"typing","end":0}"#.utf8))
+        XCTAssertEqual(state.level, 0.45, accuracy: 0.0001); XCTAssertEqual(state.lock, .typing)
+        let id = UUID()
+        var old = RedScreenProgram(); old.brightness = [id: 0.3]; old.brightnessLock = state
+        let value = try JSONDecoder().decode(RedScreenProgram.self, from: JSONEncoder().encode(old))
+        XCTAssertEqual(value, old)
+        let screens = FakeBrightness(level: 0.2), enforcer = BrightnessEnforcer(driver: screens, runsTimer: false)
+        enforcer.update(target: state.level, displays: [1]); enforcer.tick()
+        XCTAssertEqual(screens.brightness(of: 1) ?? -1, 0.2, accuracy: 0.0001, "an old fixed level no longer raises the screen")
+        screens.userSets(0.9); enforcer.tick()
+        XCTAssertEqual(screens.brightness(of: 1) ?? -1, 0.45, accuracy: 0.0001)
+    }
+
+    /// The editor's preview shows its level itself, then the screen goes back to the member's own level.
+    func testPreviewShowsItsLevelThenGivesTheMembersLevelBack() throws {
+        let screens = FakeBrightness(level: 0.2), c = try controller(Clocks(wednesday22h), screens: screens)
+        try c.setBrightnessLock(BrightnessLockState(level: 0.6))
+        c.showPreview(brightness: 0.5, holding: true); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.5, accuracy: 0.0001)
+        c.endPreview(); c.enforceBrightnessNow()
+        XCTAssertEqual(try XCTUnwrap(screens.brightness(of: 1)), 0.2, accuracy: 0.0001)
     }
 
     func testRealDriverIsInertUnderTests() {

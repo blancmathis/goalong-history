@@ -138,11 +138,11 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
             if let error = controller.errorMessage { GoalongNote(error, tone: .warning).accessibilityIdentifier("braise-error") }
             if let lock = controller.brightnessLock {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Luminosité bloquée à \(GoalongUIFormat.percent(lock.level * 100))").font(.system(size: 14, weight: .semibold))
+                    Text("Luminosité au plus \(GoalongUIFormat.percent(lock.level * 100))").font(.system(size: 14, weight: .semibold))
                     if let held = controller.brightnessProtection {
                         brightnessProtectedNote(held)
                     } else {
-                        Button("Débloquer la luminosité") { setBrightnessLock(false) }.buttonStyle(LHSecondaryButtonStyle())
+                        Button("Retirer la limite") { setBrightnessLock(false) }.buttonStyle(LHSecondaryButtonStyle())
                             .accessibilityIdentifier("braise-live-brightness-off")
                     }
                     if let brightnessError { GoalongNote(brightnessError, tone: .warning) }
@@ -171,7 +171,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
             }, onCancel: { brightnessChallenge = nil; controller.cancelBrightnessStop() }).goalongControls()
         }
         .sheet(isPresented: $askingBrightnessPassword) {
-            RedScreenPasswordSheet(controller: controller, title: "Arrêter le verrou de luminosité",
+            RedScreenPasswordSheet(controller: controller, title: "Arrêter la limite de luminosité",
                                    stop: { controller.stopBrightnessLock(password: $0) },
                                    cancel: { controller.cancelBrightnessStop() }) { askingBrightnessPassword = false }.goalongControls()
         }
@@ -280,16 +280,17 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
         }.fixedSize(horizontal: false, vertical: true)
     }
 
-    /// « Verrou de luminosité » (T-048 D2): the hardware brightness held at one level; the same stop rules as a range.
+    /// « Limite de luminosité » (T-048 D2, upper limit since 2026-11-13): above it the brightness comes back to it, below
+    /// it is free; the same stop rules as a range.
     private var brightnessSection: some View {
-        GoalongSection(title: "Verrou de luminosité", subtitle: "Les touches de luminosité, le Centre de contrôle et Réglages sont ramenés au niveau choisi.") {
+        GoalongSection(title: "Limite de luminosité", subtitle: "Plus bas reste libre. Au-dessus, les touches, le Centre de contrôle et Réglages sont ramenés à la limite.") {
             LHCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    Toggle("Verrouiller la luminosité", isOn: Binding(get: { controller.brightnessLock != nil }, set: { setBrightnessLock($0) }))
+                    Toggle("Limiter la luminosité", isOn: Binding(get: { controller.brightnessLock != nil }, set: { setBrightnessLock($0) }))
                         .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("braise-brightness-lock")
                         .disabled(controller.brightnessLock == nil && !controller.canControlBrightness)
                     if let lock = controller.brightnessLock {
-                        slider("Luminosité verrouillée", value: Binding(get: { lock.level }, set: { controller.slideBrightnessLock($0) }),
+                        slider("Luminosité au plus", value: Binding(get: { lock.level }, set: { controller.slideBrightnessLock($0) }),
                                range: BrightnessLockRules.levelRange)
                         if let notice = controller.brightnessNotice {
                             Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
@@ -298,7 +299,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                         if let held = controller.brightnessProtection { brightnessProtectedNote(held) } else { brightnessProtectRow(lock) }
                         if controller.pendingBrightness != nil, controller.brightnessProtection != nil {
                             VStack(alignment: .leading, spacing: 8) {
-                                GoalongNote("Ce changement attend l’arrêt de la protection du verrou.")
+                                GoalongNote("Ce changement attend l’arrêt de la protection de la limite.")
                                 HStack(spacing: 8) {
                                     Button("Arrêter la protection…") { beginBrightnessStop() }.buttonStyle(LHSecondaryButtonStyle())
                                     Button("Annuler") { controller.cancelBrightnessStop() }.buttonStyle(LHQuietButtonStyle())
@@ -307,7 +308,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                         }
                     }
                     if let target = controller.brightnessTarget, target < (controller.brightnessLock?.level ?? 2) - BrightnessLockRules.tolerance {
-                        Text("Une plage en cours tient la luminosité à \(GoalongUIFormat.percent(target * 100)) au plus.")
+                        Text("Une plage en cours limite la luminosité à \(GoalongUIFormat.percent(target * 100)).")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }
                     if let brightnessError { GoalongNote(brightnessError, tone: .warning) }
@@ -319,7 +320,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
 
     private func brightnessProtectRow(_ lock: BrightnessLockState) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Protéger l’arrêt (et toute hausse)").foregroundStyle(LHTheme.secondaryText)
+            Text("Protéger l’arrêt (et toute hausse de la limite)").foregroundStyle(LHTheme.secondaryText)
             if let lists = BlockingRuntime.shared.controller {
                 BlockingLockPicker(controller: lists, lock: $protectLock, minimum: .typing)
             } else {
@@ -347,7 +348,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
     private func brightnessProtectedNote(_ held: (lock: BlockLock, end: Date)) -> some View {
         TimelineView(.periodic(from: .now, by: 30)) { _ in
             VStack(alignment: .leading, spacing: 8) {
-                Text("Verrou protégé jusqu’à \(GoalongUIFormat.time(held.end)), encore \(BlockingFormat.remaining(held.end.timeIntervalSince(controller.now)))")
+                Text("Limite protégée jusqu’à \(GoalongUIFormat.time(held.end)), encore \(BlockingFormat.remaining(held.end.timeIntervalSince(controller.now)))")
                     .font(.system(size: 13, weight: .semibold)).monospacedDigit()
                 BlockingLockExplainer(lock: held.lock)
                 if held.lock != .locked {
@@ -443,7 +444,7 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(BlockingFormat.range(range)).monospacedDigit()
-                        Text("\(BlockingFormat.weekdays(range.weekdays)) · rouge à \(GoalongUIFormat.percent(intensity * 100))\(brightness.map { " · luminosité \(GoalongUIFormat.percent($0 * 100))" } ?? "") · \(range.effectiveLock.title)")
+                        Text("\(BlockingFormat.weekdays(range.weekdays)) · rouge à \(GoalongUIFormat.percent(intensity * 100))\(brightness.map { " · luminosité au plus \(GoalongUIFormat.percent($0 * 100))" } ?? "") · \(range.effectiveLock.title)")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(LHQuietButtonStyle())
@@ -567,16 +568,16 @@ private struct RedScreenChallenge: Identifiable {
                     .accessibilityValue("\(Int(draft.intensity * 100)) pour cent")
             }
             VStack(alignment: .leading, spacing: 6) {
-                Toggle("Verrouiller aussi la luminosité", isOn: Binding(get: { draft.brightness != nil }, set: { draft.brightness = $0 ? 0.4 : nil }))
+                Toggle("Limiter aussi la luminosité", isOn: Binding(get: { draft.brightness != nil }, set: { draft.brightness = $0 ? 0.4 : nil }))
                     .toggleStyle(.goalongSwitchInline).accessibilityIdentifier("braise-range-brightness")
                     .disabled(draft.brightness == nil && !controller.canControlBrightness)
                 if draft.brightness == nil, !controller.canControlBrightness {
                     Text("Aucun écran de ce Mac ne peut être réglé par Goalong.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
                 if let level = draft.brightness {
-                    HStack { Text("Luminosité à"); Spacer(); Text(GoalongUIFormat.percent(level * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
+                    HStack { Text("Luminosité au plus"); Spacer(); Text(GoalongUIFormat.percent(level * 100)).monospacedDigit().foregroundStyle(LHTheme.secondaryText) }
                     Slider(value: Binding(get: { level }, set: { draft.brightness = $0 }), in: BrightnessLockRules.levelRange)
-                        .accessibilityLabel("Luminosité de la plage").accessibilityValue("\(Int(level * 100)) pour cent")
+                        .accessibilityLabel("Limite de luminosité de la plage").accessibilityValue("\(Int(level * 100)) pour cent")
                 }
             }
             VStack(alignment: .leading, spacing: 6) {

@@ -128,7 +128,7 @@ import XCTest
         XCTAssertTrue(spoken.contains(rule.title)); XCTAssertTrue(spoken.contains("Sécurité : \(BlockLock.typing.title)"))
         XCTAssertTrue(spoken.contains("En cours jusqu’à"), "the state is in words: \(spoken)")
         var held = red([morning()], intensity: 0); held.brightness = [held.program.ranges[0].id: 0.3]
-        XCTAssertEqual(rules([], held)[0].summary, "Luminosité à \(GoalongUIFormat.percent(30))")
+        XCTAssertEqual(rules([], held)[0].summary, "Luminosité au plus \(GoalongUIFormat.percent(30))")
     }
 
     // MARK: Plan
