@@ -57,9 +57,12 @@ public final class GuardEngine {
     private var onFinish: ((Int32) -> Void)?
 
     private var arming = GuardArming()
-    /// End (Unix seconds) of the last valid `guard-continuity`. Like the marker, only the healthy live app lowers or
-    /// removes it: a file deleted together with a kill changes nothing. Never kept across guard processes.
+    /// End (Unix seconds) of the last valid `guard-continuity`. A file read only pushes it later: a file deleted or
+    /// shortened, with or before a kill, changes nothing (an allowed « Quitter » ends the guard by its `user_quit`
+    /// token, « Retirer » and installers by unregistering it). Never kept across guard processes.
     private var continuityUntil: Double?
+    /// Continuity alone met a crash loop (`RelaunchBudget.continuityGiveUp`): this guard process no longer counts it.
+    private var continuityAbandoned = false
     private var budget = RelaunchBudget()
     private var watchedPID: Int32?
     private var watchedSince: TimeInterval = 0
@@ -149,7 +152,7 @@ public final class GuardEngine {
         // already rewritten the marker. A freshly relaunched app cannot disarm by not having written it yet.
         let appSpeaks = watchedPID.map { pid in files.readHealth()?.pid == pid } ?? false
         arming.apply(files.readMarker(now: wall), wall: wall, continuous: continuous, appAlive: appSpeaks)
-        updateContinuity(now: wall.timeIntervalSince1970, appSpeaks: appSpeaks)
+        updateContinuity(now: wall.timeIntervalSince1970)
         noteHealth()
         var input = GuardInput()
         input.bundlePresent = environment.bundlePresent()
@@ -203,14 +206,13 @@ public final class GuardEngine {
         writeState(armed: input.armed, continuity: input.continuity)
     }
 
-    /// Reads `guard-continuity`. The healthy live app is the authority (renewal, removal on « Quitter »); otherwise a
-    /// valid file may only push the end later.
-    private func updateContinuity(now: Double, appSpeaks: Bool) {
-        guard environment.continuityAllowed else { continuityUntil = nil; return }
+    /// Reads `guard-continuity`: a valid file may only push the end later (renewal by the app).
+    private func updateContinuity(now: Double) {
+        guard environment.continuityAllowed, !continuityAbandoned else { continuityUntil = nil; return }
         let read = files.readContinuity().flatMap {
             $0.isValid(now: now, bootTime: environment.bootTime(), bootSession: environment.bootSession()) ? $0.until : nil
         }
-        if appSpeaks { continuityUntil = read } else if let read, read > (continuityUntil ?? 0) { continuityUntil = read }
+        if let read, read > (continuityUntil ?? 0) { continuityUntil = read }
     }
 
     /// The remembered end still lies ahead, within the horizon (a wall clock set back disarms: fail open).
@@ -237,7 +239,15 @@ public final class GuardEngine {
         stopTimer?.cancel(); stopTimer = nil
         let wall = environment.wall(), continuous = environment.continuous()
         let healthy = files.readHealth()?.pid == pid
-        budget.recordDeath(healthy: healthy, lifetime: continuous - watchedSince)
+        let lifetime = continuous - watchedSince
+        // Continuity alone (no severe block): a death before `healthyReset` counts as early even when healthy, and a
+        // crash loop ends it. Each launch renews the horizon, so nothing else would ever stop it.
+        let continuityOnly = !arming.isArmed(continuous: continuous) && continuityActive(now: wall.timeIntervalSince1970)
+        budget.recordDeath(healthy: healthy && (!continuityOnly || lifetime >= RelaunchBudget.healthyReset), lifetime: lifetime)
+        if continuityOnly, budget.consecutiveEarlyDeaths >= RelaunchBudget.continuityGiveUp {
+            continuityAbandoned = true; continuityUntil = nil
+            environment.log("continuity: \(budget.consecutiveEarlyDeaths) early deaths in a row, no more reopening")
+        }
         watchedPID = nil
         death = GuardInput.Death(pid: pid, at: wall.timeIntervalSince1970)
         deathContinuous = continuous

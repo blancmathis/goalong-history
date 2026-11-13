@@ -147,7 +147,14 @@ enum GoalongGuardFiles {
 
     /// An installer runs with the documented override (`--unregister-guard` wrote `guard-override`):
     /// the app neither re-registers the guard nor ignores SIGTERM until the token is stale.
+    /// A token written for continuity only (T-059 lot 5) never counts here: a severe block keeps its guard and SIGTERM refusal.
     static func overrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
+        guard let token = files.readOverride(), token.isFresh(now: now.timeIntervalSince1970) else { return false }
+        return token.coversSevereBlock
+    }
+
+    /// Any fresh token, severe or continuity only: `--unregister-guard` ran, Goalong must not write `guard-continuity` again.
+    static func continuityOverrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
         files.readOverride()?.isFresh(now: now.timeIntervalSince1970) == true
     }
 
@@ -216,8 +223,10 @@ enum GuardUnregisterCommand {
         }
         // Override during a severe block: tell the running app first, so it does not register the guard
         // again when its XPC connection drops, and honours the installer's SIGTERM.
+        // Without a severe block the token is for continuity only: a block that starts in its 10 min keeps its guard.
         if writesOverride(marker: marker, now: Date(), continuity: files.continuityExists()) { // wall: guard protocol (spec K §4, wall)
-            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970)) // wall: guard protocol (spec K §4, wall)
+            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970, // wall: guard protocol (spec K §4, wall)
+                                              severe: writesOverride(marker: marker, now: Date()))) // wall: guard protocol (spec K §4, wall)
         }
         // Continuity never refuses an installer: its file goes, so the guard does not reopen the app being replaced.
         files.removeContinuity()
@@ -394,6 +403,10 @@ struct GuardEscalation {
     private(set) var continuityArmed = false
     private let continuityFiles: GuardFiles
     private let continuityWanted: () -> Bool
+    /// `--unregister-guard` ran (any fresh `guard-override`): the file is not written again before the bootout.
+    private let continuityOverride: @Sendable () -> Bool
+    /// « Retirer » clicked while a BTM call ran: removed as soon as it ends.
+    private var removalPending = false
     private let continuityArmDelay: TimeInterval
     private let startedAt = Date() // wall: delay before the first continuity write
     private var continuityWrittenAt = Date.distantPast
@@ -430,9 +443,13 @@ struct GuardEscalation {
          service: (any GuardServiceControlling)? = nil, probes: GuardLaunchProbes? = nil,
          pingInterval: TimeInterval = GoalongGuardClient.pingInterval,
          continuityFiles: GuardFiles? = nil, continuityWanted: (() -> Bool)? = nil,
-         continuityArmDelay: TimeInterval = GoalongGuardClient.continuityArmDelay) {
+         continuityOverride: (@Sendable () -> Bool)? = nil,
+         // A launch by the guard arms at once: the relaunch budget is its anti-loop (T-059 lot 5).
+         continuityArmDelay: TimeInterval = GoalongGuardFiles.isGuardRelaunch ? 0 : GoalongGuardClient.continuityArmDelay) {
         self.identity = identity
-        self.continuityFiles = continuityFiles ?? GoalongGuardFiles.standard
+        let files = continuityFiles ?? GoalongGuardFiles.standard
+        self.continuityFiles = files
+        self.continuityOverride = continuityOverride ?? { GoalongGuardFiles.continuityOverrideActive(files) }
         // Installed Goalong only, and only after « OK » on `GuardContinuityConsent.text`.
         self.continuityWanted = continuityWanted ?? { GoalongGuardGate.continuityAllowed && GuardContinuityConsent.isGiven(defaults) }
         self.continuityArmDelay = continuityArmDelay
@@ -517,7 +534,7 @@ struct GuardEscalation {
     /// Writes or renews `guard-continuity` while the member wants it, after `continuityArmDelay` of this launch;
     /// removes the file this process wrote once it is no longer wanted (or an installer's override runs).
     private func refreshContinuity(override: Bool) {
-        guard !override, continuityWanted() else {
+        guard continuityWanted(), !override, !continuityOverride() else {
             continuityTimer?.invalidate(); continuityTimer = nil
             if continuityArmed { continuityFiles.removeContinuity(); continuityArmed = false; continuityWrittenAt = .distantPast }
             return
@@ -547,7 +564,10 @@ struct GuardEscalation {
 
     func removeService() {
         // A BTM call in flight could register the service again right after this removal.
-        guard !severeArmed, !isWorking else { return }
+        guard !severeArmed else { return }
+        // A BTM call in flight (a refresh just pinged): remove once it ends, never drop the click.
+        guard !isWorking else { removalPending = true; return }
+        removalPending = false
         // T-059 lot 5: removing the service also ends the reopening after a forced quit, until a new consent.
         GuardContinuityConsent.record(defaults, accepted: false)
         continuityTimer?.invalidate(); continuityTimer = nil
@@ -638,7 +658,13 @@ struct GuardEscalation {
         let changed = status != next || component != next2
         status = next; statusRead = Date(); component = armed ? next2 : idleComponent // wall: status poll throttle
         if next == .enabled, defaults.string(forKey: Self.registeredBuildKey) == nil { defaults.set(build, forKey: Self.registeredBuildKey) }
-        if changed { onChange?() }
+        if removalPending {
+            removalPending = false
+            if !severeArmed { removeService(); return }
+        }
+        guard changed else { return }
+        // Module off, the keeper's client has no `onChange`: an armed client goes on itself (status read → ping).
+        if let onChange { onChange() } else if armed { _ = update(severeUntil: lastSevereUntil) }
     }
 
     private func closeConnection() {

@@ -69,12 +69,20 @@ public struct GuardState: Codable, Equatable, Sendable {
 
 /// `guard-override`: written by `--unregister-guard` when an installer runs with the documented override
 /// during a severe block. While fresh, the running app neither re-registers the guard nor ignores SIGTERM.
+/// Also written without a severe block while `guard-continuity` exists (T-059 lot 5): that token (`severe == false`)
+/// only stops the reopening after a forced quit, never a severe block nor the SIGTERM refusal.
 public struct GuardOverride: Codable, Equatable, Sendable {
     public static let lifetime: TimeInterval = 600
     public var pid: Int32
     /// Unix seconds.
     public var writtenAt: Double
-    public init(pid: Int32, writtenAt: Double) { self.pid = pid; self.writtenAt = writtenAt }
+    /// False: written for continuity only. Absent (older tokens) counts as true.
+    public var severe: Bool?
+    public init(pid: Int32, writtenAt: Double, severe: Bool = true) {
+        self.pid = pid; self.writtenAt = writtenAt; self.severe = severe
+    }
+    /// The installer's documented override was used during a severe block.
+    public var coversSevereBlock: Bool { severe != false }
     public func isFresh(now: Double) -> Bool { writtenAt <= now + 5 && now - writtenAt <= Self.lifetime }
 }
 

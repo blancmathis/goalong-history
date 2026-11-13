@@ -454,6 +454,20 @@ final class GuardEngineIntegrationTests: XCTestCase {
         XCTAssertNil(code)
     }
 
+    func testAContinuityFileDeletedBeforeTheKillStillRelaunches() throws {
+        let pid = try app.spawn()
+        continue_(pid: pid)
+        startEngine()
+        markHealthy(pid)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        XCTAssertTrue(files.removeContinuity())
+        usleep(300_000)
+        XCTAssertNil(code, "a removal the app did not announce with a token ends nothing")
+        kill(pid, SIGKILL)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 })
+        XCTAssertNil(code)
+    }
+
     func testAnUnrenewedContinuityHorizonEndsTheGuard() throws {
         // An app that dies before it renews: the guard stops at the end of the horizon (no endless loop).
         let pid = try app.spawn()

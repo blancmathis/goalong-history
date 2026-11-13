@@ -587,15 +587,17 @@ import XCTest
         XCTAssertEqual(client.update(severeUntil: nil), .notInstalled)
     }
 
-    /// H34-G3: a removal while a BTM call is in flight is ignored, never raced with it.
-    func testARemovalDuringWorkIsIgnored() {
-        let service = FakeService(); service.current = .enabled
+    /// H34-G3: a removal while a BTM call is in flight is never raced with it. T-059 lot 5: it runs once that call
+    /// ends, so « Retirer » is not lost to the ping its own refresh started.
+    func testARemovalDuringWorkWaitsForIt() {
+        let service = FakeService(); service.current = .enabled; service.removes = true
         let client = client(service)
         XCTAssertTrue(client.isWorking, "the status read at launch")
         client.removeService()
-        settle { client.canRemove }
-        settle { false }
-        XCTAssertEqual(service.unregisterCalls, 0)
+        XCTAssertEqual(service.unregisterCalls, 0, "not during the read")
+        settle { !client.isWorking && service.unregisterCalls == 1 }
+        XCTAssertEqual(service.unregisterCalls, 1)
+        XCTAssertFalse(client.canRemove)
     }
 
     /// H34-G3: the block ends before a queued registration runs: nothing is registered.
@@ -805,6 +807,42 @@ import XCTest
         XCTAssertTrue(GoalongGuardFiles.guardMayBeArmed(files), "an allowed « Quitter » leaves its user_quit token")
         GoalongGuardFiles.writeLease(GuardLease.update, seconds: 180, files: files)
         XCTAssertEqual(files.readLease()?.reason, GuardLease.update, "Sparkle's relaunch is awaited, not raced")
+    }
+
+    func testAContinuityOverrideNeverCoversASevereBlock() throws {
+        let files = try guardFiles()
+        XCTAssertTrue(files.writeOverride(GuardOverride(pid: 1, writtenAt: now.timeIntervalSince1970, severe: false)))
+        XCTAssertFalse(GoalongGuardFiles.overrideActive(files, now: now), "SIGTERM and a severe block ignore it")
+        XCTAssertTrue(GoalongGuardFiles.continuityOverrideActive(files, now: now))
+        XCTAssertTrue(files.writeOverride(GuardOverride(pid: 1, writtenAt: now.timeIntervalSince1970)))
+        XCTAssertTrue(GoalongGuardFiles.overrideActive(files, now: now), "the documented installer override")
+        // A continuity-only token stops the file, never the guard of a block that starts in its 10 min.
+        XCTAssertTrue(files.writeOverride(GuardOverride(pid: 1, writtenAt: Date().timeIntervalSince1970, severe: false)))
+        let service = FakeService(); service.current = .notRegistered
+        let wanted = Flag(); wanted.value = true
+        let (client, _) = continuityClient(service, files: files, wanted: wanted)
+        settle { !client.isWorking }
+        _ = client.update(severeUntil: nil)
+        settle { !client.isWorking }
+        XCTAssertFalse(files.continuityExists())
+        XCTAssertEqual(service.registerCalls, 0)
+        _ = client.update(severeUntil: now.addingTimeInterval(3600))
+        settle { !client.isWorking }
+        XCTAssertEqual(service.registerCalls, 1, "the severe block registers its guard")
+    }
+
+    func testRemoveDuringABTMCallIsDoneWhenItEnds() throws {
+        let files = try guardFiles()
+        let service = FakeService(); service.current = .enabled; service.removes = true
+        let wanted = Flag(); wanted.value = true
+        let (client, _) = continuityClient(service, files: files, wanted: wanted)
+        settle { !client.isWorking }
+        _ = client.update(severeUntil: nil) // the refresh that « Retirer » runs first starts a ping
+        XCTAssertTrue(client.isWorking)
+        client.removeService()
+        settle { !client.isWorking && service.unregisterCalls == 1 }
+        XCTAssertEqual(service.unregisterCalls, 1, "the click is not dropped")
+        XCTAssertFalse(files.continuityExists())
     }
 
     /// Q2: « Retirer le service de protection » shows while installed, disabled with its reason during any lock or

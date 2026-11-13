@@ -38,9 +38,15 @@ grep -qF 'environment.continuityAllowed = identity.bundleIdentifier == GuardIden
 CLIENT="$ROOT/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift"
 grep -qF 'static func isRefused(marker: GuardMarker, now: Date, environment: [String: String]) -> Bool {' "$CLIENT" \
   || fail "isRefused must depend on guard-until only"
-grep -qF 'writesOverride(marker: marker, now: Date(), continuity: files.continuityExists())' "$CLIENT" \
+# The command's own body (GuardUnregisterCommand.run), not the whole file: removeContinuity() is used elsewhere too.
+RUN_BODY="$(/usr/bin/awk '/^enum GuardUnregisterCommand/ {cmd=1} cmd && /static func run\(\) -> Never \{/ {on=1} on {print} on && /^    \}$/ {exit}' "$CLIENT")"
+[[ -n "$RUN_BODY" ]] || fail "GuardUnregisterCommand.run not found"
+[[ "$RUN_BODY" == *'writesOverride(marker: marker, now: Date(), continuity: files.continuityExists())'* ]] \
   || fail "--unregister-guard must leave guard-override while guard-continuity exists"
-grep -qF 'files.removeContinuity()' "$CLIENT" || fail "--unregister-guard must remove guard-continuity"
+[[ "$RUN_BODY" == *'severe: writesOverride(marker: marker, now: Date())'* ]] \
+  || fail "--unregister-guard: a continuity-only override must not cover a severe block"
+[[ "${RUN_BODY%%unregister(SMAppService*}" == *'files.removeContinuity()'* ]] \
+  || fail "--unregister-guard must remove guard-continuity before unregistering"
 for script in install.sh uninstall.sh scripts/install_from_source.sh; do
   body="$(/usr/bin/awk '/^release_blocking_guard\(\) *\{/ {on=1} on {print} on && /^\}/ {exit}' "$ROOT/$script")"
   [[ -n "$body" ]] || fail "$script: release_blocking_guard not found"

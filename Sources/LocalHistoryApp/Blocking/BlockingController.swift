@@ -294,7 +294,9 @@ import LocalHistoryQueryCLI
     /// password range included. A planned locked block was confirmed with the service in place: at its start
     /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
     var canRemoveGuard: Bool {
-        guardClient?.canRemove == true && lockedUntil == nil && guardUntil == nil
+        // `protectedUntil`, the predicate « Quitter » reads (T-059 lot 5): a protected red-screen range counts even
+        // without the block consent, now that continuity can register the service without it.
+        guardClient?.canRemove == true && lockedUntil == nil && protectedUntil == nil
             && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
     }
     /// T-059 lot 5: the button shows whenever the service is installed, disabled with this sentence while
