@@ -31,6 +31,8 @@ public struct GuardEnvironment {
     public var sessionEndWait: TimeInterval = GuardDecision.sessionEndWait
     /// Wait before the relaunch after a `session_end` refused by the cooldown (tests shorten it).
     public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
+    /// `guard-continuity` counts (T-059 lot 5): the installed Goalong only, never Goalong Dev or a test copy.
+    public var continuityAllowed = false
     /// Subscribes to loginwindow's session events (the real guard: distributed notifications).
     public var observeSession: (@escaping (GuardSessionEvent) -> Void) -> Void = { _ in }
 
@@ -55,6 +57,9 @@ public final class GuardEngine {
     private var onFinish: ((Int32) -> Void)?
 
     private var arming = GuardArming()
+    /// End (Unix seconds) of the last valid `guard-continuity`. Like the marker, only the healthy live app lowers or
+    /// removes it: a file deleted together with a kill changes nothing. Never kept across guard processes.
+    private var continuityUntil: Double?
     private var budget = RelaunchBudget()
     private var watchedPID: Int32?
     private var watchedSince: TimeInterval = 0
@@ -112,6 +117,7 @@ public final class GuardEngine {
     public func snapshot(_ reply: @escaping (GuardSnapshot) -> Void) {
         queue.async { [self] in
             let armed = arming.isArmed(continuous: environment.continuous())
+                || continuityActive(now: environment.wall().timeIntervalSince1970)
             reply(GuardSnapshot(build: environment.build, armed: armed, watchingPID: watchedPID,
                                 state: finished ? "finished" : !armed ? "idle" : watchedPID != nil ? "watching" : "relaunching"))
         }
@@ -143,10 +149,12 @@ public final class GuardEngine {
         // already rewritten the marker. A freshly relaunched app cannot disarm by not having written it yet.
         let appSpeaks = watchedPID.map { pid in files.readHealth()?.pid == pid } ?? false
         arming.apply(files.readMarker(now: wall), wall: wall, continuous: continuous, appAlive: appSpeaks)
+        updateContinuity(now: wall.timeIntervalSince1970, appSpeaks: appSpeaks)
         noteHealth()
         var input = GuardInput()
         input.bundlePresent = environment.bundlePresent()
         input.armed = arming.isArmed(continuous: continuous)
+        input.continuity = continuityActive(now: wall.timeIntervalSince1970)
         input.alivePID = watchedPID
         input.death = death
         input.release = death == nil && watchedPID != nil ? nil : files.readRelease()
@@ -173,10 +181,10 @@ public final class GuardEngine {
         let action = GuardDecision.decide(input)
         switch action {
         case .exit(let code):
-            environment.log(input.armed ? "app quit with a release token: guard ends" : "not armed: guard ends")
+            environment.log(input.armed || input.continuity ? "app quit with a release token: guard ends" : "not armed: guard ends")
             return finish(code)
         case .watch:
-            cancelWake(); stopPolling(); scheduleStopCheck(); scheduleEnd(continuous: continuous)
+            cancelWake(); stopPolling(); scheduleStopCheck(); scheduleEnd(continuous: continuous, now: wall.timeIntervalSince1970)
         case .relaunch(let delay):
             startPolling()
             if delay <= 0 { relaunch() } else { scheduleWake(after: delay) }
@@ -192,7 +200,23 @@ public final class GuardEngine {
             startPolling()
             scheduleWake(after: until - wall.timeIntervalSince1970)
         }
-        writeState(armed: input.armed)
+        writeState(armed: input.armed, continuity: input.continuity)
+    }
+
+    /// Reads `guard-continuity`. The healthy live app is the authority (renewal, removal on « Quitter »); otherwise a
+    /// valid file may only push the end later.
+    private func updateContinuity(now: Double, appSpeaks: Bool) {
+        guard environment.continuityAllowed else { continuityUntil = nil; return }
+        let read = files.readContinuity().flatMap {
+            $0.isValid(now: now, bootTime: environment.bootTime(), bootSession: environment.bootSession()) ? $0.until : nil
+        }
+        if appSpeaks { continuityUntil = read } else if let read, read > (continuityUntil ?? 0) { continuityUntil = read }
+    }
+
+    /// The remembered end still lies ahead, within the horizon (a wall clock set back disarms: fail open).
+    private func continuityActive(now: Double) -> Bool {
+        guard let until = continuityUntil else { return false }
+        return until > now && until <= now + GuardContinuity.maximumHorizon
     }
 
     private func startWatching(_ pid: Int32) {
@@ -292,14 +316,18 @@ public final class GuardEngine {
             guard let self, let pid = self.watchedPID else { return }
             if self.environment.isStopped(pid) { self.environment.log("app \(pid) was stopped: resumed"); self.environment.resume(pid) }
             // Timers pause during sleep: the continuous clock decides whether the block is over.
-            if !self.arming.isArmed(continuous: self.environment.continuous()) { self.evaluate() } else { self.noteHealth() }
+            if !self.arming.isArmed(continuous: self.environment.continuous()),
+               !self.continuityActive(now: self.environment.wall().timeIntervalSince1970) { self.evaluate() } else { self.noteHealth() }
         }
         stopTimer = timer
         timer.activate()
     }
 
-    private func scheduleEnd(continuous: TimeInterval) {
-        guard let remaining = arming.remaining(continuous: continuous) else { return }
+    /// Wakes at the end of the armed window or of the continuity horizon, whichever comes first.
+    private func scheduleEnd(continuous: TimeInterval, now: Double) {
+        let continuityRemaining = continuityActive(now: now) ? continuityUntil.map { $0 - now } : nil
+        let ends = [arming.remaining(continuous: continuous), continuityRemaining].compactMap { $0 }
+        guard let remaining = ends.min() else { return }
         scheduleWake(after: remaining + 0.05)
     }
 
@@ -324,8 +352,9 @@ public final class GuardEngine {
 
     private func stopPolling() { pollTimer?.cancel(); pollTimer = nil }
 
-    private func writeState(armed: Bool) {
-        var state = GuardState(build: environment.build, armed: armed, lastRelaunch: lastRelaunch, gapMs: gapMs, budget: budget.label)
+    private func writeState(armed: Bool, continuity: Bool = false) {
+        var state = GuardState(build: environment.build, armed: armed || continuity, lastRelaunch: lastRelaunch, gapMs: gapMs,
+                               budget: budget.label)
         if armed, !finished, let end = arming.endContinuous {
             state.endContinuous = end
             state.markerDate = arming.markerDate?.timeIntervalSince1970

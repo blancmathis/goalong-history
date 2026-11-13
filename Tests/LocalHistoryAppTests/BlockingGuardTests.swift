@@ -680,5 +680,151 @@ import XCTest
         files.clearTokens()
         XCTAssertNil(files.readLease())
     }
+
+    // MARK: T-059 lot 5: Goalong reopens after a forced quit (guard-continuity)
+
+    private func guardFiles() throws -> GuardFiles {
+        let root = try store().directory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return GoalongGuardFiles.files(for: root)
+    }
+
+    func testContinuityNeverRefusesAnInstallerButLeavesTheOverride() {
+        XCTAssertFalse(GuardUnregisterCommand.isRefused(marker: .absent, now: now, environment: [:]), "continuity alone never refuses")
+        XCTAssertTrue(GuardUnregisterCommand.writesOverride(marker: .absent, now: now, continuity: true),
+                      "the running app must not register the guard again before the bootout")
+        XCTAssertFalse(GuardUnregisterCommand.writesOverride(marker: .absent, now: now, continuity: false))
+    }
+
+    func testContinuityGateIsTheInstalledReleaseOnly() {
+        let home = URL(fileURLWithPath: "/Users/someone", isDirectory: true)
+        let release: [String: Any] = ["CFBundleIdentifier": "ai.goalong.localhistory"]
+        let dev: [String: Any] = ["CFBundleIdentifier": "ai.goalong.localhistory.dev", "GoalongBuildChannel": "dev"]
+        func allowed(_ path: String, _ info: [String: Any], test: Bool = false) -> Bool {
+            GoalongGuardGate.continuityAllowed(bundleURL: URL(fileURLWithPath: path, isDirectory: true), info: info, home: home, isTest: test)
+        }
+        XCTAssertTrue(allowed("/Applications/Goalong History.app", release))
+        XCTAssertFalse(allowed("/Users/someone/Applications/Goalong Dev.app", dev), "Goalong Dev")
+        XCTAssertFalse(allowed("/Users/someone/Downloads/Goalong History.app", release), "a copy outside Applications")
+        XCTAssertFalse(allowed("/Applications/Goalong History.app", release, test: true), "a test runner")
+        XCTAssertFalse(GoalongGuardGate.continuityAllowed, "this test run")
+    }
+
+    func testContinuityConsentIsAskedOnceAndKeepsTheBlockConsent() {
+        let defaults = UserDefaults(suiteName: "goalong-guard-client-tests-" + UUID().uuidString)!
+        XCTAssertTrue(GuardContinuityConsent.shouldAsk(allowed: true, defaults: defaults))
+        XCTAssertFalse(GuardContinuityConsent.shouldAsk(allowed: false, defaults: defaults), "Goalong Dev, copies and tests: never")
+        GuardConsent.record(defaults)
+        XCTAssertTrue(GuardContinuityConsent.shouldAsk(allowed: true, defaults: defaults), "the block consent (v2) is not this one")
+        GuardContinuityConsent.record(defaults, accepted: false)
+        XCTAssertFalse(GuardContinuityConsent.isGiven(defaults))
+        XCTAssertFalse(GuardContinuityConsent.shouldAsk(allowed: true, defaults: defaults), "a refusal is remembered")
+        GuardContinuityConsent.record(defaults, accepted: true)
+        XCTAssertTrue(GuardContinuityConsent.isGiven(defaults))
+        XCTAssertFalse(GuardContinuityConsent.shouldAsk(allowed: true, defaults: defaults))
+        XCTAssertTrue(GuardConsent.isGiven(defaults), "v2 untouched")
+        XCTAssertEqual(GuardConsent.version, 2)
+        XCTAssertTrue(GuardContinuityConsent.text.contains("forcé à quitter"))
+        XCTAssertTrue(GuardContinuityConsent.text.contains("« Quitter »"))
+        XCTAssertFalse(GuardConsent.text.contains("ne tourne que"), "the service no longer runs only during blocks")
+    }
+
+    private func continuityClient(_ service: FakeService, files: GuardFiles, wanted: Flag, override: Flag = Flag(),
+                                  delay: TimeInterval = 0) -> (GoalongGuardClient, UserDefaults) {
+        let identity = GuardIdentity(bundleIdentifier: "ai.goalong.localhistory", channel: nil)!
+        let defaults = UserDefaults(suiteName: "goalong-guard-client-tests-" + UUID().uuidString)!
+        let client = GoalongGuardClient(identity: identity, defaults: defaults, overrideActive: { override.value }, service: service,
+                                        probes: GuardLaunchProbes(ping: { .running }, resumeStoppedGuards: { false }, kickstart: { 0 }),
+                                        continuityFiles: files, continuityWanted: { wanted.value }, continuityArmDelay: delay)
+        return (client, defaults)
+    }
+
+    func testTheServiceIsRegisteredForContinuityOnlyAfterConsent() throws {
+        let files = try guardFiles()
+        let service = FakeService(); service.current = .notRegistered
+        let wanted = Flag()
+        let (client, _) = continuityClient(service, files: files, wanted: wanted)
+        settle { !client.isWorking }
+        XCTAssertEqual(client.update(severeUntil: nil), .notInstalled)
+        settle { !client.isWorking }
+        XCTAssertEqual(service.registerCalls, 0, "refused or not asked: nothing registers")
+        XCTAssertFalse(files.continuityExists())
+        wanted.value = true
+        XCTAssertEqual(client.update(severeUntil: nil), .notInstalled, "continuity alone never changes « Niveau »")
+        settle { !client.isWorking }
+        XCTAssertEqual(service.registerCalls, 1)
+        XCTAssertEqual(files.readContinuity()?.pid, getpid())
+        XCTAssertTrue(client.continuityArmed)
+        XCTAssertFalse(client.isWatchingForStop, "the 2 s SIGSTOP watch stays for severe blocks")
+        let until = try XCTUnwrap(files.readContinuity()?.until)
+        XCTAssertEqual(until - Date().timeIntervalSince1970, GuardContinuity.horizon, accuracy: 5)
+    }
+
+    func testContinuityWaitsForALaunchToLive() throws {
+        let files = try guardFiles()
+        let service = FakeService(); service.current = .enabled
+        let wanted = Flag(); wanted.value = true
+        let (client, _) = continuityClient(service, files: files, wanted: wanted, delay: 30)
+        settle { !client.isWorking }
+        _ = client.update(severeUntil: nil)
+        XCTAssertFalse(files.continuityExists(), "an app that dies at once is not reopened again and again")
+        XCTAssertFalse(client.continuityArmed)
+    }
+
+    func testRemovingTheServiceEndsContinuityAndAnOverrideStopsIt() throws {
+        let files = try guardFiles()
+        let service = FakeService(); service.current = .enabled; service.removes = true
+        let wanted = Flag(), override = Flag()
+        let (client, defaults) = continuityClient(service, files: files, wanted: wanted, override: override)
+        GuardContinuityConsent.record(defaults, accepted: true)
+        wanted.value = true
+        settle { !client.isWorking }
+        _ = client.update(severeUntil: nil)
+        XCTAssertTrue(files.continuityExists())
+        override.value = true
+        _ = client.update(severeUntil: nil)
+        XCTAssertFalse(files.continuityExists(), "an installer's override: the file goes, nothing registers again")
+        override.value = false
+        _ = client.update(severeUntil: nil)
+        settle { !client.isWorking }
+        XCTAssertTrue(files.continuityExists())
+        client.removeService()
+        settle { !client.isWorking }
+        XCTAssertEqual(service.unregisterCalls, 1, "continuity alone does not block « Retirer »")
+        XCTAssertFalse(files.continuityExists())
+        XCTAssertFalse(GuardContinuityConsent.isGiven(defaults))
+        XCTAssertTrue(GuardContinuityConsent.isAnswered(defaults), "never asked again after a removal")
+    }
+
+    func testTheQuitTokenAndTheLeaseFollowContinuity() throws {
+        let files = try guardFiles()
+        XCTAssertFalse(GoalongGuardFiles.guardMayBeArmed(files))
+        GoalongGuardFiles.writeLease(GuardLease.update, seconds: 180, files: files)
+        XCTAssertNil(files.readLease())
+        XCTAssertTrue(GoalongGuardFiles.writeContinuity(files))
+        XCTAssertTrue(GoalongGuardFiles.guardMayBeArmed(files), "an allowed « Quitter » leaves its user_quit token")
+        GoalongGuardFiles.writeLease(GuardLease.update, seconds: 180, files: files)
+        XCTAssertEqual(files.readLease()?.reason, GuardLease.update, "Sparkle's relaunch is awaited, not raced")
+    }
+
+    /// Q2: « Retirer le service de protection » shows while installed, disabled with its reason during any lock or
+    /// protected rule (`canRemoveGuard`, the only rule).
+    func testTheRemoveButtonIsDisabledWithItsReasonDuringALock() throws {
+        let (locked, _, _) = try controller(BlockingDocument(lists: [list], sessions: [session(.locked)])) { [now] in now }
+        XCTAssertTrue(locked.showsRemoveGuard)
+        XCTAssertFalse(locked.canRemoveGuard)
+        XCTAssertEqual(locked.guardRemovalRefusal, BlockingController.guardRemovalBlocked)
+        let weekday = Calendar.current.component(.weekday, from: now) % 7 + 1
+        var program = list
+        program.program = BlockProgram(ranges: [BlockProgramRange(weekdays: [weekday], startMinute: 540, endMinute: 720, lock: .password)])
+        let (rule, _, _) = try controller(BlockingDocument(lists: [program])) { [now] in now }
+        XCTAssertEqual(rule.guardRemovalRefusal, BlockingController.guardRemovalBlocked, "a protected rule not running yet")
+        let (free, client, _) = try controller(BlockingDocument(lists: [list])) { [now] in now }
+        XCTAssertTrue(free.canRemoveGuard)
+        XCTAssertNil(free.guardRemovalRefusal)
+        client.canRemove = false
+        XCTAssertFalse(free.showsRemoveGuard, "no service installed: no button, no sentence")
+        XCTAssertNil(free.guardRemovalRefusal)
+    }
 }
 #endif

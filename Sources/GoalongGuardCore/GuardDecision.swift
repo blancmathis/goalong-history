@@ -49,6 +49,9 @@ public struct GuardArming: Equatable, Sendable {
 public struct GuardInput: Equatable, Sendable {
     public var bundlePresent = true
     public var armed = false
+    /// A valid `guard-continuity` (T-059 lot 5): reopen after a forced quit even without a severe block.
+    /// Same release and lease rules: an allowed « Quitter » (`user_quit`) still ends the guard.
+    public var continuity = false
     /// The app's pid when it runs.
     public var alivePID: Int32?
     /// The app's last observed death; nil at the guard's own start (no death seen).
@@ -128,7 +131,7 @@ public enum GuardDecision {
     public static let leasesPerHour = 3
 
     public static func decide(_ input: GuardInput) -> GuardAction {
-        guard input.bundlePresent, input.armed else { return .exit(0) }
+        guard input.bundlePresent, input.armed || input.continuity else { return .exit(0) }
         if let pid = input.alivePID { return .watch(pid) }
         if let release = validRelease(input) {
             if release.reason == GuardRelease.userQuit { return .exit(0) }

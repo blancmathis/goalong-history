@@ -1073,11 +1073,20 @@ struct BlockingLockExplainer: View {
                         .accessibilityIdentifier("blocking-level-help")
                 }
             }
-            if controller.canRemoveGuard {
-                // Without any lock, running, planned or weekly: the member may take the background service away.
-                Button("Retirer le service de protection") { controller.removeGuardService() }
-                    .buttonStyle(LHQuietButtonStyle())
-                    .accessibilityIdentifier("blocking-remove-guard")
+            if controller.showsRemoveGuard {
+                // Without any lock, running, planned or weekly: the member may take the background service away
+                // (T-059 lot 5: the reopening after a forced quit goes with it). Otherwise disabled, with the reason.
+                VStack(alignment: .leading, spacing: 4) {
+                    Button("Retirer le service de protection") { controller.removeGuardService() }
+                        .buttonStyle(LHQuietButtonStyle())
+                        .disabled(!controller.canRemoveGuard)
+                        .accessibilityIdentifier("blocking-remove-guard")
+                    if let refusal = controller.guardRemovalRefusal {
+                        Text(refusal).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("blocking-remove-guard-refusal")
+                    }
+                }
             }
             GoalongDisclosureGroup("Ce qui reste contournable") {
                 VStack(alignment: .leading, spacing: 8) {
