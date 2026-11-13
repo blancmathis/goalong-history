@@ -42,7 +42,8 @@ struct RedScreenProgram: Codable, Equatable {
     var skips: [UUID: Date] = [:]
     var holds: [UUID: Hold] = [:]
     var raise: Raise?
-    /// Hardware brightness of each range (« Verrou de luminosité », T-048 D2), 0.05…1. Absent = the range leaves it.
+    /// Upper limit of the hardware brightness of each range (« Limite de luminosité », T-048 D2), 0.05…1. Absent = the
+    /// range leaves it. Older files (one exact level) decode as that limit.
     var brightness: [UUID: Double]?
     /// The manual brightness lock, nil = off (T-048 D2).
     var brightnessLock: BrightnessLockState?
@@ -207,7 +208,24 @@ enum RedScreenRules {
             let before = BlockingController.programCoverage(BlockProgram(ranges: old.ranges.filter { (current.brightness(of: $0.id) ?? 2) <= level }))
             let after = BlockingController.programCoverage(BlockProgram(ranges: new.ranges.filter {
                 (next.brightness(of: $0.id) ?? 2) <= level + BrightnessLockRules.tolerance }))
-            if !before.isSubset(of: after) { return "la luminosité d’une plage peut seulement baisser." }
+            if !before.isSubset(of: after) { return "la limite de luminosité d’une plage peut seulement baisser." }
+        }
+        return nil
+    }
+
+    /// P3 (T-059): the stop a change needs, running or not. Each protected level (« Difficile » and stronger) keeps its
+    /// ranges, minutes, red and brightness unless that level's stop is passed. Nil = the change only adds or hardens.
+    static func weakeningStop(from current: RedScreenProgram, to next: RedScreenProgram, hasPassword: Bool) -> BlockLock? {
+        for lock in [BlockLock.locked, .password, .typing] {
+            func atLeast(_ value: RedScreenProgram) -> RedScreenProgram {
+                var copy = value
+                copy.program.ranges = value.program.ranges.filter { effectiveLock($0.effectiveLock, hasPassword: hasPassword).strength >= lock.strength }
+                copy.follows = current.follows
+                return copy
+            }
+            let old = atLeast(current)
+            guard !old.enabledProgram.ranges.isEmpty else { continue }
+            if weakening(from: old, to: atLeast(next), hasPassword: hasPassword) != nil { return lock }
         }
         return nil
     }

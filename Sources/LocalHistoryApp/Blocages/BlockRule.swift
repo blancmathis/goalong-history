@@ -274,7 +274,7 @@ extension BlockRule {
         if let red {
             var screen: [String] = []
             if red.intensity > 0 || red.brightness == nil { screen.append("écran rouge à \(GoalongUIFormat.percent(red.intensity * 100))") }
-            if let level = red.brightness { screen.append("luminosité à \(GoalongUIFormat.percent(level * 100))") }
+            if let level = red.brightness { screen.append("luminosité au plus \(GoalongUIFormat.percent(level * 100))") }
             parts.append(screen.joined(separator: ", "))
         }
         if jev != nil { parts.append("surveillance") }

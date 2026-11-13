@@ -3,12 +3,14 @@ import CoreGraphics
 import Darwin
 import Foundation
 
-/// « Verrou de luminosité » (T-048 D2): the hardware brightness of the screens Goalong can drive is held at `level`.
+/// « Limite de luminosité » (T-048 D2, upper limit since T-059 2026-11-13): the hardware brightness of the screens Goalong
+/// can drive stays at or below `level`. Below is free; above is brought back to `level`. A file written when the lock held
+/// one exact level decodes unchanged: that level is now the limit.
 /// Stored in `Braise/ranges.json` next to the red screen's ranges (same protections, same continuous clock).
 /// While `end` is ahead and `lock` is not « Libre », turning it off or raising the level follows the stop rule of a
 /// protected red-screen range (docs/BLOCKING.md « Range lock »).
 struct BrightnessLockState: Codable, Equatable {
-    /// Hardware brightness 0…1 (`BrightnessLockRules.levelRange`).
+    /// Upper limit of the hardware brightness 0…1 (`BrightnessLockRules.levelRange`). Key kept as `level` (old files).
     var level: Double
     /// Stop rule while protected; nil = « Libre ».
     var lock: BlockLock?
@@ -29,7 +31,7 @@ enum BrightnessLockChange: Equatable {
 
 /// Pure rules of the brightness lock.
 enum BrightnessLockRules {
-    /// Below 5 % a built-in panel is almost black: never lock lower.
+    /// Below 5 % a built-in panel is almost black: never limit lower (the member may still go lower by hand).
     static let levelRange: ClosedRange<Double> = 0.05...1
     /// A protection lasts at most 24 h, like a freeze.
     static let maximumProtection: TimeInterval = 24 * 3_600
@@ -46,12 +48,12 @@ enum BrightnessLockRules {
         return (RedScreenRules.effectiveLock(state.effectiveLock, hasPassword: hasPassword), end)
     }
 
-    /// While protected, a change may only make the lock stricter: same or lower level, same or stronger stop rule,
-    /// same or later end. Nil = allowed.
+    /// While protected, a change may only make the lock stricter: same or lower limit, same or stronger stop rule,
+    /// same or later end. Raising or removing the limit is a weakening. Nil = allowed.
     static func weakening(from current: BrightnessLockState?, to next: BrightnessLockState?, now: Date, hasPassword: Bool) -> String? {
         guard let held = protection(current, now: now, hasPassword: hasPassword), let current else { return nil }
-        guard let next else { return "le verrou reste allumé jusqu’à la fin de sa protection." }
-        if next.level > current.level + tolerance { return "la luminosité verrouillée peut seulement baisser." }
+        guard let next else { return "la limite reste en place jusqu’à la fin de sa protection." }
+        if next.level > current.level + tolerance { return "la limite de luminosité peut seulement baisser." }
         let nextLock = RedScreenRules.effectiveLock(next.effectiveLock, hasPassword: hasPassword)
         if nextLock.strength < held.lock.strength || (next.end ?? .distantPast) < held.end.addingTimeInterval(-1) {
             return "la protection du verrou peut seulement monter."
@@ -59,9 +61,16 @@ enum BrightnessLockRules {
         return nil
     }
 
-    /// The level on screen: the darkest of the manual lock and the ranges in progress that carry a brightness.
+    /// The limit in force: the lowest of the manual limit and the ranges in progress that carry a brightness.
     static func target(manual: BrightnessLockState?, windows: [RedScreenWindow]) -> Double? {
         ([manual?.level] + windows.map(\.brightness)).compactMap { $0 }.map(clamp).min()
+    }
+
+    /// A screen at `current` under `limit`: the level to set, nil = leave it. At or below the limit (rounding included)
+    /// the member's choice stays. `exact` (a preview) sets the level itself, up or down.
+    static func correction(current: Double, limit: Double, exact: Bool = false) -> Double? {
+        let gap = current - limit
+        return (exact ? abs(gap) : gap) > tolerance ? limit : nil
     }
 
     /// The next end time of « HH:MM » after `now` (today, or tomorrow when already past).
@@ -138,8 +147,9 @@ final class DisplayServicesBrightness: DisplayBrightnessDriving, @unchecked Send
     }
 }
 
-/// Puts the screens back to the target whenever anything (keys F1/F2, Control Centre, Settings, ambient light) moves
-/// them. Polls every `interval` on its own queue while a target is set; nothing runs without one.
+/// Brings the screens back to the limit whenever anything (keys F1/F2, Control Centre, Settings, ambient light) moves
+/// them above it; below it they are left alone. A preview (`exact`) holds one level. Polls every `interval` on its own
+/// queue while a target is set; nothing runs without one.
 final class BrightnessEnforcer: @unchecked Sendable {
     static let interval: TimeInterval = 0.1
     private let driver: DisplayBrightnessDriving
@@ -147,23 +157,25 @@ final class BrightnessEnforcer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ai.goalong.brightness-lock", qos: .userInitiated)
     private let state = NSLock()
     private var target: Double?
+    private var exact = false
     private var displays: [UInt32] = []
     private var timer: DispatchSourceTimer?
     private var correctionCount = 0
 
     init(driver: DisplayBrightnessDriving, runsTimer: Bool) { self.driver = driver; self.runsTimer = runsTimer }
 
-    /// Corrections made since start (each one = a screen put back to the target).
+    /// Corrections made since start (each one = a screen brought back to the limit, or to a preview's level).
     var corrections: Int { state.withLock { correctionCount } }
     var isRunning: Bool { state.withLock { timer != nil } }
 
-    /// A new target (nil stops). The displays are the controllable ones, read on the main thread by the controller.
-    func update(target value: Double?, displays ids: [UInt32]) {
+    /// A new limit (nil stops); `exact` = hold that level itself (a preview). The displays are the controllable ones,
+    /// read on the main thread by the controller.
+    func update(target value: Double?, displays ids: [UInt32], exact isExact: Bool = false) {
         let wanted = value.map(BrightnessLockRules.clamp)
         let start: Bool
         state.lock()
-        let changed = target != wanted || displays != ids
-        target = wanted; displays = wanted == nil ? [] : ids
+        let changed = target != wanted || displays != ids || exact != isExact
+        target = wanted; exact = isExact; displays = wanted == nil ? [] : ids
         if wanted == nil || ids.isEmpty { timer?.cancel(); timer = nil; start = false } else { start = runsTimer && timer == nil }
         state.unlock()
         if start {
@@ -175,13 +187,14 @@ final class BrightnessEnforcer: @unchecked Sendable {
         } else if changed, runsTimer, wanted != nil { queue.async { [weak self] in self?.tick() } }
     }
 
-    /// One pass: every controllable screen away from the target is put back. Called by the timer, or by tests.
+    /// One pass: every controllable screen above the limit is brought back to it. Called by the timer, or by tests.
     func tick() {
-        let (wanted, ids) = state.withLock { (target, displays) }
+        let (wanted, isExact, ids) = state.withLock { (target, exact, displays) }
         guard let wanted else { return }
         for id in ids {
-            guard let current = driver.brightness(of: id), abs(current - wanted) > BrightnessLockRules.tolerance else { continue }
-            if driver.setBrightness(wanted, of: id) { state.withLock { correctionCount += 1 } }
+            guard let current = driver.brightness(of: id),
+                  let level = BrightnessLockRules.correction(current: current, limit: wanted, exact: isExact) else { continue }
+            if driver.setBrightness(level, of: id) { state.withLock { correctionCount += 1 } }
         }
     }
 

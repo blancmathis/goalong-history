@@ -59,9 +59,9 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     @Published var shortcutAvailable = false
     @Published private(set) var loginEnabled = false
     @Published private(set) var loginApprovalRequired = false
-    /// « Verrou de luminosité » (T-048 D2): the screens as the driver sees them, read at start and on screen changes.
+    /// « Limite de luminosité » (T-048 D2): the screens as the driver sees them, read at start and on screen changes.
     @Published private(set) var brightnessDisplays: [BrightnessDisplay] = []
-    /// The hardware brightness held now (manual lock and ranges in progress, darkest wins), nil = not held.
+    /// The brightness limit in force (manual limit and ranges in progress, lowest wins), nil = none.
     @Published private(set) var brightnessTarget: Double?
     /// The brightness change waiting for the stop of a protected lock (text or password) on the page.
     @Published private(set) var pendingBrightness: BrightnessLockChange?
@@ -132,9 +132,9 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         // A crashed run's brightness preview comes back too, unless something holds the screens.
         let crashed = store.loadPreviewBrightness()
         if !crashed.isEmpty {
-            if BrightnessLockRules.target(manual: ranges.brightnessLock, windows: []) == nil {
-                for (id, level) in crashed { _ = brightness.setBrightness(level, of: id) }
-            }
+            // Under a limit the screens come back too, at most to the limit.
+            let limit = BrightnessLockRules.target(manual: ranges.brightnessLock, windows: [])
+            for (id, level) in crashed { _ = brightness.setBrightness(min(level, limit ?? level), of: id) }
             store.savePreviewBrightness(nil)
         }
         if migrateLegacy() { saveRangesNow() }
@@ -404,7 +404,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         }
         if let level = preview.brightness {
             if let target, level > target + BrightnessLockRules.tolerance {
-                notices.append("La luminosité est bloquée à \(GoalongUIFormat.percent(target * 100)) : l’aperçu ne monte pas plus haut.")
+                notices.append("La luminosité est limitée à \(GoalongUIFormat.percent(target * 100)) : l’aperçu ne monte pas plus haut.")
             }
             shownBrightness = min(target ?? level, level)
         }
@@ -460,14 +460,14 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         return .applied
     }
 
-    /// The slider: lowering is free; raising during a protection stops at the locked level and says so in place.
+    /// The slider: lowering the limit is free; raising it during a protection stops at the limit and says so in place.
     @discardableResult func slideBrightnessLock(_ value: Double) -> RedScreenGuardResult {
         guard running, var lock = ranges.brightnessLock else { return .applied }
         var wanted = BrightnessLockRules.clamp(value)
         var notice: String?
         if let held = brightnessProtection, wanted > lock.level + BrightnessLockRules.tolerance {
             wanted = lock.level
-            notice = "Verrou protégé jusqu’à \(Self.clockText(held.end)) : \(GoalongUIFormat.percent(lock.level * 100)) au plus"
+            notice = "Limite protégée jusqu’à \(Self.clockText(held.end)) : \(GoalongUIFormat.percent(lock.level * 100)) au plus"
         }
         if brightnessNotice != notice { brightnessNotice = notice }
         if notice != nil { objectWillChange.send(); return .applied }
@@ -808,10 +808,12 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         active = manual || rangeIntensity != nil
         appliedIntensity = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
         let screen = previewed(target: target)
-        enforcer.update(target: screen.brightness, displays: brightnessDisplays.filter(\.controllable).map(\.id))
-        if screen.brightness == nil, preview?.brightness == nil, let before = previewBrightnessBefore {
-            // Nothing holds the screens after the preview: they go back to where they were.
-            for (id, level) in before { _ = brightnessDriver.setBrightness(level, of: id) }
+        // A preview shows its level itself; otherwise the target is an upper limit (T-059, 2026-11-13).
+        enforcer.update(target: screen.brightness, displays: brightnessDisplays.filter(\.controllable).map(\.id),
+                        exact: preview?.brightness != nil)
+        if preview?.brightness == nil, let before = previewBrightnessBefore {
+            // After the preview the screens go back to where they were, at most to the limit in force.
+            for (id, level) in before { _ = brightnessDriver.setBrightness(min(level, target ?? level), of: id) }
         }
         if preview?.brightness == nil, previewBrightnessBefore != nil { previewBrightnessBefore = nil; store.savePreviewBrightness(nil) }
         // A rule that holds the brightness alone (red at 0) tints nothing: the filter's own dimming must not run for it
@@ -902,7 +904,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         for (center, token) in observers { center.removeObserver(token) }; observers = []
         dropPreview()
         if let before = previewBrightnessBefore {
-            for (id, level) in before { _ = brightnessDriver.setBrightness(brightnessTarget ?? level, of: id) }
+            for (id, level) in before { _ = brightnessDriver.setBrightness(min(level, brightnessTarget ?? level), of: id) }
             previewBrightnessBefore = nil; store.savePreviewBrightness(nil)
         }
         enforcer.stop(); saveNow(); gamma.restore(); active = false; gamma.onError = nil; gamma.onDisplays = nil; stateChanged = nil
