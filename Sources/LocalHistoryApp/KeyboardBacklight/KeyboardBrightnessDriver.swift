@@ -14,7 +14,9 @@ protocol KeyboardBrightnessDriving: AnyObject {
 /// macOS has no public keyboard-backlight API: `CoreBrightness.framework` (private) is opened with `dlopen` and its
 /// `KeyboardBrightnessClient` class is driven through the Objective-C runtime, as Control Center does. A missing
 /// framework, class or method leaves the driver unavailable: the setting says so and nothing is written. Inert under
-/// XCTest. Measured on 2026-11-12 (T-060): 0.01 lights the keys at 0.25 nit, macOS's first step (1/16) at 1.01 nit.
+/// XCTest. Measured 2026-11-12/13 (T-060, CoreBrightness model, not a light meter): the driver keeps any level down to
+/// 1e-7; lit keys give about 0.100 + 14.56 × level nit (0.0005 = 0.107, 0.005 = 0.17, 0.01 = 0.25, 1/16 = 1.01 nit).
+/// Only 0 turns the light off.
 final class CoreBrightnessKeyboard: KeyboardBrightnessDriving, @unchecked Sendable {
     static let path = "/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness"
     private typealias IDsFn = @convention(c) (AnyObject, Selector) -> Unmanaged<NSArray>?

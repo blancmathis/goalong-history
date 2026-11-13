@@ -39,7 +39,7 @@ final class KeyboardBacklightLimitTests: XCTestCase {
         XCTAssertEqual(limit.correctedLevel(for: KeyboardBacklightLimit.firstMacStep, at: at(12), calendar: calendar), 0.01)
         XCTAssertNil(limit.correctedLevel(for: 0.005, at: at(12), calendar: calendar), "under the ceiling: left alone")
         XCTAssertNil(limit.correctedLevel(for: 0, at: at(12), calendar: calendar), "off stays off")
-        XCTAssertNil(limit.correctedLevel(for: 0.0102, at: at(12), calendar: calendar), "within tolerance: no write loop")
+        XCTAssertNil(limit.correctedLevel(for: 0.01001, at: at(12), calendar: calendar), "within tolerance: no write loop")
         XCTAssertNil(limit.correctedLevel(for: .nan, at: at(12), calendar: calendar))
     }
 
@@ -201,7 +201,58 @@ final class KeyboardBacklightLimitTests: XCTestCase {
         XCTAssertFalse(CoreBrightnessKeyboard().isAvailable, "tests never touch this Mac's keyboard backlight")
     }
 
+    // MARK: - Slider stops
+
+    func testStopsAreIncreasingWithinRangeAndFineAtTheBottom() {
+        let stops = KeyboardBacklightLimit.stops
+        XCTAssertEqual(stops.first, 0, "far left = off")
+        XCTAssertEqual(stops.last, KeyboardBacklightLimit.range.upperBound)
+        XCTAssertEqual(stops[1], KeyboardBacklightLimit.lowestLitStop)
+        XCTAssertTrue(zip(stops, stops.dropFirst()).allSatisfy { $0 < $1 }, "strictly increasing")
+        XCTAssertTrue(stops.allSatisfy { KeyboardBacklightLimit.range.contains($0) })
+        XCTAssertEqual(stops.filter { $0 > 0 && $0 < 0.005 }.count, 4, "distinct lit stops under the old 0,5 % floor")
+        XCTAssertTrue(stops.contains(KeyboardBacklightLimit.defaultMaximum))
+        XCTAssertTrue(stops.contains(KeyboardBacklightLimit.firstMacStep))
+        // Each lit stop is clearly brighter than the one before (model: 0.100 + 14.56 × level nit), at least +5 %.
+        let nits = stops.dropFirst().map { 0.100 + 14.56 * $0 }
+        XCTAssertTrue(zip(nits, nits.dropFirst()).allSatisfy { $1 / $0 >= 1.05 })
+    }
+
+    func testStopRoundTripAndOldValues() {
+        for (index, stop) in KeyboardBacklightLimit.stops.enumerated() {
+            XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: stop), index)
+            XCTAssertEqual(KeyboardBacklightLimit.level(atStop: index), stop)
+        }
+        XCTAssertEqual(KeyboardBacklightLimit.level(atStop: -3), 0)
+        XCTAssertEqual(KeyboardBacklightLimit.level(atStop: 99), KeyboardBacklightLimit.range.upperBound)
+        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: -1), 0)
+        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 9), KeyboardBacklightLimit.stops.count - 1)
+        // Every old half-percent value still loads unchanged, and sits on its nearest stop.
+        var previous = 0
+        for step in 0...50 {
+            let old = Double(step) * 0.005
+            XCTAssertEqual(KeyboardBacklightLimit(maximum: old).maximum, old, accuracy: 1e-12)
+            let index = KeyboardBacklightLimit.stopIndex(for: old)
+            XCTAssertGreaterThanOrEqual(index, previous, "monotonic")
+            XCTAssertLessThanOrEqual(abs(KeyboardBacklightLimit.level(atStop: index) - old), 0.025 + 1e-12)
+            previous = index
+        }
+        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 0.005), 5)
+        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 0.0004), 1, "a stray low value shows on the lowest lit stop")
+    }
+
+    func testLowestStopIsStillCorrected() {
+        let limit = KeyboardBacklightLimit(enabled: true, maximum: 0.0005)
+        XCTAssertEqual(limit.correctedLevel(for: 0.001, at: at(12), calendar: calendar), 0.0005)
+        XCTAssertNil(limit.correctedLevel(for: 0.0005, at: at(12), calendar: calendar))
+    }
+
     func testPercentLabels() {
+        XCTAssertEqual(KeyboardBacklightSettings.percent(0.0005), "0,05\u{00A0}%")
+        XCTAssertEqual(KeyboardBacklightSettings.percent(0.001), "0,1\u{00A0}%")
+        XCTAssertEqual(KeyboardBacklightSettings.percent(0.0075), "0,75\u{00A0}%")
+        XCTAssertEqual(KeyboardBacklightSettings.percent(0.0625), "6,25\u{00A0}%")
+        XCTAssertEqual(KeyboardBacklightSettings.percent(0.25), "25\u{00A0}%")
         XCTAssertEqual(KeyboardBacklightSettings.percent(0.005), "0,5\u{00A0}%")
         XCTAssertEqual(KeyboardBacklightSettings.percent(0.01), "1\u{00A0}%")
         XCTAssertEqual(KeyboardBacklightSettings.percent(0.025), "2,5\u{00A0}%")

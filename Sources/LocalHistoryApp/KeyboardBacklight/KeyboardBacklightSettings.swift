@@ -21,11 +21,12 @@ struct KeyboardBacklightSettings: View {
             || query.split(whereSeparator: \.isWhitespace).contains { $0.count >= 4 && haystack.localizedStandardContains(String($0)) }
     }
 
-    /// « 0,5 % », « 1 % », « 6,5 % ».
+    /// « 0,05 % », « 0,5 % », « 1 % », « 6,25 % »: up to two decimals, no trailing zero.
     static func percent(_ value: Double) -> String {
-        let tenths = (value * 1000).rounded() / 10
-        let text = tenths.rounded() == tenths ? String(Int(tenths)) : String(format: "%.1f", tenths).replacingOccurrences(of: ".", with: ",")
-        return "\(text)\u{00A0}%"
+        var text = String(format: "%.2f", (value * 10_000).rounded() / 100)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return "\(text.replacingOccurrences(of: ".", with: ","))\u{00A0}%"
     }
 
     var body: some View {
@@ -53,12 +54,17 @@ struct KeyboardBacklightSettings: View {
                 Spacer()
                 Text(maximum <= 0 ? "Éteint" : Self.percent(maximum)).monospacedDigit().foregroundStyle(LHTheme.secondaryText)
             }
-            Slider(value: Binding(get: { Limit.clampedMaximum(maximum) }, set: { maximum = Limit.clampedMaximum($0) }),
-                   in: Limit.range, step: Limit.step)
+            Slider(value: Binding(get: { Double(Limit.stopIndex(for: maximum)) },
+                                  set: { position in
+                                      let index = Int(position.rounded())
+                                      // Same stop as now: keep the stored value (an old 0.005-step ceiling stays exact).
+                                      if index != Limit.stopIndex(for: maximum) { maximum = Limit.level(atStop: index) }
+                                  }),
+                   in: 0...Double(Limit.stops.count - 1), step: 1)
                 .accessibilityLabel("Luminosité maximale du clavier")
                 .accessibilityValue(maximum <= 0 ? "Éteint" : Self.percent(maximum))
                 .accessibilityIdentifier("settings-keyboard-backlight-maximum")
-            Text("Le premier cran de la touche de macOS vaut 6,25\u{00A0}%. En dessous, le clavier éclaire moins que macOS ne le permet.")
+            Text("Le premier cran de la touche de macOS vaut 6,25\u{00A0}%. Les crans sont plus fins en bas : 0,05\u{00A0}% est le plus faible encore allumé ; tout à gauche, le clavier est éteint.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
