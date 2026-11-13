@@ -13,14 +13,22 @@ struct KeyboardBacklightLimit: Equatable, Sendable {
 
     /// macOS's first step of the brightness key (1/16 of the full scale).
     static let firstMacStep = 1.0 / 16
-    /// What the setting offers: off (0) up to four macOS steps, by half a percent.
+    /// What a stored ceiling may be: off (0) up to four macOS steps. Any value in it keeps its meaning (old 0.005 steps too).
     static let range: ClosedRange<Double> = 0...0.25
-    static let step = 0.005
+    /// The slider's stops, off first. Measured 2026-11-13 (T-060): the keys light at about 0.100 + 14.56 × level nit, so
+    /// 0.5 % (0.17 nit) and 1 % (0.25 nit) look alike. Fine stops at the bottom; under 0.05 % (0.107 nit) a step changes
+    /// the light by less than 7 %, so 0.05 % is the lowest lit stop. Only 0 turns the light off.
+    static let stops: [Double] = [
+        0, 0.0005, 0.001, 0.002, 0.003, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05,
+        0.0625, 0.08, 0.1, 0.125, 0.15, 0.2, 0.25,
+    ]
+    static let lowestLitStop = 0.0005
     static let defaultMaximum = 0.01
     static let defaultStartMinute = 22 * 60
     static let defaultEndMinute = 7 * 60
-    /// Levels closer than this count as equal: no write, no loop on our own change notification.
-    static let tolerance = 0.0005
+    /// Levels closer than this count as equal: no write, no loop on our own change notification. Far under the lowest lit
+    /// stop (0.0005); the driver reads back what it wrote (Float precision).
+    static let tolerance = 0.00002
 
     var enabled = false
     var maximum = defaultMaximum
@@ -51,6 +59,17 @@ struct KeyboardBacklightLimit: Equatable, Sendable {
         guard value.isFinite else { return defaultMaximum }
         return min(max(value, range.lowerBound), range.upperBound)
     }
+
+    /// Slider position (stop index) for a stored ceiling: the nearest stop, a tie going to the lower one.
+    static func stopIndex(for value: Double) -> Int {
+        let clamped = clampedMaximum(value)
+        var best = 0
+        for (index, stop) in stops.enumerated() where abs(stop - clamped) < abs(stops[best] - clamped) { best = index }
+        return best
+    }
+
+    /// Ceiling for a slider position, clamped to the stops.
+    static func level(atStop index: Int) -> Double { stops[min(max(index, 0), stops.count - 1)] }
 
     static func clampedMinute(_ value: Int) -> Int { ((value % 1440) + 1440) % 1440 }
 
