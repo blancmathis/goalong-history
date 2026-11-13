@@ -162,6 +162,7 @@ import AppleScreenTime
         private var quitAlertIsVisible = false
         /// T-050 B1: the menu's quit passed the stop of a protected « Surveillance »; the terminate call consumes it.
         private var jevQuitAuthorized = false
+        private var ruleQuitAuthorized = false
         private var protectedSurveillanceObserver: NSObjectProtocol?
         private let continuityPreferences = BackgroundContinuityPreferences()
 
@@ -535,7 +536,7 @@ import AppleScreenTime
             var approved = false
             defer {
                 if !approved {
-                    jevQuitAuthorized = false
+                    jevQuitAuthorized = false; ruleQuitAuthorized = false
                     MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() }
                 }
             }
@@ -575,6 +576,40 @@ import AppleScreenTime
             var passwordGiven = false
             return confirmListsQuitIfNeeded(consumeAuthorization: consumeAuthorization, passwordGiven: &passwordGiven)
                 && confirmJevQuitIfNeeded(consumeAuthorization: consumeAuthorization, passwordGiven: passwordGiven)
+                && confirmRulesQuitIfNeeded(consumeAuthorization: consumeAuthorization, passwordGiven: passwordGiven)
+        }
+
+        /// T-059 lot 2: quitting stops every protected rule until the next launch, a range that has not begun included
+        /// (lists, sessions, red-screen ranges): their strongest stop, unless the lists' prompt already proved as much.
+        /// « Verrouillé » keeps Goalong open and offers to close the window.
+        private func confirmRulesQuitIfNeeded(consumeAuthorization: Bool, passwordGiven: Bool) -> Bool {
+            MainActor.assumeIsolated {
+                if consumeAuthorization, ruleQuitAuthorized { ruleQuitAuthorized = false; return true }
+                guard let lock = BlockingRuntime.shared.protectedRuleStop(),
+                      Self.ruleQuitNeedsStop(lock, passwordGiven: passwordGiven) else { return true }
+                if lock == .locked {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    let alert = NSAlert()
+                    alert.messageText = "Une règle est verrouillée"
+                    alert.informativeText = RuleStopGrant.lockedText + " Goalong reste ouvert. Vous pouvez fermer la fenêtre."
+                    alert.addButton(withTitle: "Fermer la fenêtre")
+                    alert.addButton(withTitle: "Annuler")
+                    if alert.runModal() == .alertFirstButtonReturn { dashboardWindowController?.window?.close() }
+                    return false
+                }
+                guard !quitAlertIsVisible else { return false }
+                quitAlertIsVisible = true
+                defer { quitAlertIsVisible = false }
+                guard RuleStopGrant.confirm(lock, action: "Quitter Goalong") else { return false }
+                RuleStopGrant.shared.revoke()
+                ruleQuitAuthorized = !consumeAuthorization
+                return true
+            }
+        }
+
+        /// The rules' stop still to ask after the lists' prompt. Pure.
+        static func ruleQuitNeedsStop(_ lock: BlockLock, passwordGiven: Bool) -> Bool {
+            lock == .locked || lock.strength > (passwordGiven ? BlockLock.password.strength : BlockLock.free.strength)
         }
 
         /// Same conduct as the lists: « Verrouillé » refuses and offers to close the window, « Taper » and « Mot de passe »
@@ -582,7 +617,7 @@ import AppleScreenTime
         private func confirmJevQuitIfNeeded(consumeAuthorization: Bool, passwordGiven: Bool) -> Bool {
             MainActor.assumeIsolated {
                 if consumeAuthorization, jevQuitAuthorized { jevQuitAuthorized = false; return true }
-                let step = JevStopGate.quitStep(JevStopGate.currentStep(), passwordGiven: passwordGiven)
+                let step = JevStopGate.quitStep(JevStopGate.protectedStep(), passwordGiven: passwordGiven)
                 guard JevStopGate.needsAsking(step) else { return true }
                 if case .refused(let reason) = step {
                     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -721,7 +756,8 @@ import AppleScreenTime
         /// started since the last sample counts, then reads the « protégé » predicate (module Blocage on or off).
         @MainActor static func honoursTerminationSignal(runtime: BlockingRuntime, sessionEnding: Bool,
                                                         senderPID: Int32?, installOverride: Bool) -> Bool {
-            honoursTerminationSignal(severeBlock: runtime.protectedUntil() != nil, sessionEnding: sessionEnding,
+            honoursTerminationSignal(severeBlock: runtime.protectedUntil() != nil || runtime.protectedRuleStop() != nil
+                                         || JevStopGate.protectedStep() != .allow, sessionEnding: sessionEnding,
                                      senderPID: senderPID, installOverride: installOverride)
         }
 

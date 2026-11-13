@@ -81,7 +81,9 @@ import XCTest
         XCTAssertEqual(BlockRuleSwitch.of(rule, canVerifyPassword: false), .on(stop: .typing))
         XCTAssertNotNil(BlockRuleSwitchAction.turnOff(rule, proof: .typed("a", challenge: "b"), blocking: nil, braise: screen))
         XCTAssertTrue(screen.ranges.disabled.isEmpty)
-        XCTAssertNil(BlockRuleSwitchAction.turnOff(rule, proof: .typed("b", challenge: "b"), blocking: nil, braise: screen))
+        let grant = RuleStopGrant(); screen.stopGrant = grant
+        let text = BlockRuleSwitchAction.challenge(rule, blocking: nil, grant: grant)
+        XCTAssertNil(BlockRuleSwitchAction.turnOff(rule, proof: .typed(text, challenge: text), blocking: nil, braise: screen, grant: grant))
         rule = try XCTUnwrap(rules(nil, screen).first)
         XCTAssertEqual(BlockRuleSwitch.of(rule, canVerifyPassword: false), .off)
         XCTAssertNil(BlockRuleSwitchAction.turnOn(rule, braise: screen), "turning on asks nothing")

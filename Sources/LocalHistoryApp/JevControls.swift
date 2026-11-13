@@ -127,6 +127,6 @@ struct JevRecentChecksView: View {
     }
     @objc private func openMonitoring() { onOpenMonitoring() }
     @objc private func endBreak() { JevMonitor.shared.endBreak() }
-    @objc private func disable() { if JevStopGate.confirm(action: "Désactiver Jev") { JevMonitor.shared.setEnabled(false) } }
+    @objc private func disable() { if JevStopGate.confirm(action: "Désactiver Jev", step: JevStopGate.protectedStep()) { JevMonitor.shared.setEnabled(false) } }
 }
 #endif

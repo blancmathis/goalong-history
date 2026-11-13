@@ -7,6 +7,8 @@ import Foundation
 struct BraiseStore {
     let directory: URL
     let legacySettings: URL
+    /// T-059 lot 2: the protected ranges' copy outside this folder (`ProtectedFloor`). Nil = none (tests, tools).
+    var floor: ProtectedFloor? = nil
     var settingsURL: URL { directory.appendingPathComponent("settings.json") }
 
     func load() throws -> Preferences { try loadRecovering().preferences }
@@ -49,19 +51,41 @@ struct BraiseStore {
 
     /// The red screen's ranges (T-048 B2). Absent: migrated once from the Braise rules of `preferences`
     /// and written. Unreadable: set aside, migrated again from the rules, and said in `notice`.
-    func loadRanges(migratingFrom preferences: Preferences) throws -> (ranges: RedScreenProgram, notice: String?) {
+    /// Then a file that differs from the protected copy (`floor`, written by every save) gives way to that copy.
+    /// F1 (lot 3): the copy is read before the file, and a migration is written only after the comparison, so a
+    /// missing or unreadable ranges.json can no longer replace the copy with migrated (empty) ranges first.
+    func loadRanges(migratingFrom preferences: Preferences, now: Date = Date()) throws -> (ranges: RedScreenProgram, notice: String?) {
+        let copy = floor?.read(RedScreenProgram.self, key: ProtectedFloor.redScreenKey) ?? .absent
+        let loaded = try loadRangesFile(migratingFrom: preferences)
+        func joined(_ extra: String) -> String { [loaded.notice, extra].compactMap { $0 }.joined(separator: " ") }
+        if let kept = copy.value, kept != loaded.ranges {
+            try saveRanges(kept, now: now)
+            return (kept, joined(ProtectedFloor.restoredText))
+        }
+        if loaded.migrated { try saveRanges(loaded.ranges, now: now) }
+        if case .unavailable = copy { return (loaded.ranges, joined(ProtectedFloor.unavailableText)) }
+        return (loaded.ranges, loaded.notice)
+    }
+
+    /// Something protected: a range stronger than « Libre », a protected hold or brightness lock not over. Pure.
+    static func isProtected(_ value: RedScreenProgram, now: Date) -> Bool {
+        value.program.ranges.contains { $0.effectiveLock != .free } || (value.program.lockedUntil ?? .distantPast) > now
+            || value.holds.values.contains { $0.lock != .free && $0.end > now }
+            || BrightnessLockRules.protection(value.brightnessLock, now: now, hasPassword: true) != nil
+    }
+
+    /// Reads ranges.json; absent or unreadable, migrates from `preferences` without writing (`migrated`).
+    private func loadRangesFile(migratingFrom preferences: Preferences) throws -> (ranges: RedScreenProgram, notice: String?, migrated: Bool) {
         var notice: String?
         if Self.exists(rangesURL) {
             if var decoded = try? JSONDecoder().decode(RedScreenProgram.self, from: Self.read(rangesURL, maximumBytes: 256 * 1024)),
                decoded.version <= RedScreenProgram.currentVersion {
-                decoded.sanitize(); return (decoded, nil)
+                decoded.sanitize(); return (decoded, nil, false)
             }
             let name = try Self.moveDamagedFileAside(rangesURL, base: "ranges")
             notice = "Les plages de l’écran rouge étaient illisibles : elles ont été reprises des anciens horaires. L’ancien fichier est gardé dans \(directory.path)/\(name)."
         }
-        let value = RedScreenProgram.migrated(from: preferences)
-        try saveRanges(value)
-        return (value, notice)
+        return (RedScreenProgram.migrated(from: preferences), notice, true)
     }
 
     /// The screens' hardware levels before a brightness preview (T-050 A2), removed when it ends. Left behind by a crash,
@@ -83,9 +107,22 @@ struct BraiseStore {
         if let data = try? JSONEncoder().encode(value) { try? Self.write(data, to: previewBrightnessURL) }
     }
 
-    func saveRanges(_ value: RedScreenProgram) throws {
+    /// The copy first, then the file (F5). A copy not written: the file goes ahead only when the copy in place equals
+    /// it (the launch puts back a differing copy whole), or when there is none; else `ProtectedFloorUnavailable` and
+    /// nothing written. False = written, but the copy could not be checked (keychain unavailable since launch).
+    @discardableResult
+    func saveRanges(_ value: RedScreenProgram, now: Date = Date()) throws -> Bool {
+        var copied = true
+        if let floor, !floor.save(Self.isProtected(value, now: now) ? value : nil, key: ProtectedFloor.redScreenKey) {
+            switch floor.known(RedScreenProgram.self, key: ProtectedFloor.redScreenKey) {
+            case .absent: break
+            case .value(let kept): guard kept == value else { throw ProtectedFloorUnavailable() }
+            case .unavailable: copied = false
+            }
+        }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try Self.write(encoder.encode(value), to: rangesURL)
+        return copied
     }
 
     /// Compares paths, not URLs: macOS 15 resolves an absent folder without its trailing slash, so URL

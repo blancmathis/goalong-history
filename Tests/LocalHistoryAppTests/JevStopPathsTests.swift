@@ -148,8 +148,9 @@ import LocalHistoryCore
     /// Correction 3: removing or replacing the key, and turning the local history consent off.
     func testKeyAndConsentAskTheStop() throws {
         let sheet = try source("JevConnectionSheet.swift")
-        XCTAssertTrue(sheet.contains("guard JevStopGate.confirm(action: \"Supprimer la clé\") else { return }"))
-        XCTAssertTrue(sheet.contains("if monitor.hasKey, !JevStopGate.confirm(action: \"Remplacer la clé\") { return }"))
+        XCTAssertTrue(sheet.contains("guard JevStopGate.confirm(action: \"Supprimer la clé\", step: JevStopGate.protectedStep()) else { return }"))
+        XCTAssertTrue(sheet.contains("if monitor.hasKey, !JevStopGate.confirm(action: \"Remplacer la clé\", step: JevStopGate.protectedStep()) { return }"),
+                      "T-059 lot 2: a protected range not begun counts too")
         XCTAssertTrue(try source("SourceActivation.swift")
             .contains("capability != .localComputerHistory || JevStopGate.confirm(action: \"Désactiver l’enregistrement\")"))
     }

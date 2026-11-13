@@ -89,35 +89,136 @@ enum JevRangeWrite: Equatable {
                                  scope: .shared, settings: JevInterventionPreferences.shared.settings)
 
     /// The store as the app opens it: migrated before anyone can read or write it.
-    static func launched(defaults: UserDefaults = GoalongDefaults.standard, consent: Bool, scope: JevMonitoringPreferences,
-                         settings: JevInterventionSettings) -> JevSurveillanceStore {
-        let store = JevSurveillanceStore(defaults: defaults)
+    static func launched(defaults: UserDefaults = GoalongDefaults.standard, floor: ProtectedFloor? = .standard, consent: Bool,
+                         scope: JevMonitoringPreferences, settings: JevInterventionSettings) -> JevSurveillanceStore {
+        let store = JevSurveillanceStore(defaults: defaults, floor: floor)
         store.migrateIfNeeded(consent: consent, scope: scope, settings: settings)
         return store
     }
     static let storageKey = "goalong.jev.surveillance.v1"
     static let unreadableText = "Réglages de surveillance illisibles : aucune surveillance jusqu’au prochain enregistrement."
     static let protectedText = "La surveillance de cette règle est en cours et « Verrouillé » : elle ne peut pas être retirée ni affaiblie tant qu’elle tourne."
+    static let combinedText = "Ce changement affaiblirait l’effet appliqué par une surveillance « Verrouillé » qui tourne en même temps : il ne peut pas être fait."
     @Published private(set) var document = JevSurveillanceDocument()
     @Published private(set) var error: String?
+    /// P3 (T-059): the proof of a protected rule's stop, read before any weakening write.
+    var stopGrant: RuleStopGrant = .shared
     private let defaults: UserDefaults
+    /// T-059 lot 2: the protected ranges' copy outside the defaults. Nil = none (tests without it).
+    private let floor: ProtectedFloor?
+    /// Set when a launch put back protected ranges removed or weakened outside Goalong.
+    private(set) var restoredNotice: String?
 
-    init(defaults: UserDefaults = GoalongDefaults.standard) {
-        self.defaults = defaults
-        guard defaults.object(forKey: Self.storageKey) != nil else { return }
-        guard let data = defaults.data(forKey: Self.storageKey), data.count <= 512_000,
-              let value = try? JSONDecoder().decode(JevSurveillanceDocument.self, from: data), value.schema == 1 else {
-            error = Self.unreadableText
-            return
+    init(defaults: UserDefaults = GoalongDefaults.standard, floor: ProtectedFloor? = nil) {
+        self.defaults = defaults; self.floor = floor
+        if defaults.object(forKey: Self.storageKey) != nil {
+            if let data = defaults.data(forKey: Self.storageKey), data.count <= 512_000,
+               let value = try? JSONDecoder().decode(JevSurveillanceDocument.self, from: data), value.schema == 1 {
+                document = value
+            } else {
+                error = Self.unreadableText
+            }
         }
-        document = value
+        // A protected range removed or weakened in the defaults (or a document made unreadable) comes back from the copy.
+        let copy = floor?.read([JevSurveillanceRange].self, key: ProtectedFloor.jevKey) ?? .absent
+        if case .unavailable = copy { restoredNotice = ProtectedFloor.unavailableText; return }
+        guard let kept = copy.value, !kept.isEmpty else { return }
+        let restored = Self.restore(error == nil ? document : JevSurveillanceDocument(), floor: kept)
+        guard restored.count > 0 else { return }
+        save(restored.document)
+        restoredNotice = ProtectedFloor.restoredText
+    }
+
+    /// `document` with every range of `floor` it lost or weakened put back (hardening kept). Pure.
+    static func restore(_ document: JevSurveillanceDocument, floor: [JevSurveillanceRange]) -> (document: JevSurveillanceDocument, count: Int) {
+        var next = document, count = 0
+        for old in floor where old.lock != .free {
+            if let index = next.ranges.firstIndex(where: { $0.id == old.id }) {
+                let now = next.ranges[index]
+                if weakens(old, now) || combinedLoss(old: old, new: now, in: next) != .free { next.ranges[index] = old; count += 1 }
+            } else { next.ranges.append(old); count += 1 }
+        }
+        return (next, count)
+    }
+
+    /// `new` asks less than `old`: a weaker stop, fewer days or hours, weaker settings or a looser pause. Pure.
+    static func weakens(_ old: JevSurveillanceRange, _ new: JevSurveillanceRange) -> Bool {
+        let covered = BlockingController.programCoverage(BlockProgram(ranges: [old.program]))
+            .isSubset(of: BlockingController.programCoverage(BlockProgram(ranges: [new.program])))
+        let pauseKept = old.pause == new.pause || PauseEngine.weakening(old.pause, new.pause) == nil
+        return !(new.lock.strength >= old.lock.strength && covered && isAtLeast(new.settings, old.settings) && pauseKept)
+    }
+
+    /// `new` reminds at least as much as `old` at every minute of a streak (T-059 lot 3, F3/F4). The engine shows the
+    /// last stage reached (`stage(at:)`), not the strongest, so stages are not compared index by index: the effect in
+    /// force is compared on each interval bounded by the old and new thresholds. At each one, where `old` shows a veil,
+    /// `new` shows one at least as heavy (same effect or « voile et rouge »). Effects and the move stay on. Pure.
+    static func isAtLeast(_ new: JevInterventionSettings, _ old: JevInterventionSettings) -> Bool {
+        if old.effectsEnabled && !new.effectsEnabled { return false }
+        if old.moveAfterSecondAppearance && !new.moveAfterSecondAppearance { return false }
+        // The effect in force only changes at a threshold: checking each threshold covers every interval.
+        let thresholds = Set((old.stages + new.stages).map(\.afterMinutes)).filter { $0 >= 1 }.sorted()
+        for minute in thresholds {
+            guard let was = old.stage(at: minute * 60) else { continue }
+            guard let now = new.stage(at: minute * 60), now.intensity >= was.intensity,
+                  now.effect == was.effect || now.effect == .dimAndRed else { return false }
+        }
+        return true
+    }
+
+    /// N1 (T-059 lot 3): the settings in force are one rule's whole, the highest `score` (`strongest`), never a blend. A
+    /// rule kept at least as strong can still lose its rank, and the effect applied then falls (85 % → 45 %). So a change
+    /// of one rule (`old` → `new`, nil = absent) is also judged on what is applied with each rule that can run at the same
+    /// time: the other ranges whose hours meet it, and the session marks or default, which can run at any hour. The
+    /// winner of a set only depends on the winner of the others and this rule, so each other rule alone covers every
+    /// set. Returns the strongest stop of a rule whose applied effect would fall; `.free` = none. Pure.
+    static func combinedLoss(old: JevSurveillanceRange?, new: JevSurveillanceRange?,
+                             in document: JevSurveillanceDocument) -> BlockLock {
+        guard let id = old?.id ?? new?.id else { return .free }
+        func coverage(_ range: JevSurveillanceRange) -> Set<Int> {
+            BlockingController.programCoverage(BlockProgram(ranges: [range.program]))
+        }
+        let position = document.ranges.firstIndex { $0.id == id } ?? document.ranges.count
+        let minutes = [old, new].compactMap { $0 }.reduce(into: Set<Int>()) { $0.formUnion(coverage($1)) }
+        // `first` = listed before this rule: it wins a tie (`strongest` keeps the first of equal scores).
+        var others: [(settings: JevInterventionSettings, lock: BlockLock, first: Bool)] = []
+        for (index, range) in document.ranges.enumerated() where range.id != id && !coverage(range).isDisjoint(with: minutes) {
+            others.append((range.settings, range.lock, index < position))
+        }
+        if document.sessionDefault { others.append((document.sessionSettings, .free, false)) }
+        for mark in document.marks where mark.on { others.append((mark.settings, mark.lock, false)) }
+        var lost = BlockLock.free
+        func lose(_ lock: BlockLock) { if lock.strength > lost.strength { lost = lock } }
+        if let old, let new, !isAtLeast(new.settings, old.settings) { lose(old.lock) }
+        for other in others {
+            func wins(_ range: JevSurveillanceRange?) -> Bool {
+                guard let range else { return false }
+                let mine = score(range.settings), theirs = score(other.settings)
+                return mine > theirs || (mine == theirs && !other.first)
+            }
+            let before = wins(old) ? old!.settings : other.settings
+            let after = wins(new) ? new!.settings : other.settings
+            if !isAtLeast(after, before) { lose(wins(old) ? old!.lock : other.lock) }
+        }
+        return lost
     }
 
     /// The document exists: the migration ran on this Mac, or a block was saved.
     var exists: Bool { defaults.object(forKey: Self.storageKey) != nil }
 
+    /// The copy first, then the defaults (F5). A copy not written: the defaults go ahead only when the copy in place
+    /// would take nothing back at the next launch; else false, nothing written, and `restoredNotice` says why.
     @discardableResult func save(_ next: JevSurveillanceDocument) -> Bool {
         guard let data = try? JSONEncoder().encode(next) else { return false }
+        let protected = next.ranges.filter { $0.lock != .free }
+        if let floor, !floor.save(protected.isEmpty ? nil : protected, key: ProtectedFloor.jevKey) {
+            switch floor.known([JevSurveillanceRange].self, key: ProtectedFloor.jevKey) {
+            case .absent: break
+            case .value(let kept):
+                guard Self.restore(next, floor: kept).count == 0 else { restoredNotice = ProtectedFloor.unsavedText; return false }
+            case .unavailable: restoredNotice = ProtectedFloor.staleText
+            }
+        }
         defaults.set(data, forKey: Self.storageKey)
         document = next; error = nil
         NotificationCenter.default.post(name: .jevSurveillanceDidChange, object: self)
@@ -229,8 +330,8 @@ enum JevRangeWrite: Equatable {
 
     // MARK: Writes
 
-    /// A running protected block: removing it, or changing its days, hours, stop or settings for weaker ones, goes through
-    /// its stop; « Verrouillé » refuses. Stronger settings or stop are immediate.
+    /// A protected range, running or not (P3, T-059): removing it, or changing its days, hours, stop or settings for
+    /// weaker ones, goes through its stop (`stopGrant`); « Verrouillé » refuses. Stronger settings or stop are immediate.
     func check(_ write: JevRangeWrite, now: Date, calendar: Calendar = .current) -> JevWriteCheck {
         if error != nil { return .allow } // the next save replaces an unreadable document
         let id: UUID
@@ -238,16 +339,20 @@ enum JevRangeWrite: Equatable {
         case .save(let range): id = range.id
         case .delete(let value): id = value
         }
-        guard let old = document.ranges.first(where: { $0.id == id }), old.lock != .free,
-              Self.isRunning(old, now: now, calendar: calendar) else { return .allow }
-        switch write {
-        case .delete: break
-        case .save(let range):
-            if range.lock.strength >= old.lock.strength, range.weekdays == old.weekdays, range.startMinute == old.startMinute,
-               range.endMinute == old.endMinute, Self.score(range.settings) >= Self.score(old.settings),
-               old.pause == range.pause || PauseEngine.weakening(old.pause, range.pause) == nil { return .allow }
+        let old = document.ranges.first { $0.id == id }
+        var new: JevSurveillanceRange?
+        if case .save(let range) = write { new = range }
+        // The rule's own stop when it is removed or weakened; else the stop of a rule whose applied effect falls (N1).
+        var lock = BlockLock.free, own = false
+        if let old, old.lock != .free, new.map({ Self.weakens(old, $0) }) ?? true { lock = old.lock; own = true }
+        let shared = Self.combinedLoss(old: old, new: new, in: document)
+        if shared.strength > lock.strength { lock = shared; own = false }
+        guard lock != .free else { return .allow }
+        if lock == .locked {
+            guard own, let old else { return .refused(Self.combinedText) }
+            return .refused(Self.isRunning(old, now: now, calendar: calendar) ? Self.protectedText : RuleStopGrant.lockedText)
         }
-        return old.lock == .locked ? .refused(Self.protectedText) : .stop(old.lock)
+        return stopGrant.covers(lock) ? .allow : .stop(lock)
     }
 
     /// Nil = the write may be saved without asking. Otherwise the reason it needs the stop or is refused.
@@ -259,7 +364,9 @@ enum JevRangeWrite: Equatable {
         }
     }
 
-    func apply(_ write: JevRangeWrite) {
+    /// Writes a change `check` allows (the stop passed through `stopGrant`). False = refused, nothing written.
+    @discardableResult func apply(_ write: JevRangeWrite, now: Date = Date()) -> Bool {
+        guard check(write, now: now) == .allow else { return false }
         var next = error == nil ? document : JevSurveillanceDocument()
         switch write {
         case .save(let range):
@@ -267,7 +374,7 @@ enum JevRangeWrite: Equatable {
         case .delete(let id):
             next.ranges.removeAll { $0.id == id }
         }
-        save(next)
+        return save(next)
     }
 
     /// The editor started a session: its choice is kept for this session. A Concentration session's choice becomes the

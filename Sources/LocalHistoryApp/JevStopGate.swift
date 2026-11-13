@@ -59,6 +59,23 @@ import LocalHistoryCore
         step(monitor.currentActivity(), jevEnabled: monitor.enabled)
     }
 
+    /// T-059 lot 2: switching Jev off, its key and quitting also stop the protected « Surveillance » ranges that have
+    /// not begun yet. Their stop counts with what runs now (the pause keeps `currentStep`).
+    static func protectedStep(monitor: JevMonitor = .shared, store: JevSurveillanceStore = .shared) -> Step {
+        protectedStep(activity: monitor.currentActivity(), ranges: store.document.ranges, jevEnabled: monitor.enabled)
+    }
+
+    /// Pure. A « Verrouillé » range not running yet refuses with the rule's sentence, not the running one's.
+    static func protectedStep(activity: [JevSurveillanceActivity], ranges: [JevSurveillanceRange], jevEnabled: Bool,
+                              challenge: () -> String = BlockingController.newTypingChallenge) -> Step {
+        let now = step(activity, jevEnabled: jevEnabled, challenge: challenge)
+        if case .refused = now { return now }
+        guard jevEnabled else { return .allow }
+        if ranges.contains(where: { $0.lock == .locked }) { return .refused(RuleStopGrant.lockedText) }
+        return step(activity + ranges.map { JevSurveillanceActivity(settings: $0.settings, lock: $0.lock) },
+                    jevEnabled: jevEnabled, challenge: challenge)
+    }
+
     /// The stop of the surveillance the current Concentration session carries.
     static func focusStep(monitor: JevMonitor? = nil) -> Step {
         guard let id = ConcentrationRuntime.shared.controller?.currentSession?.id else { return .allow }

@@ -543,7 +543,7 @@ private struct RedScreenChallenge: Identifiable {
         return value
     }
     var body: some View {
-        let refusal = controller.refusal(for: next)
+        let refusal = controller.lockedRefusal(for: next)
         VStack(alignment: .leading, spacing: 20) {
             Text(draft.existed ? "Modifier la plage" : "Ajouter une plage").font(LHTheme.sheetTitleFont).tracking(-0.4)
             Text("Jours concernés").foregroundStyle(LHTheme.secondaryText)

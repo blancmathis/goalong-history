@@ -26,6 +26,10 @@ import LocalHistoryQueryCLI
     @Published private(set) var browsers: [BlockingBrowserSupport] = []
     @Published private(set) var protection = BlockingProtectionState()
     @Published var error: String?
+    /// P3 (T-059): the proof of a protected rule's stop, read before any weakening write.
+    var stopGrant: RuleStopGrant = .shared
+    /// Asks the member for a stop (the app sets a modal alert; nil in tests = refuse without asking).
+    var askStop: ((BlockLock) -> Bool)?
     /// The list a harmless deletion just removed, until « Annuler » times out (lot 2b).
     @Published private(set) var undoableDeletion: BlockList?
     private var undoTask: Task<Void, Never>?
@@ -135,6 +139,8 @@ import LocalHistoryQueryCLI
                 case .previous: self.error = "Le fichier de blocage était abîmé : Goalong a repris sa copie de secours. La dernière modification peut manquer."
                 case .reset: self.error = "Le fichier de blocage et sa copie de secours étaient illisibles : Goalong repart sans listes. Les fichiers abîmés restent dans son dossier."
                 }
+                if loaded.restored > 0 { self.error = ProtectedFloor.restoredText }
+                if loaded.copyUnavailable { self.error = ProtectedFloor.unavailableText }
             } catch { failStore() }
         }
         let migratedDays = migrateLegacyDayKeys()
@@ -209,6 +215,20 @@ import LocalHistoryQueryCLI
         let running = activeBlocks.contains { $0.lock != .free && $0.start <= now && $0.end > now }
             || document.sessions.contains { $0.lock != .free && $0.start <= now && $0.end > now }
         return running ? "Le module ne peut pas être désactivé pendant un blocage « Difficile » : arrêtez-le d’abord en retapant le texte." : nil
+    }
+    /// T-059 lot 2: the strongest stop of a protected rule that switching the module off would stop: any list range
+    /// (running or not) and any session not over. Nil = nothing protected.
+    var moduleOffRuleStop: BlockLock? {
+        let now = clock()
+        let locks = lists.flatMap { $0.program.ranges.map { effectiveLock($0.effectiveLock) } }
+            + document.sessions.filter { $0.end > now }.map { effectiveLock($0.lock) }
+        return locks.filter { $0 != .free }.max { $0.strength < $1.strength }
+    }
+    /// The module switch passes the protected rules' stop (`stopGrant`); « Verrouillé » refuses. Nil = it may go off.
+    var moduleOffRuleRefusal: String? {
+        guard let lock = moduleOffRuleStop else { return nil }
+        if lock == .locked { return RuleStopGrant.lockedText }
+        return stopGrant.covers(lock) ? nil : "Une règle protégée (« \(lock.title) ») tourne dans Garde-fous : passez son arrêt pour le désactiver."
     }
     /// End of the latest commitment. A store error is not a lock: it refuses edits, never quitting.
     var lockedUntil: Date? {
@@ -333,42 +353,16 @@ import LocalHistoryQueryCLI
             return .refused("Définissez d’abord le mot de passe de blocage.")
         }
         guard let current = existing else { return .allowed }
-        guard isStricterOnly(current.id) else { return .allowed }
+        // P3 (T-059): a protected rule not running is weakened only through its stop (`RuleStopGrant`).
+        guard isStricterOnly(current.id) else {
+            if let need = Self.protectedWeakening(current, next, effectiveLock: effectiveLock), !stopGrant.covers(need) {
+                return .refused(RuleStopGrant.needText(need))
+            }
+            return .allowed
+        }
         let passwordProtected = activeBlocks.contains { $0.lock == .password && $0.listIDs.contains(current.id) }
         let prefix = passwordProtected ? "Pendant un blocage par mot de passe, " : "Pendant un verrou, "
-        if (current.effectiveAction == .block && next.effectiveAction == .slowDown)
-            || next.delaySeconds < current.delaySeconds || next.allowanceMinutes > current.allowanceMinutes {
-            return .refused(prefix + "Ralentir peut seulement devenir plus strict.")
-        }
-        if next.mode != current.mode { return .refused("Le mode ne change pas pendant un verrou.") }
-        let oldSites = Set(current.sites.map(\.pattern)), newSites = Set(next.sites.map(\.pattern))
-        let oldApps = Set(current.apps.map(\.bundleIdentifier)), newApps = Set(next.apps.map(\.bundleIdentifier))
-        let sitesSafe = current.mode == .block ? oldSites.isSubset(of: newSites) : newSites.isSubset(of: oldSites)
-        let appsSafe = current.mode == .block ? oldApps.isSubset(of: newApps) : newApps.isSubset(of: oldApps)
-        if !sitesSafe || !appsSafe { return .refused(prefix + "la liste peut seulement devenir plus stricte.") }
-        let oldKeywords = Set((current.keywords ?? []).map(BlockingRules.foldKeyword))
-        let newKeywords = Set((next.keywords ?? []).map(BlockingRules.foldKeyword))
-        if !oldKeywords.isSubset(of: newKeywords) { return .refused(prefix + "les mots-clés peuvent seulement être ajoutés.") }
-        let oldExceptions = Set(current.exceptions ?? []), newExceptions = Set(next.exceptions ?? [])
-        if !newExceptions.isSubset(of: oldExceptions) { return .refused(prefix + "les exceptions peuvent seulement être retirées.") }
-        let oldTriggers = Set((current.triggers?.apps ?? []).map(\.bundleIdentifier))
-        let newTriggers = Set((next.triggers?.apps ?? []).map(\.bundleIdentifier))
-        if !oldTriggers.isSubset(of: newTriggers) { return .refused(prefix + "les déclencheurs peuvent seulement être ajoutés.") }
-        if let earn = next.earn {
-            guard let old = current.earn, earn.workMinutes >= old.workMinutes,
-                  earn.rewardMinutes <= old.rewardMinutes, earn.capMinutes <= old.capMinutes else {
-                return .refused(prefix + "le temps gagné peut seulement diminuer ou être désactivé.")
-            }
-        }
-        if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
-            return .refused(prefix + "le temps permis peut seulement baisser.")
-        }
-        if let breaks = next.breaks {
-            let old = current.breaks ?? BlockBreaks(count: 0, minutes: 0)
-            if breaks.count > old.count || breaks.minutes > old.minutes {
-                return .refused(prefix + "les pauses peuvent seulement diminuer.")
-            }
-        }
+        if let reason = Self.contentWeakening(current, next, prefix: prefix) { return .refused(reason) }
         if current.program.isLocked(at: clock()), (next.program.lockedUntil ?? .distantPast) < (current.program.lockedUntil ?? .distantPast) {
             return .refused("Le verrou du programme ne peut pas être raccourci.")
         }
@@ -376,6 +370,86 @@ import LocalHistoryQueryCLI
             return .refused(prefix + weakening)
         }
         return .allowed
+    }
+
+    /// The list's own settings (« stricter only », shared by a running block and a protected rule): nil = the change
+    /// only adds or hardens. `prefix` starts most refusals.
+    nonisolated static func contentWeakening(_ current: BlockList, _ next: BlockList, prefix: String) -> String? {
+        if (current.effectiveAction == .block && next.effectiveAction == .slowDown)
+            || next.delaySeconds < current.delaySeconds || next.allowanceMinutes > current.allowanceMinutes {
+            return (prefix + "Ralentir peut seulement devenir plus strict.")
+        }
+        if next.mode != current.mode { return ("Le mode ne change pas pendant un verrou.") }
+        let oldSites = Set(current.sites.map(\.pattern)), newSites = Set(next.sites.map(\.pattern))
+        let oldApps = Set(current.apps.map(\.bundleIdentifier)), newApps = Set(next.apps.map(\.bundleIdentifier))
+        let sitesSafe = current.mode == .block ? oldSites.isSubset(of: newSites) : newSites.isSubset(of: oldSites)
+        let appsSafe = current.mode == .block ? oldApps.isSubset(of: newApps) : newApps.isSubset(of: oldApps)
+        if !sitesSafe || !appsSafe { return (prefix + "la liste peut seulement devenir plus stricte.") }
+        let oldKeywords = Set((current.keywords ?? []).map(BlockingRules.foldKeyword))
+        let newKeywords = Set((next.keywords ?? []).map(BlockingRules.foldKeyword))
+        if !oldKeywords.isSubset(of: newKeywords) { return (prefix + "les mots-clés peuvent seulement être ajoutés.") }
+        let oldExceptions = Set(current.exceptions ?? []), newExceptions = Set(next.exceptions ?? [])
+        if !newExceptions.isSubset(of: oldExceptions) { return (prefix + "les exceptions peuvent seulement être retirées.") }
+        let oldTriggers = Set((current.triggers?.apps ?? []).map(\.bundleIdentifier))
+        let newTriggers = Set((next.triggers?.apps ?? []).map(\.bundleIdentifier))
+        if !oldTriggers.isSubset(of: newTriggers) { return (prefix + "les déclencheurs peuvent seulement être ajoutés.") }
+        if let earn = next.earn {
+            guard let old = current.earn, earn.workMinutes >= old.workMinutes,
+                  earn.rewardMinutes <= old.rewardMinutes, earn.capMinutes <= old.capMinutes else {
+                return (prefix + "le temps gagné peut seulement diminuer ou être désactivé.")
+            }
+        }
+        if (next.quotaMinutesPerDay ?? 0) > (current.quotaMinutesPerDay ?? 0) {
+            return (prefix + "le temps permis peut seulement baisser.")
+        }
+        if let breaks = next.breaks {
+            let old = current.breaks ?? BlockBreaks(count: 0, minutes: 0)
+            if breaks.count > old.count || breaks.minutes > old.minutes {
+                return (prefix + "les pauses peuvent seulement diminuer.")
+            }
+        }
+        return nil
+    }
+
+    /// P3 (T-059): the stop a change of a list needs, whether its ranges run or not. A list in a protected range
+    /// (« Difficile » or stronger) keeps its contents unless that range's stop is passed; each covered minute keeps its
+    /// stop; each range keeps or lowers its pauses. Nil = the change only adds or hardens, or nothing is protected.
+    nonisolated static func protectedWeakening(_ current: BlockList, _ next: BlockList,
+                                               effectiveLock: (BlockLock) -> BlockLock) -> BlockLock? {
+        var need = BlockLock.free
+        func raise(_ lock: BlockLock) { if lock.strength > need.strength { need = lock } }
+        let strongest = current.program.ranges.map { effectiveLock($0.effectiveLock) }.max { $0.strength < $1.strength } ?? .free
+        guard strongest != .free else { return nil }
+        if contentWeakening(current, next, prefix: "") != nil { raise(strongest) }
+        for lock in BlockLock.allCases where lock != .free {
+            let old = programCoverage(BlockProgram(ranges: current.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            let new = programCoverage(BlockProgram(ranges: next.program.ranges.filter { effectiveLock($0.effectiveLock).strength >= lock.strength }))
+            if !old.isSubset(of: new) { raise(lock) }
+        }
+        for range in next.program.ranges {
+            guard let old = current.program.ranges.first(where: { $0.id == range.id }), old.pause != range.pause,
+                  PauseEngine.weakening(old.pause, range.pause) != nil else { continue }
+            raise(effectiveLock(old.effectiveLock))
+        }
+        return need == .free ? nil : need
+    }
+
+    /// The stop saving `next` needs now (P3). Nil = free, or the list runs (then « stricter only » refuses).
+    func weakeningStop(_ next: BlockList) -> BlockLock? {
+        guard let current = list(next.id), !isStricterOnly(current.id) else { return nil }
+        return Self.protectedWeakening(current, next, effectiveLock: effectiveLock)
+    }
+
+    /// The stop deleting a list needs: the strongest of its ranges (P3). Nil = free.
+    func deletionStop(_ id: UUID) -> BlockLock? {
+        let strongest = list(id)?.program.ranges.map { effectiveLock($0.effectiveLock) }.max { $0.strength < $1.strength } ?? .free
+        return strongest == .free ? nil : strongest
+    }
+
+    /// Asks the member through `askStop` when `need` is not granted yet. True = this call granted it (revoke after).
+    private func askIfNeeded(_ need: BlockLock?) -> Bool {
+        guard let need, need != .locked, !stopGrant.covers(need), let askStop else { return false }
+        return askStop(need) && stopGrant.covers(need)
     }
 
     /// The program part of « stricter only », shared with the red screen's ranges (T-048 B2): no covered
@@ -399,6 +473,8 @@ import LocalHistoryQueryCLI
     /// Returns this save's own refusal, never an unrelated banner such as the login-item notice.
     @discardableResult func save(_ value: BlockList) -> String? {
         guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        let asked = askIfNeeded(weakeningStop(value))
+        defer { if asked { stopGrant.revoke() } }
         let next: BlockList
         switch normalized(value) {
         case .failure(let refusal): error = refusal.reason; return refusal.reason
@@ -475,6 +551,9 @@ import LocalHistoryQueryCLI
     @discardableResult func saveAll(_ values: [BlockList]) -> String? {
         guard values.count > 1 else { return values.first.flatMap { save($0) } }
         guard admitEdit() else { return error ?? "Le fichier de blocage est indisponible." }
+        let need = values.compactMap(weakeningStop).max { $0.strength < $1.strength }
+        let asked = askIfNeeded(need)
+        defer { if asked { stopGrant.revoke() } }
         func named(_ value: BlockList, _ reason: String) -> String { "« \(value.name) » : \(reason)" }
         var candidate = document
         var prepared: [BlockList] = []
@@ -574,6 +653,8 @@ import LocalHistoryQueryCLI
         guard admitEdit() else { return .refused(error ?? "Le fichier de blocage est indisponible.") }
         guard var next = list(listID) else { return .refused("Cette liste n’existe plus.") }
         edit(&next)
+        let asked = askIfNeeded(weakeningStop(next))
+        defer { if asked { stopGrant.revoke() } }
         let check = editCheck(next)
         guard check == .allowed else { return check }
         return save(next).map(BlockingEditCheck.refused) ?? .allowed
@@ -610,6 +691,18 @@ import LocalHistoryQueryCLI
         if document.sessions.contains(where: { $0.start > clock() && $0.lock != .free && $0.listIDs.contains(id) }) {
             error = "Annulez d’abord le blocage programmé avec son défi ou son mot de passe."; return
         }
+        // P3 (T-059): deleting a protected list goes through the strongest stop of its ranges.
+        if let need = deletionStop(id) {
+            let asked = askIfNeeded(need)
+            defer { if asked { stopGrant.revoke() } }
+            guard stopGrant.covers(need) else { error = RuleStopGrant.needText(need); return }
+            removeList(id)
+            return
+        }
+        removeList(id)
+    }
+
+    private func removeList(_ id: UUID) {
         document.lists.removeAll { $0.id == id }
         document.sessions = document.sessions.compactMap { session in
             var session = session
@@ -1265,7 +1358,9 @@ import LocalHistoryQueryCLI
         // minute must not lose it (C8-03).
         let locksChanged = locksBefore != (document.sessions, document.heldPrograms, document.freeze, document.lists)
         if !storeFailed, let store, (triggersChanged || locksChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
-            do { try store.save(document); lastGood = document; lastSavedAt = now } catch { failStore() }
+            do { try store.save(document); lastGood = document; lastSavedAt = now }
+            catch BlockingStore.Failure.floorUnavailable { error = ProtectedFloor.unsavedText } // retried at the next save
+            catch { failStore() }
         }
         document.sessions.removeAll { $0.end <= now }
         document.heldPrograms = document.heldPrograms?.filter { $0.end > now }
@@ -1423,7 +1518,8 @@ import LocalHistoryQueryCLI
     private func commit(reenforce: Bool = true) {
         backend?.invalidateSiteActions()
         if let store {
-            do { try store.save(document); lastGood = document; lastSavedAt = clock(); error = nil }
+            do { error = try store.save(document) ? nil : ProtectedFloor.staleText; lastGood = document; lastSavedAt = clock() }
+            catch BlockingStore.Failure.floorUnavailable { if let lastGood { document = lastGood }; error = ProtectedFloor.unsavedText }
             catch { if let lastGood { document = lastGood }; failStore() }
         } else { error = nil }
         refresh(enforceLast: reenforce)
@@ -1907,6 +2003,15 @@ import LocalHistoryQueryCLI
         guard case .until(let end, _) = redScreen else { return keptMarker(now: now) }
         return GoalongProtection.until(severe: nil, redScreen: end, now: now)
     }
+    /// T-059 lot 2: the strongest stop of every protected rule, running or not, that quitting would stop until the
+    /// next launch: lists and sessions (module on) and red-screen ranges. Nil = none. SIGTERM and « Quitter » read it.
+    func protectedRuleStop() -> BlockLock? {
+        let red = BraiseRuntime.shared.controller?.ranges.program.ranges.map(\.effectiveLock) ?? []
+        return Self.strongestRuleStop([controller?.moduleOffRuleStop].compactMap { $0 } + red)
+    }
+    nonisolated static func strongestRuleStop(_ locks: [BlockLock]) -> BlockLock? {
+        locks.filter { $0 != .free }.max { $0.strength < $1.strength }
+    }
     /// « Quitter », module Blocage on or off: without the module, a protected range is stopped on its page first.
     func quitRule(now: Date = Date()) -> GoalongProtection.Quit { // wall: module off, the red screen's ends are wall dates
         if let controller { controller.refresh(enforceLast: false); return controller.quitRule }
@@ -1947,7 +2052,7 @@ import LocalHistoryQueryCLI
         modules.blockingDisableCheck = { [weak self] in
             guard let controller = self?.controller else { return true }
             controller.refresh(enforceLast: false)
-            if let refusal = controller.moduleOffRefusal {
+            if let refusal = controller.moduleOffRefusal ?? controller.moduleOffRuleRefusal {
                 controller.error = refusal
                 return false
             }
@@ -1965,6 +2070,7 @@ import LocalHistoryQueryCLI
             // From now on this process may lower or remove `guard-until` (an installed copy only).
             if guardClient != nil { GoalongGuardFiles.reportHealth() }
             controller = value
+            value.askStop = { RuleStopGrant.confirm($0) }
             value.onOpen = { [weak self] in self?.onOpen?() }
             value.onObservationRequirementChanged = { [weak self] needed in self?.monitor?.setBlockingObservationEnabled(needed) }
             let hud = BlockingTimerHUD(clock: { [weak value] in value?.now ?? .distantPast }) { [weak value] in value?.timerInput }
@@ -1978,7 +2084,7 @@ import LocalHistoryQueryCLI
             monitor?.setBlockingObservationEnabled(value.needsObservation)
         } else if !enabled, let controller {
             controller.refresh(enforceLast: false)
-            if let refusal = controller.moduleOffRefusal {
+            if let refusal = controller.moduleOffRefusal ?? controller.moduleOffRuleRefusal {
                 controller.error = refusal
                 modules?.setEnabled(.blocking, true)
                 return
