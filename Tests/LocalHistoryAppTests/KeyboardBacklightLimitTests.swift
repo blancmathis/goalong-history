@@ -210,12 +210,16 @@ final class KeyboardBacklightLimitTests: XCTestCase {
         XCTAssertEqual(stops[1], KeyboardBacklightLimit.lowestLitStop)
         XCTAssertTrue(zip(stops, stops.dropFirst()).allSatisfy { $0 < $1 }, "strictly increasing")
         XCTAssertTrue(stops.allSatisfy { KeyboardBacklightLimit.range.contains($0) })
-        XCTAssertEqual(stops.filter { $0 > 0 && $0 < 0.005 }.count, 4, "distinct lit stops under the old 0,5 % floor")
+        XCTAssertEqual(stops.filter { $0 > 0 && $0 < 0.005 }, [0.0005, 0.002], "lit stops under the old 0,5 % floor")
         XCTAssertTrue(stops.contains(KeyboardBacklightLimit.defaultMaximum))
         XCTAssertTrue(stops.contains(KeyboardBacklightLimit.firstMacStep))
-        // Each lit stop is clearly brighter than the one before (model: 0.100 + 14.56 × level nit), at least +5 %.
-        let nits = stops.dropFirst().map { 0.100 + 14.56 * $0 }
-        XCTAssertTrue(zip(nits, nits.dropFirst()).allSatisfy { $1 / $0 >= 1.05 })
+        // Each lit stop is visibly brighter than the one before (+15 %, far above the ~7 % that cannot be seen).
+        let nits = stops.dropFirst().map(KeyboardBacklightLimit.modelNits)
+        for (lower, upper) in zip(nits, nits.dropFirst()) { XCTAssertGreaterThanOrEqual(upper / lower, 1.15, "\(lower) → \(upper) nit") }
+        // The measured points (mesure 2026-11-13) match the model.
+        XCTAssertEqual(KeyboardBacklightLimit.modelNits(0.0005), 0.1073, accuracy: 0.001)
+        XCTAssertEqual(KeyboardBacklightLimit.modelNits(0.005), 0.1728, accuracy: 0.001)
+        XCTAssertEqual(KeyboardBacklightLimit.modelNits(0), 0, "only 0 is off")
     }
 
     func testStopRoundTripAndOldValues() {
@@ -237,8 +241,42 @@ final class KeyboardBacklightLimitTests: XCTestCase {
             XCTAssertLessThanOrEqual(abs(KeyboardBacklightLimit.level(atStop: index) - old), 0.025 + 1e-12)
             previous = index
         }
-        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 0.005), 5)
+        XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 0.005), 3)
         XCTAssertEqual(KeyboardBacklightLimit.stopIndex(for: 0.0004), 1, "a stray low value shows on the lowest lit stop")
+    }
+
+    func testSliderMoveFromAStop() {
+        typealias L = KeyboardBacklightLimit
+        let index = L.stopIndex(for: 0.01)
+        XCTAssertNil(L.maximum(movingSliderTo: index, from: 0.01), "same stop: nothing written")
+        XCTAssertEqual(L.maximum(movingSliderTo: index - 1, from: 0.01), 0.005)
+        XCTAssertEqual(L.maximum(movingSliderTo: index + 1, from: 0.01), 0.02)
+        XCTAssertEqual(L.maximum(movingSliderTo: 0, from: 0.01), 0, "far left = off")
+        XCTAssertEqual(L.maximum(movingSliderTo: 99, from: 0.01), L.range.upperBound)
+        XCTAssertEqual(L.maximum(movingSliderTo: -5, from: 0.01), 0)
+    }
+
+    /// An old 0.005-step ceiling between two stops (0.035, 0.045, 0.015…) is kept until the slider moves, and one step
+    /// never skips the stop next to it, whichever way the tie of `stopIndex` goes.
+    func testSliderMoveFromAnOldOffStopValue() {
+        typealias L = KeyboardBacklightLimit
+        for old in stride(from: 0.0, through: 0.25, by: 0.005) where !L.stops.contains(where: { abs($0 - old) < 1e-9 }) {
+            let shown = L.stopIndex(for: old)
+            XCTAssertNil(L.maximum(movingSliderTo: shown, from: old), "\(old): same position keeps the value")
+            let below = L.stops.last { $0 < old }!, above = L.stops.first { $0 > old }!
+            XCTAssertEqual(L.maximum(movingSliderTo: shown - 1, from: old), below, "\(old): one step left")
+            XCTAssertEqual(L.maximum(movingSliderTo: 0, from: old), 0, "\(old): far left is off")
+            if shown < L.stops.count - 1 { // 0.23…0.245 show on the top stop: no step right exists
+                XCTAssertEqual(L.maximum(movingSliderTo: shown + 1, from: old), above, "\(old): one step right")
+            }
+            if shown + 1 < L.stops.count - 1 { // a jump of two or more to the far right lands on the top stop
+                XCTAssertEqual(L.maximum(movingSliderTo: L.stops.count - 1, from: old), L.range.upperBound, "\(old): far right")
+            }
+        }
+        XCTAssertEqual(L.maximum(movingSliderTo: L.stopIndex(for: 0.035) - 1, from: 0.035), 0.03)
+        XCTAssertEqual(L.maximum(movingSliderTo: L.stopIndex(for: 0.035) + 1, from: 0.035), 0.04)
+        XCTAssertEqual(L.maximum(movingSliderTo: 0, from: 0.001), 0.0005, "one step left from 0.1 % is the lowest lit stop")
+        XCTAssertEqual(L.maximum(movingSliderTo: 0, from: 0.035), 0, "a jump to the far left is off")
     }
 
     func testLowestStopIsStillCorrected() {

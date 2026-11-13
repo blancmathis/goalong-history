@@ -56,15 +56,13 @@ struct KeyboardBacklightSettings: View {
             }
             Slider(value: Binding(get: { Double(Limit.stopIndex(for: maximum)) },
                                   set: { position in
-                                      let index = Int(position.rounded())
-                                      // Same stop as now: keep the stored value (an old 0.005-step ceiling stays exact).
-                                      if index != Limit.stopIndex(for: maximum) { maximum = Limit.level(atStop: index) }
+                                      if let next = Limit.maximum(movingSliderTo: Int(position.rounded()), from: maximum) { maximum = next }
                                   }),
                    in: 0...Double(Limit.stops.count - 1), step: 1)
                 .accessibilityLabel("Luminosité maximale du clavier")
                 .accessibilityValue(maximum <= 0 ? "Éteint" : Self.percent(maximum))
                 .accessibilityIdentifier("settings-keyboard-backlight-maximum")
-            Text("Le premier cran de la touche de macOS vaut 6,25\u{00A0}%. Les crans sont plus fins en bas : 0,05\u{00A0}% est le plus faible encore allumé ; tout à gauche, le clavier est éteint.")
+            Text("Le premier cran de la touche de macOS vaut 6,25\u{00A0}%. En bas, le clavier garde une faible lueur : à 0,05\u{00A0}%, le cran allumé le plus sombre, il éclaire encore environ 60\u{00A0}% de ce qu’il éclaire à 0,5\u{00A0}%. Seul « Éteint », tout à gauche, l’éteint vraiment.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
