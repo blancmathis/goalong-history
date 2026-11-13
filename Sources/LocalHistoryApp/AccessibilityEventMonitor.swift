@@ -80,6 +80,8 @@ final class AXObserverOwner {
             // a retired source can never acquire the new attachment's identity.
             detachObserver()
             guard let application, !application.isTerminated else { publish(generation, false, nil); return }
+            // Goalong never observes itself from this thread (T-061): no coverage, the poll still runs.
+            guard application.processIdentifier != client.ownPID else { publish(generation, false, nil); return }
             attach(application, generation: generation)
             publishedCoverage = coverage
             publish(generation, coverage, nil)

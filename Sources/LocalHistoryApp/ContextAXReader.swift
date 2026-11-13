@@ -452,7 +452,8 @@
         }
 
         func element(at point: CGPoint, expectedProcessIdentifier: pid_t? = nil, parameters: ContextReadParameters) -> ElementSnapshot? {
-            guard parameters.accessibilityAvailable else { return nil }
+            guard parameters.accessibilityAvailable,
+                  expectedProcessIdentifier != AXAccess.client.ownPID || Thread.isMainThread else { return nil }
             guard let element = AXReader.actionableElement(at: point) else { return nil }
             if let expectedProcessIdentifier {
                 var actual: pid_t = 0
