@@ -859,7 +859,6 @@ import LocalHistoryQueryCLI
         if let session, case .commitment = session.origin {
             return refusePassword("L’enjeu est verrouillé : utilisez un joker ou une déclaration dans Concentration.")
         }
-        if let session, case .trigger(let listID) = session.origin { suppressedTriggers.insert(listID) }
         switch lock {
         case .locked: return refusePassword("Ce blocage est verrouillé jusqu’à la fin.")
         case .typing:
@@ -870,6 +869,8 @@ import LocalHistoryQueryCLI
             guard result == .ok else { return result }
         case .free: break
         }
+        // T-063: only a stop that passed its lock keeps the trigger from starting the block again.
+        if let session, case .trigger(let listID) = session.origin { suppressedTriggers.insert(listID) }
         if let block, case .program = block.origin {
             document.programSkips = document.programSkips ?? [:]
             // A held window stays held under its skip: a later `lockProgram` clears the skip and the
@@ -959,6 +960,8 @@ import LocalHistoryQueryCLI
 
     func revokeQuitAuthorization() { quitAuthorization = nil }
 
+    nonisolated static let emptyPasswordText = "Entrez le mot de passe de blocage."
+
     private func refusePassword(_ reason: String) -> BlockingPasswordResult {
         error = reason; return .refused(reason: reason)
     }
@@ -969,6 +972,8 @@ import LocalHistoryQueryCLI
             return refusePassword("Le mot de passe est illisible : les blocages restent verrouillés jusqu’à leur fin.")
         }
         if let until = credential.retryAfter, until > clock() { return .wait(until: until) }
+        // T-063: an empty field (Enter, a click on the button) is not a try: no count, no wait. It never matches.
+        guard !password.isEmpty else { return refusePassword(Self.emptyPasswordText) }
         let matches = credential.matches(password)
         if matches { credential.failedAttempts = 0; credential.retryAfter = nil }
         else {

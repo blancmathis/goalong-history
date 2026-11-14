@@ -499,6 +499,8 @@ private struct RedScreenChallenge: Identifiable {
             .onAppear { passwordFocused = true } // own layout
     }
     private func submit() {
+        // Enter in an empty field: nothing is sent, no try is counted (T-063).
+        guard !password.isEmpty else { message = BlockingController.emptyPasswordText; return }
         let result = stop?(password) ?? controller.stopActiveRanges(password: password)
         password = ""
         switch result {

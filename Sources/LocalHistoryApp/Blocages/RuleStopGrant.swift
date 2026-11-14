@@ -103,6 +103,9 @@ import LocalHistoryCore
         alert.accessoryView = field
         alert.addButton(withTitle: "Continuer")
         alert.addButton(withTitle: "Annuler")
+        // T-063: the field takes the keys at once; Enter = « Continuer », Esc = « Annuler ».
+        alert.window.initialFirstResponder = field
+        alert.layout()
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
         let typed = field?.stringValue ?? ""
         let proof: BlockRuleStopProof = lock == .typing ? .typed(typed, challenge: text) : .password(typed)

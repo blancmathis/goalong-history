@@ -16,12 +16,14 @@ final class GoalongActivityCheckpointTests: XCTestCase {
         try body(root, root.appendingPathComponent("events/2026-10-04.jsonl"))
     }
     private func rows() -> [HistoryEvent] {
-        (0...120).map { index in
-            HistoryEvent(id: "row-\(index)", sessionID: "fixture", timestamp: day.addingTimeInterval(Double(index * 30)),
-                kind: index % 4 == 0 ? .windowChanged : .typingBurst,
-                app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1),
-                window: index % 4 == 0 ? .init(title: "Document \(index % 7)", role: nil, subrole: nil) : nil,
-                metadata: ["idle_seconds": "0"])
+        // Explicit types: Xcode 27.2 cannot type-check the inline ternaries in reasonable time.
+        (0...120).map { (index: Int) -> HistoryEvent in
+            let changed = index % 4 == 0
+            let kind: EventKind = changed ? .windowChanged : .typingBurst
+            let window: WindowSnapshot? = changed ? WindowSnapshot(title: "Document \(index % 7)", role: nil, subrole: nil) : nil
+            return HistoryEvent(id: "row-\(index)", sessionID: "fixture", timestamp: day.addingTimeInterval(Double(index * 30)),
+                kind: kind, app: .init(name: "Editor", bundleIdentifier: "fixture.editor", processIdentifier: 1),
+                window: window, metadata: ["idle_seconds": "0"])
         }
     }
     private func bytes(_ rows: [HistoryEvent]) throws -> Data {
