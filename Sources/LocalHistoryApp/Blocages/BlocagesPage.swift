@@ -437,7 +437,6 @@ struct BlocagesFoldView<Content: View>: View {
     let onEdit: (BlockRuleEditor.Subject) -> Void
     @State private var typing: (rule: BlockRule, text: String)?
     @State private var asking: BlockRule?
-    @State private var password = ""
     @State private var deleting: BlockRule?
     @State private var refusal: String?
 
@@ -470,11 +469,17 @@ struct BlocagesFoldView<Content: View>: View {
                 .goalongControls()
             }
         }
-        .alert("Éteindre cette règle ?", isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
-            SecureField("Mot de passe de blocage", text: $password)
-            Button("Éteindre", role: .destructive) { if let rule = asking { finish(rule, .password(password)) }; password = "" }
-            Button("Annuler", role: .cancel) { password = "" }
-        } message: { Text("Son arrêt demande le mot de passe de blocage.") }
+        // T-063: a sheet, not an alert: the field has the focus, Enter sends, an empty field sends nothing, a wrong
+        // password stays in the sheet for another try.
+        .sheet(isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })) {
+            if let rule = asking {
+                BlockingPasswordPrompt(title: "Éteindre cette règle ?", message: "Son arrêt demande le mot de passe de blocage.",
+                                       actionTitle: "Éteindre",
+                                       submit: { BlockRuleSwitchAction.turnOff(rule, proof: .password($0), blocking: blocking, braise: braise) },
+                                       onClose: { asking = nil })
+                .goalongControls()
+            }
+        }
         .alert("Supprimer cette règle ?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             Button("Supprimer", role: .destructive) { if let rule = deleting { delete(rule) } }
             Button("Annuler", role: .cancel) {}

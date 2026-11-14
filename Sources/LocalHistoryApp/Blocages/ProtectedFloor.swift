@@ -196,8 +196,20 @@ struct BlockingFloor: Codable, Equatable {
         if let freeze = floor.freeze, freeze.end > now, (next.freeze?.end ?? .distantPast) < freeze.end {
             next.freeze = freeze; count += 1
         }
-        if let password = floor.password, next.passwordLock?.hash != password.hash || next.passwordLock?.salt != password.salt {
-            next.passwordLock = password; count += 1
+        if let password = floor.password {
+            if next.passwordLock?.hash != password.hash || next.passwordLock?.salt != password.salt
+                || next.passwordLock?.iterations != password.iterations {
+                next.passwordLock = password; count += 1
+            } else if var kept = next.passwordLock {
+                // T-063: the tries and their wait only change through the app's saves. A file with fewer wrong tries or
+                // an earlier wait (edited while Goalong was closed) gets the copy's: no more tries by editing the file.
+                let attempts = max(kept.failedAttempts, password.failedAttempts)
+                let wait = [kept.retryAfter, password.retryAfter].compactMap { $0 }.max()
+                if attempts != kept.failedAttempts || wait != kept.retryAfter {
+                    kept.failedAttempts = attempts; kept.retryAfter = wait
+                    next.passwordLock = kept; count += 1
+                }
+            }
         }
         // Pauses used and skipped windows only change through the app's saves: a difference was written outside it.
         if !floor.lists.isEmpty || !floor.sessions.isEmpty {
