@@ -14,7 +14,7 @@ enum SupportEvent: String, Codable {
     case captureHealthChanged, inputTapChanged, monitorCycle, requestFinished
     case operationFailed, updateChanged, sourceCheck, userMarkedIssue, reportExported
     case storageInterrupted, storageRetryFailed, storageRecovered, lowDiskSpace
-    case repeatSummary, appUpdated, updateCheckStarted, updateCheckFinished, updateChoice, monitorPaused
+    case repeatSummary, appUpdated, updateCheckStarted, updateCheckFinished, updateChoice, monitorPaused, launchPresented
 }
 enum SupportLevel: String, Codable { case info, warning, error }
 enum SupportKey: String, Codable {
@@ -31,6 +31,7 @@ enum SupportKey: String, Codable {
     case version, build, previousVersion, previousBuild, updateResult, userChoice, automaticChecks, availableVersion
     case monitoringEnabled, websiteLinked, websiteAutoSend
     case stallFrame1, stallFrame2, stallFrame3, stallFrame4
+    case launchOrigin, launchEventFlag, sessionSource, sessionAgeSeconds, quietRelaunch, windowShown, secondCopy
 }
 enum SupportState: String, Codable {
     case unknown, ready, unavailable, denied, deferred, started, stopped, cancelled, timedOut
@@ -52,6 +53,7 @@ enum SupportState: String, Codable {
 /// again when a record is read back for export.
 enum SupportSymbol {
     static let identifierKeys: Set<SupportKey> = [.errorType, .errorCase, .repeatedEvent,
+                                                   .launchOrigin, .launchEventFlag, .sessionSource,
                                                    .stallFrame1, .stallFrame2, .stallFrame3, .stallFrame4]
     static let versionKeys: Set<SupportKey> = [.version, .build, .previousVersion, .previousBuild, .availableVersion]
 
@@ -132,7 +134,7 @@ struct SupportRecord: Codable {
     static let importantEvents: Set<SupportEvent> = [
         .appStarted, .appStopped, .appUpdated, .userMarkedIssue, .captureHealthChanged, .updateChanged,
         .updateCheckFinished, .updateChoice, .storageRecovered, .permissionRepairStarted,
-        .permissionRepairFinished, .reportExported, .monitorPaused,
+        .permissionRepairFinished, .reportExported, .monitorPaused, .launchPresented,
     ]
 }
 
@@ -154,7 +156,7 @@ final class SupportDiagnostics {
     static let repeatAllowance = 3
     static let enabledKey = "goalong.supportDiagnostics.enabled.v1"
     static let lastLaunchKey = "goalong.support.lastLaunchVersion.v1"
-    private static let uncoalescedEvents: Set<SupportEvent> = [.appStarted, .appStopped, .userMarkedIssue, .reportExported, .repeatSummary, .appUpdated]
+    private static let uncoalescedEvents: Set<SupportEvent> = [.appStarted, .appStopped, .userMarkedIssue, .reportExported, .repeatSummary, .appUpdated, .launchPresented]
     /// Values that drift continuously; they never make a periodic record "new".
     private static let volatileKeys: Set<SupportKey> = [
         .elapsedMS, .durationMS, .axSuccessAgeSeconds, .callbackAgeSeconds, .contextAgeSeconds, .inputCount,

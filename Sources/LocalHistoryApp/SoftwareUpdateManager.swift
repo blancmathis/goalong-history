@@ -638,6 +638,8 @@ import AppleScreenTime
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
             isRelaunchingForUpdate = false
             GoalongGuardFiles.standard.removeLease()
+            // The relaunch will not happen: a member's open in the next two minutes is a real open.
+            LaunchPresentation.clearQuietRelaunch()
             if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }
