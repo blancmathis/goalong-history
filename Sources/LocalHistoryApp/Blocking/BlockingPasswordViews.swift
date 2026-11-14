@@ -76,7 +76,9 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     @State private var new = ""
     @State private var again = ""
     @State private var message: String?
-    @FocusState private var focused: Bool
+    @FocusState private var focused: Field?
+
+    enum Field: Hashable { case old, new }
 
     /// Long enough that it is not guessed, short enough that a friend types it without a fuss.
     static let minimumLength = 6
@@ -93,7 +95,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                 if needsOld {
                     GoalongFormField(title: purpose == .change ? "Mot de passe actuel" : "Mot de passe de blocage") {
                         SecureField("", text: $old)
-                            .textFieldStyle(GoalongFieldStyle()).focused($focused)
+                            .textFieldStyle(GoalongFieldStyle()).focused($focused, equals: .old)
                             .accessibilityLabel(purpose == .change ? "Mot de passe actuel" : "Mot de passe de blocage")
                             .accessibilityIdentifier("blocking-password-field")
                     }
@@ -101,7 +103,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                 if needsNew {
                     GoalongFormField(title: purpose == .change ? "Nouveau mot de passe" : "Mot de passe") {
                         SecureField("", text: $new)
-                            .textFieldStyle(GoalongFieldStyle())
+                            .textFieldStyle(GoalongFieldStyle()).focused($focused, equals: .new)
                             .accessibilityLabel(purpose == .change ? "Nouveau mot de passe" : "Mot de passe")
                             .accessibilityIdentifier("blocking-password-new")
                     }
@@ -129,8 +131,11 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         .font(.system(size: 13))
         .padding(28).frame(width: 480)
         .background(LHTheme.pageBackground)
-        .onAppearWhenShown { focused = true }
+        .onAppearWhenShown { focused = Self.firstField(purpose) }
     }
+
+    /// T-063: the field that takes the keys when the sheet opens: the password to check, or the new one for « create ».
+    static func firstField(_ purpose: Purpose) -> Field { purpose == .create ? .new : .old }
 
     /// The point of the password: someone else keeps it.
     private var handOver: some View {
@@ -197,6 +202,8 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     }
 
     private func submit() {
+        // Enter in a field runs even when the button is disabled: nothing is sent before the sheet is ready (T-063).
+        guard ready else { return }
         if needsNew {
             guard new == again else { message = "Les deux mots de passe sont différents."; return }
         }
@@ -232,6 +239,68 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
         var text = "Mot de passe incorrect"
         if case .extraBreak = purpose { text += " : pas de pause supplémentaire" }
         return remaining > 0 ? text + ". Encore \(GoalongUIFormat.count(remaining, "essai")) avant une attente." : text + "."
+    }
+}
+
+/// One password for one action (the rule switch's stop, T-063): the field has the focus, Enter sends, Esc keeps the
+/// rule, an empty field sends nothing, and a refusal stays under the field for another try.
+@MainActor struct BlockingPasswordPrompt: View {
+    let title: String
+    let message: String
+    let actionTitle: String
+    /// Nil = done; otherwise why not.
+    let submit: (String) -> String?
+    let onClose: () -> Void
+    @State private var password = ""
+    @State private var refusal: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(LHTheme.sheetTitleFont).tracking(-0.4)
+                Text(message).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            GoalongFormField(title: "Mot de passe de blocage") {
+                SecureField("", text: $password)
+                    .textFieldStyle(GoalongFieldStyle()).focused($focused)
+                    .onSubmit(send)
+                    .accessibilityLabel("Mot de passe de blocage")
+                    .accessibilityIdentifier("blocking-password-prompt-field")
+            }
+            if let refusal {
+                GoalongNote(refusal, tone: .warning).accessibilityIdentifier("blocking-password-prompt-message")
+            }
+            HStack {
+                Spacer()
+                Button("Annuler") { password = ""; onClose() }.keyboardShortcut(.cancelAction)
+                Button(actionTitle, action: send)
+                    .buttonStyle(LHPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(password.isEmpty)
+                    .accessibilityIdentifier("blocking-password-prompt-submit")
+            }
+        }
+        .font(.system(size: 13))
+        .padding(28).frame(width: 440)
+        .background(LHTheme.pageBackground)
+        .onAppearWhenShown { focused = true }
+    }
+
+    private func send() {
+        let typed = password
+        password = ""
+        switch Self.answer(typed, submit: submit) {
+        case .none: onClose()
+        case .some(let words): refusal = words; focused = true
+        }
+    }
+
+    /// Nil = done. An empty field is never sent (no try counted). Pure.
+    static func answer(_ typed: String, submit: (String) -> String?) -> String? {
+        guard !typed.isEmpty else { return BlockingController.emptyPasswordText }
+        return submit(typed)
     }
 }
 

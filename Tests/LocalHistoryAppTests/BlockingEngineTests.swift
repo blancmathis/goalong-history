@@ -771,6 +771,43 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertTrue(relaunched.activeBlocks.isEmpty)
     }
 
+    /// T-063: an empty field (Enter, a click) is never a try: no count, no wait, the block stays, on every path.
+    @MainActor func testEmptyPasswordIsNotCountedAsATry() throws {
+        let store = try temporaryStore(); let now = date()
+        let list = BlockList(name: "Sites"), credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(86_400), lock: .password)
+        try store.save(.init(lists: [list], sessions: [session], passwordLock: credential))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        let empty = BlockingPasswordResult.refused(reason: BlockingController.emptyPasswordText)
+        for attempt in 1...4 { XCTAssertEqual(c.unlockWithPassword("wrong", blockID: session.id), .wrong(remaining: 5 - attempt)) }
+        for _ in 1...10 {
+            XCTAssertEqual(c.unlockWithPassword("", blockID: session.id), empty)
+            XCTAssertEqual(c.authorizeQuit(password: ""), empty)
+            XCTAssertEqual(c.verifyRedScreenPassword(""), empty)
+        }
+        XCTAssertEqual(try store.load().passwordLock?.failedAttempts, 4)
+        XCTAssertNil(try store.load().passwordLock?.retryAfter)
+        XCTAssertFalse(c.consumeQuitAuthorization())
+        XCTAssertEqual(c.activeBlocks.map(\.id), [session.id])
+        XCTAssertTrue(c.hasPassword)
+        XCTAssertEqual(c.unlockWithPassword("fixture", blockID: session.id), .ok)
+        XCTAssertTrue(c.activeBlocks.isEmpty)
+    }
+
+    /// T-063: the rule switch's prompt never sends an empty field; the sheet focuses the field to type first.
+    @MainActor func testPasswordPromptsNeverSendEmptyAndFocusTheFirstField() {
+        var sent: [String] = []
+        XCTAssertEqual(BlockingPasswordPrompt.answer("", submit: { sent.append($0); return nil }), BlockingController.emptyPasswordText)
+        XCTAssertEqual(sent, [])
+        XCTAssertNil(BlockingPasswordPrompt.answer("fixture", submit: { sent.append($0); return nil }))
+        XCTAssertEqual(BlockingPasswordPrompt.answer("wrong", submit: { sent.append($0); return "Mot de passe incorrect." }), "Mot de passe incorrect.")
+        XCTAssertEqual(sent, ["fixture", "wrong"])
+        XCTAssertEqual(BlockingPasswordSheet.firstField(.create), .new)
+        for purpose: BlockingPasswordSheet.Purpose in [.change, .remove, .unlock(UUID(), what: ""), .extraBreak(UUID(), what: "")] {
+            XCTAssertEqual(BlockingPasswordSheet.firstField(purpose), .old)
+        }
+    }
+
     @MainActor func testMissingOrUnreadablePasswordNeverRecoversToWeakerDocument() throws {
         let store = try temporaryStore(); var now = date(); let list = BlockList(name: "Sites")
         let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(600), lock: .password)
