@@ -143,7 +143,7 @@ final class GoalongActivityInsightsTests: XCTestCase {
     }
 
     func testSessionsAndHourProfileConserveUsageTime() throws {
-        let events = [(9 * 3600.0, 30), (9 * 3600.0 + 31 * 60 + 60, 10), (15 * 3600.0, 20)]
+        let events: [(Double, Int)] = [(32_400, 30), (32_400 + 1920, 10), (54_000, 20)]
         let base = date(10)
         var rows: [HistoryEvent] = []
         for (start, length) in events {

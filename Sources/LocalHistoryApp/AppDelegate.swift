@@ -148,6 +148,11 @@ import AppleScreenTime
 
         private var runtimeStarted = false
         private var userQuitConfirmed = false
+        /// T-062: how this process was opened, read while AppKit handles the launch event.
+        private var launchOrigin: LaunchOrigin = .unknown
+        /// A reopen or a second copy's request that arrived before the dashboard existed.
+        private var pendingDashboardShow = false
+        private var showRequestObserver: NSObjectProtocol?
         /// Set when an installer or uninstaller asked us to stop with SIGTERM.
         private var terminatingForSignal = false
         /// Sender of the quit that was accepted (set only on the paths that really terminate).
@@ -180,6 +185,7 @@ import AppleScreenTime
         }
 
         func applicationDidFinishLaunching(_ notification: Notification) {
+            launchOrigin = LaunchOrigin.current()
             PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
         }
 
@@ -189,8 +195,20 @@ import AppleScreenTime
                 NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                     .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
                     .activate()
+                // T-062: activating a menu-bar app shows nothing. A member's open asks it for its window.
+                if launchOrigin == .member {
+                    DistributedNotificationCenter.default().postNotificationName(
+                        LaunchPresentation.showRequestName(bundleIdentifier: ProductIdentity.bundleIdentifier),
+                        object: nil, userInfo: nil, deliverImmediately: true)
+                }
                 NSApplication.shared.terminate(nil)
                 return
+            }
+            showRequestObserver = DistributedNotificationCenter.default().addObserver(
+                forName: LaunchPresentation.showRequestName(bundleIdentifier: ProductIdentity.bundleIdentifier),
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.showDashboardWhenReady() }
             }
 
             // T-050 lot C2: an old state with only one part of « Garde-fous » on gets the missing part, once. Never an off.
@@ -496,6 +514,8 @@ import AppleScreenTime
             installWorkspaceObservers()
             installPermissionAttentionObservers()
             let resumedSetup = PermissionRecovery.consumeSetupReturn()
+            let quietRelaunchUntil = GoalongDefaults.standard.double(forKey: LaunchPresentation.quietRelaunchKey)
+            GoalongDefaults.standard.removeObject(forKey: LaunchPresentation.quietRelaunchKey)
             if GoalongGuardFiles.isGuardRelaunch {
                 // Reopened by the blocking guard after a kill: quiet, no window (spec K §6).
                 Diagnostics.write("Goalong reopened by its blocking guard")
@@ -517,6 +537,16 @@ import AppleScreenTime
                 let previousSection = GoalongDefaults.standard.string(forKey: "goalong.restoreVisibleSection")
                     .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.navigationStore.selectedSection
                 dashboardWindowController?.show(section: previousSection)
+            } else if !dashboardViewModel.navigationStore.showWelcome,
+                      LaunchPresentation.showsDashboardAtLaunch(
+                        origin: launchOrigin, quietRelaunchUntil: quietRelaunchUntil, now: Date(),
+                        systemUptime: ProcessInfo.processInfo.systemUptime) {
+                // T-062: a member's open shows the window at once; no second launch needed.
+                dashboardWindowController?.show(section: nil)
+            }
+            if pendingDashboardShow {
+                pendingDashboardShow = false
+                dashboardWindowController?.show(section: nil)
             }
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
@@ -823,6 +853,10 @@ import AppleScreenTime
             if dashboardWindowController?.window?.isVisible == true {
                 GoalongDefaults.standard.set(Date().addingTimeInterval(90).timeIntervalSince1970, forKey: "goalong.restoreVisibleUntil")
                 GoalongDefaults.standard.set(dashboardViewModel.navigationStore.selectedSection.rawValue, forKey: "goalong.restoreVisibleSection")
+            } else if SoftwareUpdateManager.shared.isRelaunchingForUpdate {
+                // T-062: an update relaunch looks like a member's open; it stays in the menu bar.
+                GoalongDefaults.standard.set(Date().addingTimeInterval(120).timeIntervalSince1970,
+                                             forKey: LaunchPresentation.quietRelaunchKey)
             }
             MainActor.assumeIsolated {
                 ConcentrationRuntime.shared.flushForTermination(); BraiseRuntime.shared.shutdown(); KeyboardBacklightLimiter.shared.stop()
@@ -891,6 +925,8 @@ import AppleScreenTime
             workspaceObservers.removeAll()
             for observer in screenLockObservers { DistributedNotificationCenter.default().removeObserver(observer) }
             screenLockObservers.removeAll()
+            if let showRequestObserver { DistributedNotificationCenter.default().removeObserver(showRequestObserver) }
+            showRequestObserver = nil
             SupportDiagnosticsRuntime.shared.stop()
         }
 
@@ -898,8 +934,14 @@ import AppleScreenTime
             _ sender: NSApplication,
             hasVisibleWindows flag: Bool
         ) -> Bool {
-            dashboardWindowController?.show(section: nil)
+            MainActor.assumeIsolated { showDashboardWhenReady() }
             return false
+        }
+
+        /// T-062: a reopen during startup used to be lost (no dashboard yet): the member had to launch twice.
+        @MainActor private func showDashboardWhenReady() {
+            guard let dashboardWindowController else { pendingDashboardShow = true; return }
+            dashboardWindowController.show(section: nil)
         }
 
         private func toggleManualPause() {
