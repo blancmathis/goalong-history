@@ -65,6 +65,35 @@ import XCTest
     }
 
     /// Braise ranges.json emptied outside: the protected range comes back with a notice.
+    /// T-063: the wrong tries and their wait reset by hand in blocking.json (Goalong closed) come back from the copy.
+    func testPasswordTriesResetOutsideComeBackFromTheCopy() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let floor = ProtectedFloor.memory()
+        var credential = try XCTUnwrap(BlockPasswordLock.make("motdepasse-test", at: now))
+        credential.failedAttempts = 6; credential.retryAfter = now.addingTimeInterval(120)
+        try BlockingStore(directory: directory, floor: floor).save(BlockingDocument(lists: [], passwordLock: credential), now: now)
+        var reset = credential; reset.failedAttempts = 0; reset.retryAfter = nil
+        try BlockingStore(directory: directory).save(BlockingDocument(lists: [], passwordLock: reset), now: now) // the file, by hand
+
+        let loaded = try BlockingStore(directory: directory, floor: floor).loadRecovering(now: now)
+        XCTAssertGreaterThan(loaded.restored, 0)
+        XCTAssertEqual(loaded.document.passwordLock?.failedAttempts, 6)
+        XCTAssertEqual(loaded.document.passwordLock?.retryAfter, credential.retryAfter)
+        let c = BlockingController(document: loaded.document, clock: { self.now }, continuous: { self.now.timeIntervalSince1970 })
+        XCTAssertEqual(c.verifyRedScreenPassword("motdepasse-test"), .wait(until: credential.retryAfter!), "still waiting")
+
+        var cheaper = credential; cheaper.iterations = 300_000
+        try BlockingStore(directory: directory).save(BlockingDocument(lists: [], passwordLock: cheaper), now: now)
+        XCTAssertEqual(try BlockingStore(directory: directory, floor: floor).loadRecovering(now: now).document.passwordLock?.iterations,
+                       credential.iterations, "the hash parameters come back too")
+
+        var more = credential; more.failedAttempts = 7; more.retryAfter = now.addingTimeInterval(240)
+        try BlockingStore(directory: directory).save(BlockingDocument(lists: [], passwordLock: more), now: now)
+        let kept = try BlockingStore(directory: directory, floor: floor).loadRecovering(now: now)
+        XCTAssertEqual(kept.restored, 0, "more tries or a later wait is kept")
+        XCTAssertEqual(kept.document.passwordLock?.failedAttempts, 7)
+    }
+
     func testRedScreenFileTamperedOutsideGetsTheProtectedRangeBack() throws {
         let base = try root(), directory = base.appendingPathComponent("Braise", isDirectory: true)
         let legacy = base.appendingPathComponent("missing")
