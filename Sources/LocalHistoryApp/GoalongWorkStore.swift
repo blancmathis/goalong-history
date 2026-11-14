@@ -32,8 +32,11 @@ extension Notification.Name {
         /// Revision under which an agent verdict was kept, past a reclassification, only for an open « tâche »
         /// commitment: it goes once that commitment settles (T-045 D-154d).
         var keptFrom: String? = nil
+        /// Given by a classification that judges a page whose content changes on what is visible (T-055). Absent on
+        /// older verdicts: on such a page they judged the title only, so they are kept but not applied.
+        var onContent: Bool? = nil
 
-        private enum CodingKeys: String, CodingKey { case verdict, task, byOwner, seen, attempts, lastAskedDay, keptFrom }
+        private enum CodingKeys: String, CodingKey { case verdict, task, byOwner, seen, attempts, lastAskedDay, keptFrom, onContent }
         init(verdict: GoalongWorkVerdict, task: String?, byOwner: Bool, seen: String,
              attempts: Int = 1, lastAskedDay: String? = nil) {
             self.verdict = verdict; self.task = task; self.byOwner = byOwner; self.seen = seen
@@ -48,6 +51,7 @@ extension Notification.Name {
             attempts = min(3, max(0, try c.decodeIfPresent(Int.self, forKey: .attempts) ?? (byOwner ? 0 : 1)))
             lastAskedDay = try c.decodeIfPresent(String.self, forKey: .lastAskedDay).map(Self.gregorianDay) ?? (byOwner ? nil : seen)
             keptFrom = try c.decodeIfPresent(String.self, forKey: .keptFrom)
+            onContent = try c.decodeIfPresent(Bool.self, forKey: .onContent)
         }
         /// Values written under a Buddhist system calendar (« 2569-10-27 ») read back as Gregorian (T-045 H7-04).
         private static func gregorianDay(_ value: String) -> String {
@@ -222,6 +226,19 @@ extension Notification.Name {
         return (document.rules + contexts).sorted { ($0.day ?? "") == ($1.day ?? "") ? $0.target < $1.target : ($0.day ?? "") > ($1.day ?? "") }
     }
 
+    /// True when the answer covers a page whose content changes (AI chat, messaging, untitled page): it classifies
+    /// every moment alike, so « Vos réponses » says so (T-055).
+    func coversVaryingContent(_ rule: GoalongWorkRule) -> Bool {
+        switch rule.scope {
+        case .context, .agent:
+            return document.corrections.last { $0.key == rule.target }.map { GoalongWorkContext.variesWithContent($0.label) } ?? false
+        case .application:
+            return GoalongWorkContext.variesWithContent(.init(application: rule.label, bundleIdentifier: rule.target, host: nil, title: nil))
+        case .site:
+            return GoalongWorkContext.variesWithContent(.init(application: "", bundleIdentifier: nil, host: rule.target, title: nil))
+        }
+    }
+
     /// The user's rule for a whole application or site. `nil` removes it. Never set by Goalong itself.
     func setRule(scope: GoalongWorkSource, target: String, label: String, verdict: GoalongWorkVerdict?, task: String? = nil, day: String) {
         guard scope == .application || scope == .site else { return }
@@ -278,14 +295,18 @@ extension Notification.Name {
     /// Saves one agent answer. A newer definition or an owner correction always wins.
     /// Returns the verdicts actually stored (none for an older definition).
     @discardableResult
-    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String) -> [String: GoalongWorkAssignment] {
+    /// `onContent` false only to restore an older verdict as it was (an undo).
+    func merge(_ assignments: [String: GoalongWorkAssignment], revision: String, day: String,
+               onContent: Bool = true) -> [String: GoalongWorkAssignment] {
         guard revision == document.revision, !assignments.isEmpty else { return [:] }
         var applied: [String: GoalongWorkAssignment] = [:]
         for (key, assignment) in assignments where document.entries[key]?.byOwner != true {
             let previous = document.entries[key]
             let attempts = min(3, (previous?.attempts ?? 0) + (previous?.lastAskedDay == day ? 0 : 1))
-            document.entries[key] = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false,
+            var entry = Entry(verdict: assignment.verdict, task: assignment.task, byOwner: false,
                 seen: day, attempts: attempts, lastAskedDay: day)
+            entry.onContent = onContent ? true : nil
+            document.entries[key] = entry
             applied[key] = assignment
         }
         prune()
@@ -455,7 +476,8 @@ extension Notification.Name {
         let next = GoalongWorkVerdicts(document.entries.mapValues {
             GoalongWorkAssignment(verdict: $0.verdict, task: $0.task, byOwner: $0.byOwner)
         }, retries: document.entries.mapValues { GoalongWorkRetryState(attempts: $0.attempts, lastAskedDay: $0.lastAskedDay) },
-           rules: GoalongWorkRules(document.rules))
+           rules: GoalongWorkRules(document.rules),
+           judgedOnContent: Set(document.entries.filter { !$0.value.byOwner && $0.value.onContent == true }.keys))
         guard next != verdicts else { return }
         verdicts = next
         NotificationCenter.default.post(name: .goalongWorkVerdictsDidChange, object: self)

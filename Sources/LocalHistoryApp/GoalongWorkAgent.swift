@@ -304,10 +304,13 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                         labels[key] = filter.label(label)
                     }
                     // A group the agent already judged answers its new members without a call.
+                    // Never for a page whose content changes, read on the raw label (T-055).
                     let inherited = GoalongWorkClassification.inherited(labels: labels, verdicts: store.verdicts, groups: store.groupVerdicts)
+                        .filter { observation.labels[$0.key].map(GoalongWorkContext.variesWithContent) != true }
                     resolvedLocally += store.merge(inherited, revision: revision, day: Self.dayString(day, calendar: calendar)).count
                     readable.append((day, observation, GoalongWorkClassification.pending(day: observation.day, labels: labels,
-                                                                                          verdicts: store.verdicts, calendar: calendar)))
+                                                                                          verdicts: store.verdicts, rawLabels: observation.labels,
+                                                                                          calendar: calendar)))
                 }
                 guard !readable.isEmpty else {
                     throw GoalongWorkClassification.Failure.invalid("La journée n’a pas pu être lue entièrement. Réessayez ; rien n’a été envoyé.")
@@ -333,7 +336,11 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 case .call:
                     waiting = nil
                 }
-                let reasks = Set(pending.keys.filter { store.verdicts.contexts[$0]?.verdict == .unclear })
+                // A re-ask, or a context whose content changes (AI chat, messaging, untitled page), goes with what is
+                // visible in it: its title alone never decides (T-055). `varying` reads the raw label, not the masked one.
+                let reasks = Set(pending.keys.filter { key in
+                    store.verdicts.contexts[key]?.verdict == .unclear || pending.varying.contains(key)
+                })
                 let rawExcerpts = await Self.detachedForwardingCancellation(priority: .utility) {
                     GoalongWorkReassessment.excerpts(root: root, day: start, keys: reasks, calendar: calendar,
                         permits: filter.permitsVisibleContext, shouldContinue: { !Task.isCancelled })

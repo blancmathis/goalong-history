@@ -102,11 +102,68 @@ extension GoalongWorkContext {
     }
 }
 
+extension GoalongWorkContext {
+    /// Apps and sites whose page stays the same while what is written in it changes: AI chats, messaging, mail.
+    /// Their app, site or title never says whether a moment is work (T-055).
+    static let contentVaryingHosts: Set<String> = [
+        "chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "perplexity.ai", "copilot.microsoft.com",
+        "chat.mistral.ai", "chat.deepseek.com", "poe.com", "grok.com", "mail.google.com", "outlook.live.com",
+        "outlook.office.com", "outlook.office365.com", "web.whatsapp.com", "web.telegram.org", "discord.com",
+        "app.slack.com", "messenger.com", "teams.microsoft.com", "teams.live.com",
+    ]
+    static let contentVaryingBundles: Set<String> = [
+        "com.openai.chat", "com.anthropic.claudefordesktop", "com.google.gemini", "ai.perplexity.mac",
+        "com.tinyspeck.slackmacgap", "com.apple.mobilesms", "net.whatsapp.whatsapp", "desktop.whatsapp",
+        "com.hnc.discord", "ru.keepcoder.telegram", "org.telegram.desktop", "com.facebook.archon",
+        "com.apple.mail", "com.microsoft.outlook", "com.microsoft.teams2", "com.microsoft.teams", "com.readdle.smartemail-mac",
+    ]
+    /// Words that name no content: a home page, a new chat, an empty document.
+    static let genericTitleWords: Set<String> = [
+        "home", "accueil", "new chat", "nouveau chat", "nouvelle discussion", "nouvelle conversation", "new conversation",
+        "untitled", "sans titre", "untitled document", "document sans titre", "new document", "nouveau document",
+        "new tab", "nouvel onglet", "inbox", "boîte de réception", "messages", "chats", "discussions", "start page",
+        "page de démarrage", "dashboard", "tableau de bord", "search", "recherche", "page d’accueil", "page d'accueil",
+        "welcome", "bienvenue", "settings", "réglages", "paramètres", "preferences", "préférences", "explore", "explorer",
+        "untitled document", "nouvelle page", "new page", "for you", "pour vous", "feed", "fil d’actualité",
+    ]
+
+    /// True when the title names nothing the user did: empty once the app and site names are taken out, or a home,
+    /// a new chat, an untitled document… A nil title (no window seen) is not generic: it names the app.
+    public static func isGenericTitle(_ label: Label) -> Bool {
+        // Counters and numbers name nothing either (« (3) Home / X », « Untitled-1 »): start from the group title.
+        guard displayTitle(label.title) != nil else { return false }
+        let title = groupTitle(label.title, application: label.application) ?? ""
+        var brands = Set(label.application.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        if let host = label.host?.lowercased() {
+            // « docs.google.com » names « docs » and « google »; the last label (« com ») names nothing.
+            brands.formUnion(host.split(separator: ".").dropLast().map(String.init))
+        }
+        let words = title.split(whereSeparator: { $0.isWhitespace || "-–—|·:•()[]#/".contains($0) }).map(String.init)
+            .filter { !brands.contains($0) }
+        let rest = words.joined(separator: " ")
+        return rest.isEmpty || genericTitleWords.contains(rest)
+    }
+
+    /// The content changes while the context stays the same: an AI chat, messaging or mail, or any page whose title
+    /// names nothing (« ChatGPT Home », « Sans titre »). One answer for the whole context would classify every moment
+    /// alike, so these are never asked to the user: the classification judges them on what is visible (T-055).
+    public static func variesWithContent(_ label: Label) -> Bool {
+        if let bundle = label.bundleIdentifier?.lowercased(), contentVaryingBundles.contains(bundle) { return true }
+        if let host = label.host?.lowercased() {
+            let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            if contentVaryingHosts.contains(bare) { return true }
+        }
+        return isGenericTitle(label)
+    }
+}
+
 /// What the user sees for one context. Computed in one place for every screen.
 public enum GoalongWorkState: Equatable, Hashable, Sendable {
     public enum Waiting: String, CaseIterable, Sendable {
         /// The agent has not run on it yet.
         case notYetPassed
+        /// Its content changes (AI chat, messaging, untitled page): judged on what is visible, never asked (T-055).
+        case judgedByContent
         case noDefinition, historyOff, noConsent, notConnected, paused
         case dailyCapReached
         /// Background passes need their own consent.
@@ -119,6 +176,7 @@ public enum GoalongWorkState: Equatable, Hashable, Sendable {
         public var message: String {
             switch self {
             case .notYetPassed: "Pas encore classé : le prochain passage s’en chargera."
+            case .judgedByContent: "Le contenu change : le prochain passage le juge sur le texte visible, pas sur le titre."
             case .noDefinition: "Écrivez d’abord ce qui compte comme du travail."
             case .historyOff: "L’historique est arrêté."
             case .noConsent: "L’envoi à ChatGPT n’est pas autorisé."
@@ -137,6 +195,9 @@ public enum GoalongWorkState: Equatable, Hashable, Sendable {
         case agentUnsure
         /// Excluded from sharing and covered by no rule: only the user can answer.
         case neverSent
+        /// Its content changes, but the classification cannot read it (visible text not shared, or no try left):
+        /// only the user can say what that moment was (T-055).
+        case contentUnseen
     }
     case classified(GoalongWorkVerdict, GoalongWorkSource)
     case waiting(Waiting)
@@ -165,8 +226,10 @@ extension GoalongWorkClassification {
 
     /// One state per labelled context of the day. `blocker` is why the agent cannot run
     /// now (nil when it can and simply has not yet).
+    /// `permitsContent`: the visible text of the context may be sent (nil: as `permits`).
     public static func states(day: GoalongLocalAnalytics.Day, labels: [String: GoalongWorkContext.Label],
                               verdicts: GoalongWorkVerdicts, permits: (GoalongWorkContext.Label) -> Bool = { _ in true },
+                              permitsContent: ((GoalongWorkContext.Label) -> Bool)? = nil,
                               blocker: GoalongWorkState.Waiting? = nil) -> StateSummary {
         let seconds = contextSeconds(day)
         var groupSeconds: [String: TimeInterval] = [:]
@@ -175,9 +238,20 @@ extension GoalongWorkClassification {
         for (key, value) in seconds {
             guard let label = labels[key] else { continue }
             let state: GoalongWorkState
-            if let resolution = verdicts.resolution(key: key, label: label) {
-                state = resolution.assignment.verdict == .unclear
-                    ? .toClarify(.agentUnsure) : .classified(resolution.assignment.verdict, resolution.source)
+            // A context whose content changes is judged on what is visible in it (T-055). Left unsure, it waits only
+            // while the next pass can still read it; otherwise the user is asked about it, never left silent.
+            // Tested only where it changes the state: the view switches compute this for every context.
+            let varies = GoalongWorkContext.variesWithContent(label)
+            if let resolution = verdicts.resolution(key: key, label: label, varies: varies) {
+                if resolution.assignment.verdict != .unclear {
+                    state = .classified(resolution.assignment.verdict, resolution.source)
+                } else if !varies {
+                    state = .toClarify(.agentUnsure)
+                } else {
+                    let retry = verdicts.retries[key] ?? GoalongWorkRetryState()
+                    let readable = permits(label) && (permitsContent.map { $0(label) } ?? true)
+                    state = readable && retry.attempts < 3 && value >= 300 ? .waiting(.judgedByContent) : .toClarify(.contentUnseen)
+                }
             } else if !permits(label) {
                 state = .toClarify(.neverSent)
             } else if (groupSeconds[GoalongWorkContext.groupKey(label)] ?? 0) < minimumContextSeconds {
@@ -198,7 +272,8 @@ extension GoalongWorkClassification {
                                  groups: [String: GoalongWorkAssignment]) -> [String: GoalongWorkAssignment] {
         guard !groups.isEmpty else { return [:] }
         var result: [String: GoalongWorkAssignment] = [:]
-        for (key, label) in labels where verdicts.resolution(key: key, label: label) == nil {
+        // A page whose content changes is judged moment by moment: a verdict on another member says nothing (T-055).
+        for (key, label) in labels where !GoalongWorkContext.variesWithContent(label) && verdicts.resolution(key: key, label: label) == nil {
             if let known = groups[GoalongWorkContext.groupKey(label)] { result[key] = known }
         }
         return result
