@@ -290,13 +290,20 @@ import LocalHistoryQueryCLI
         guardClient.recordConsent()
         refresh(enforceLast: false)
     }
-    /// « Retirer le service de protection »: hidden while any lock is running or planned, a weekly locked or
+    /// « Retirer le service de protection »: disabled (T-059 lot 5; hidden before) while any lock is running or planned, a weekly locked or
     /// password range included. A planned locked block was confirmed with the service in place: at its start
     /// the service would come back, with its macOS notification, and no new consent sentence (R5-garde-02).
     var canRemoveGuard: Bool {
-        guardClient?.canRemove == true && lockedUntil == nil && guardUntil == nil
+        // `protectedUntil`, the predicate « Quitter » reads (T-059 lot 5): a protected red-screen range counts even
+        // without the block consent, now that continuity can register the service without it.
+        guardClient?.canRemove == true && lockedUntil == nil && protectedUntil == nil
             && !lists.contains { $0.program.ranges.contains { effectiveLock($0.effectiveLock).protectsLists } }
     }
+    /// T-059 lot 5: the button shows whenever the service is installed, disabled with this sentence while
+    /// `canRemoveGuard` (the only rule) refuses it.
+    static let guardRemovalBlocked = "Retrait impossible pendant un verrou ou une règle protégée."
+    var showsRemoveGuard: Bool { guardClient?.canRemove == true }
+    var guardRemovalRefusal: String? { showsRemoveGuard && !canRemoveGuard ? Self.guardRemovalBlocked : nil }
     /// « Réessayer » under a failed protection level (R-89).
     func retryGuardService() {
         guardClient?.retry()
@@ -1992,6 +1999,16 @@ import LocalHistoryQueryCLI
         if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
         redScreenKeeper?.update(until: end)
     }
+    /// T-059 lot 5: the member accepted the reopening after a forced quit (installed Goalong only).
+    var continuityWanted: () -> Bool = { GoalongGuardGate.continuityAllowed && GuardContinuityConsent.isGiven(GuardConsent.standardDefaults) }
+    /// Module off, nothing protected: a keeper still holds the guard client so continuity runs. Module on: the
+    /// controller's refresh carries it.
+    func syncContinuity() {
+        if let controller { controller.refresh(enforceLast: false); return }
+        guard continuityWanted() || redScreenKeeper != nil else { return }
+        if redScreenKeeper == nil { redScreenKeeper = makeKeeper() }
+        redScreenKeeper?.refreshContinuity()
+    }
     /// The guard's gate and files, module off (`GoalongGuardGate`): a test runner or the gallery never reads the app's.
     var guardAllowed: () -> Bool = { GoalongGuardGate.isAllowed }
     var testGuardFiles: GuardFiles?
@@ -2064,6 +2081,7 @@ import LocalHistoryQueryCLI
             return true
         }
         modules.onBlockingEnabledChange = { [weak self] enabled in self?.apply(enabled: enabled) }
+        syncContinuity()
     }
     func apply(enabled: Bool) {
         if enabled, controller == nil {
@@ -2095,7 +2113,10 @@ import LocalHistoryQueryCLI
                 return
             }
             // One client, one armed state: during a protected range its client goes on to the keeper (T-048 B6).
-            if case .until(_?, _) = redScreen, redScreenKeeper == nil, let client = controller.guardClient, !(client is GoalongGuardMissing) {
+            // T-059 lot 5: the same when the member wants the reopening after a forced quit.
+            let protectedRange: Bool = { if case .until(_?, _) = redScreen { return true }; return false }()
+            if protectedRange || continuityWanted(), redScreenKeeper == nil, let client = controller.guardClient,
+               !(client is GoalongGuardMissing) {
                 client.onChange = nil
                 redScreenKeeper = handOver(client)
             }
@@ -2106,6 +2127,7 @@ import LocalHistoryQueryCLI
             monitor?.setBlockingObservationEnabled(false)
             self.controller = nil
             syncRedScreenGuard()
+            syncContinuity()
         }
     }
 }

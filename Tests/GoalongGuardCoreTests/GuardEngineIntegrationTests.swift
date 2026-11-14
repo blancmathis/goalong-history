@@ -64,8 +64,10 @@ final class GuardEngineIntegrationTests: XCTestCase {
     }
 
     private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
-                             sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil) {
+                             sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil,
+                             continuityAllowed: Bool = true) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
+        environment.continuityAllowed = continuityAllowed
         environment.observeSession = { [weak self] handler in self?.announce = handler }
         if let wall { environment.wall = wall }
         if let bootTime { environment.bootTime = bootTime }
@@ -386,6 +388,94 @@ final class GuardEngineIntegrationTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(delay, 0.15, "the refused session end keeps its short delay (0.2 s), not at once")
         XCTAssertLessThan(delay, 1.5)
         XCTAssertNil(code)
+    }
+
+    // MARK: T-059 lot 5: continuity (no severe block)
+
+    private func continue_(_ seconds: TimeInterval = 600, pid: Int32 = 1) {
+        XCTAssertTrue(files.writeContinuity(GuardContinuity(pid: pid, until: Date().timeIntervalSince1970 + seconds,
+                                                            bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession())))
+    }
+
+    func testContinuityAloneRelaunchesAKilledApp() throws {
+        let first = try app.spawn()
+        continue_(pid: first)
+        startEngine()
+        markHealthy(first)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == first })
+        XCTAssertEqual(snapshot()?.armed, true, "the app's ping must not escalate")
+        XCTAssertEqual(files.readMarker(now: Date()), .absent)
+        kill(first, SIGKILL)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 })
+        XCTAssertNil(code)
+        XCTAssertNotNil(waitUntil(1) { app.current.map { snapshot()?.watchingPID == $0 } ?? false })
+    }
+
+    func testContinuityWithAUserQuitTokenEndsTheGuardWithoutRelaunch() throws {
+        let pid = try app.spawn()
+        continue_(pid: pid)
+        startEngine()
+        markHealthy(pid)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        // « Quitter » allowed: the token first, then the continuity file goes.
+        XCTAssertTrue(files.writeRelease(GuardRelease(pid: pid, reason: GuardRelease.userQuit, writtenAt: Date().timeIntervalSince1970,
+                                                      bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession())))
+        XCTAssertTrue(files.removeContinuity())
+        kill(pid, SIGTERM)
+        XCTAssertNotNil(waitUntil(1) { code == 0 })
+        XCTAssertEqual(app.launchCount, 0)
+    }
+
+    func testContinuityIsIgnoredWhereItIsNotAllowed() throws {
+        try app.spawn()
+        continue_()
+        startEngine(continuityAllowed: false)
+        XCTAssertNotNil(waitUntil(1) { code == 0 }, "Goalong Dev: no continuity")
+        XCTAssertEqual(app.launchCount, 0)
+    }
+
+    func testAContinuityFileOfAnotherBootOrTooFarArmsNothing() throws {
+        try app.spawn()
+        XCTAssertTrue(files.writeContinuity(GuardContinuity(pid: 1, until: Date().timeIntervalSince1970 + 600,
+                                                            bootTime: 1, bootSession: "another-boot")))
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { code == 0 })
+        XCTAssertEqual(app.launchCount, 0)
+    }
+
+    func testAContinuityFileDeletedWithTheKillStillRelaunches() throws {
+        let pid = try app.spawn()
+        continue_(pid: pid)
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        kill(pid, SIGKILL)
+        XCTAssertTrue(files.removeContinuity())
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 })
+        XCTAssertNil(code)
+    }
+
+    func testAContinuityFileDeletedBeforeTheKillStillRelaunches() throws {
+        let pid = try app.spawn()
+        continue_(pid: pid)
+        startEngine()
+        markHealthy(pid)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        XCTAssertTrue(files.removeContinuity())
+        usleep(300_000)
+        XCTAssertNil(code, "a removal the app did not announce with a token ends nothing")
+        kill(pid, SIGKILL)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 })
+        XCTAssertNil(code)
+    }
+
+    func testAnUnrenewedContinuityHorizonEndsTheGuard() throws {
+        // An app that dies before it renews: the guard stops at the end of the horizon (no endless loop).
+        let pid = try app.spawn()
+        continue_(1.0, pid: pid)
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        XCTAssertNotNil(waitUntil(4) { code == 0 }, "the horizon ended")
+        XCTAssertEqual(app.launchCount, 0)
     }
 
     private func snapshot() -> GuardSnapshot? {

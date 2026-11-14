@@ -9,6 +9,8 @@ public struct RelaunchBudget: Equatable, Sendable {
     public static let longSpacing: TimeInterval = 120
     public static let earlyThreshold = 3
     public static let longThreshold = 10
+    /// Continuity alone (T-059 lot 5, no block) stops reopening after this many early deaths in a row.
+    public static let continuityGiveUp = longThreshold
     /// Healthy life after which the early-death count is forgiven.
     public static let healthyReset: TimeInterval = 120
 

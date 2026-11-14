@@ -20,7 +20,8 @@ import GoalongGuardCore
     func recordConsent()
     /// The service is registered and could be removed (only outside a severe block; the caller checks).
     var canRemove: Bool { get }
-    /// `severeUntil` from the controller, after the marker was written. Never raises an alert.
+    /// `severeUntil` from the controller, after the marker was written. Never raises an alert. The client adds the
+    /// member's continuity (T-059 lot 5) on its own; the component it returns speaks for the severe block only.
     func update(severeUntil: Date?) -> BlockingProtectionState.Component
     /// Removes the service (button outside a severe block). Next arming registers it again.
     func removeService()
@@ -45,7 +46,7 @@ enum GuardConsent {
     /// Adds the sentence only while consent is needed.
     static func message(_ base: String, needed: Bool) -> String { needed ? base + "\n\n" + text : base }
 
-    static let text = "Pour que les blocages et les plages d’écran rouge protégées tiennent même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. Aucun mot de passe n’est demandé. Il ne tourne que pendant les blocages verrouillés ou protégés par mot de passe, et pendant les plages d’écran rouge protégées."
+    static let text = "Pour que les blocages et les plages d’écran rouge protégées tiennent même si Goalong est forcé à quitter, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. Aucun mot de passe n’est demandé. Il garde les blocages verrouillés ou protégés par mot de passe, et les plages d’écran rouge protégées."
 
     /// Raised whenever `text` covers more (2: protected red-screen ranges, T-048 B5): the text is shown once more.
     static let version = 2
@@ -55,6 +56,32 @@ enum GuardConsent {
     static func isGiven(_ defaults: UserDefaults) -> Bool { defaults.integer(forKey: versionKey) >= version }
     static func record(_ defaults: UserDefaults) { if !isGiven(defaults) { defaults.set(version, forKey: versionKey) } }
     static func clear(_ defaults: UserDefaults) { defaults.removeObject(forKey: versionKey) }
+}
+
+/// T-059 lot 5: the separate consent to reopen Goalong after a forced quit, outside any block. Asked once at launch
+/// (installed Goalong only, `GoalongGuardGate.continuityAllowed`). Only « OK » registers the service for it; a refusal
+/// is remembered and nothing then reopens Goalong. Independent of `GuardConsent` (v2), which keeps its blocks.
+enum GuardContinuityConsent {
+    static let title = "Goalong se relance s’il est forcé à quitter"
+    static let text = "Si Goalong est forcé à quitter, il se rouvre seul. Pour cela, Goalong ajoute un petit service d’arrière-plan. macOS l’annonce, et peut l’annoncer de nouveau après une mise à jour. « Quitter » dans Goalong l’arrête sans relance. Vous pouvez retirer ce service dans Garde-fous › Protection."
+    static let accept = "OK"
+    static let decline = "Non merci"
+
+    static let version = 1
+    static let versionKey = "goalong.guard.continuityConsentVersion"
+    static let refusedKey = "goalong.guard.continuityConsentRefused"
+    static func isGiven(_ defaults: UserDefaults) -> Bool { defaults.integer(forKey: versionKey) >= version }
+    /// Given or refused: the question is never asked again.
+    static func isAnswered(_ defaults: UserDefaults) -> Bool { isGiven(defaults) || defaults.bool(forKey: refusedKey) }
+    static func record(_ defaults: UserDefaults, accepted: Bool) {
+        if accepted {
+            defaults.set(version, forKey: versionKey); defaults.removeObject(forKey: refusedKey)
+        } else {
+            defaults.removeObject(forKey: versionKey); defaults.set(true, forKey: refusedKey)
+        }
+    }
+    /// Asked at launch only where continuity may run and the member has not answered yet.
+    static func shouldAsk(allowed: Bool, defaults: UserDefaults) -> Bool { allowed && !isAnswered(defaults) }
 }
 
 /// Only an installed copy of Goalong or Goalong Dev may register its guard: never a translocated
@@ -85,6 +112,19 @@ enum GoalongGuardGate {
         GuardIdentity(bundleIdentifier: Bundle.main.bundleIdentifier,
                       channel: Bundle.main.object(forInfoDictionaryKey: GuardIdentity.channelKey) as? String)
     }
+
+    /// T-059 lot 5: reopening after a forced quit is for the installed Goalong only: never Goalong Dev, a copy outside
+    /// Applications or a test runner.
+    static var continuityAllowed: Bool {
+        continuityAllowed(bundleURL: Bundle.main.bundleURL, info: Bundle.main.infoDictionary ?? [:], home: realHome,
+                          isTest: GoalongTestEnvironment.isXCTest)
+    }
+
+    static func continuityAllowed(bundleURL: URL, info: [String: Any], home: URL, isTest: Bool) -> Bool {
+        guard !isTest, isAllowed(bundleURL: bundleURL, info: info, home: home) else { return false }
+        return GuardIdentity(bundleIdentifier: info["CFBundleIdentifier"] as? String,
+                             channel: info[GuardIdentity.channelKey] as? String)?.bundleIdentifier == GuardIdentity.releaseBundleIdentifier
+    }
 }
 
 /// Exchange files of this copy (`<data root>/Blocking`), with the parent's symlinks resolved once.
@@ -101,21 +141,36 @@ enum GoalongGuardFiles {
     /// Sparkle or the relauncher will reopen this copy: the guard waits instead of racing them.
     /// Written only while the guard is armed, so nothing changes for a member without a severe block.
     static func writeLease(_ reason: String, seconds: TimeInterval, files: GuardFiles = standard) {
-        guard files.markerExists() else { return }
+        guard files.markerExists() || files.continuityExists() else { return }
         files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds)) // wall: guard protocol (spec K §4, wall)
     }
 
     /// An installer runs with the documented override (`--unregister-guard` wrote `guard-override`):
     /// the app neither re-registers the guard nor ignores SIGTERM until the token is stale.
+    /// A token written for continuity only (T-059 lot 5) never counts here: a severe block keeps its guard and SIGTERM refusal.
     static func overrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
+        guard let token = files.readOverride(), token.isFresh(now: now.timeIntervalSince1970) else { return false }
+        return token.coversSevereBlock
+    }
+
+    /// Any fresh token, severe or continuity only: `--unregister-guard` ran, Goalong must not write `guard-continuity` again.
+    static func continuityOverrideActive(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
         files.readOverride()?.isFresh(now: now.timeIntervalSince1970) == true
     }
 
     /// A guard may still hold an armed window: the marker exists, or a guard killed by a signal left its
     /// memory in `guard-state.json` (it would restore it). A block ended early by password removes the
     /// marker, yet such a guard, restarted later in this boot, must still find this quit's token.
+    /// `guard-continuity` counts too (T-059 lot 5): an allowed « Quitter » must leave its `user_quit` token.
     static func guardMayBeArmed(_ files: GuardFiles) -> Bool {
-        files.markerExists() || files.readState()?.endContinuous != nil
+        files.markerExists() || files.continuityExists() || files.readState()?.endContinuous != nil
+    }
+
+    /// Writes `guard-continuity` for this process: the guard reopens Goalong if it dies before the horizon ends.
+    @discardableResult
+    static func writeContinuity(_ files: GuardFiles = standard, now: Date = Date()) -> Bool { // wall: guard protocol (spec K §4, wall)
+        files.writeContinuity(GuardContinuity(pid: getpid(), until: now.timeIntervalSince1970 + GuardContinuity.horizon,
+                                              bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession()))
     }
 
     /// Written once the blocking runtime runs: from now on this process may lower or remove the marker.
@@ -147,10 +202,11 @@ enum GuardUnregisterCommand {
         return !overrides.contains { environment[$0] == "1" }
     }
 
-    /// Not refused and a severe block runs: the override was used.
-    static func writesOverride(marker: GuardMarker, now: Date) -> Bool {
+    /// Not refused and a severe block runs (the override was used), or Goalong may reopen after a forced quit
+    /// (`guard-continuity`, T-059 lot 5): the running app must not register the guard again before the bootout.
+    static func writesOverride(marker: GuardMarker, now: Date, continuity: Bool = false) -> Bool {
         if case .date(let end) = marker, end > now { return true }
-        return false
+        return continuity
     }
 
     /// Runs the command and exits. Never touches another copy's guard: the plist name is this bundle's own.
@@ -167,9 +223,13 @@ enum GuardUnregisterCommand {
         }
         // Override during a severe block: tell the running app first, so it does not register the guard
         // again when its XPC connection drops, and honours the installer's SIGTERM.
-        if writesOverride(marker: marker, now: Date()) { // wall: guard protocol (spec K §4, wall)
-            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970)) // wall: guard protocol (spec K §4, wall)
+        // Without a severe block the token is for continuity only: a block that starts in its 10 min keeps its guard.
+        if writesOverride(marker: marker, now: Date(), continuity: files.continuityExists()) { // wall: guard protocol (spec K §4, wall)
+            files.writeOverride(GuardOverride(pid: getpid(), writtenAt: Date().timeIntervalSince1970, // wall: guard protocol (spec K §4, wall)
+                                              severe: writesOverride(marker: marker, now: Date()))) // wall: guard protocol (spec K §4, wall)
         }
+        // Continuity never refuses an installer: its file goes, so the guard does not reopen the app being replaced.
+        files.removeContinuity()
         let code = unregister(SMAppService.agent(plistName: identity.plistName))
         if code != 0 { FileHandle.standardError.write(Data("Le service de protection n’a pas pu être retiré.\n".utf8)) }
         exit(code)
@@ -318,6 +378,9 @@ struct GuardEscalation {
     /// `launchctl kickstart` exit status when the label is not loaded: someone ran `launchctl bootout`.
     nonisolated static let launchctlServiceNotFound: Int32 = 113
     static let removalFailed = "Le service de protection n’a pas pu être retiré."
+    /// A launch must live this long before continuity is written: an app that dies at once is not reopened forever,
+    /// the guard stops at the end of the last healthy horizon (`GuardContinuity.horizon`).
+    static let continuityArmDelay: TimeInterval = 30
 
     var onChange: (() -> Void)?
     private let identity: GuardIdentity
@@ -332,7 +395,23 @@ struct GuardEscalation {
     private var status: SMAppService.Status?
     private var statusRead = Date.distantPast
     private(set) var isWorking = false
+    /// Armed for a severe block or for continuity: the guard must run (registration, ping, escalation).
     private var armed = false
+    /// Armed for a severe block (`severeUntil`): the SIGSTOP watch, the badge and « Retirer » follow this one only.
+    private var severeArmed = false
+    /// `guard-continuity` is written and renewed by this process (T-059 lot 5).
+    private(set) var continuityArmed = false
+    private let continuityFiles: GuardFiles
+    private let continuityWanted: () -> Bool
+    /// `--unregister-guard` ran (any fresh `guard-override`): the file is not written again before the bootout.
+    private let continuityOverride: @Sendable () -> Bool
+    /// « Retirer » clicked while a BTM call ran: removed as soon as it ends.
+    private var removalPending = false
+    private let continuityArmDelay: TimeInterval
+    private let startedAt = Date() // wall: delay before the first continuity write
+    private var continuityWrittenAt = Date.distantPast
+    private var continuityTimer: Timer?
+    private var lastSevereUntil: Date?
     private var lastPing = Date.distantPast
     /// The badge state of the last update or finished round.
     private(set) var component: BlockingProtectionState.Component = .notInstalled
@@ -362,8 +441,18 @@ struct GuardEscalation {
     init(identity: GuardIdentity, defaults: UserDefaults,
          overrideActive: @escaping @Sendable () -> Bool = { GoalongGuardFiles.overrideActive() },
          service: (any GuardServiceControlling)? = nil, probes: GuardLaunchProbes? = nil,
-         pingInterval: TimeInterval = GoalongGuardClient.pingInterval) {
+         pingInterval: TimeInterval = GoalongGuardClient.pingInterval,
+         continuityFiles: GuardFiles? = nil, continuityWanted: (() -> Bool)? = nil,
+         continuityOverride: (@Sendable () -> Bool)? = nil,
+         // A launch by the guard arms at once: the relaunch budget is its anti-loop (T-059 lot 5).
+         continuityArmDelay: TimeInterval = GoalongGuardFiles.isGuardRelaunch ? 0 : GoalongGuardClient.continuityArmDelay) {
         self.identity = identity
+        let files = continuityFiles ?? GoalongGuardFiles.standard
+        self.continuityFiles = files
+        self.continuityOverride = continuityOverride ?? { GoalongGuardFiles.continuityOverrideActive(files) }
+        // Installed Goalong only, and only after « OK » on `GuardContinuityConsent.text`.
+        self.continuityWanted = continuityWanted ?? { GoalongGuardGate.continuityAllowed && GuardContinuityConsent.isGiven(defaults) }
+        self.continuityArmDelay = continuityArmDelay
         self.probes = probes
         self.pingInterval = pingInterval
         self.service = service ?? SMAppService.agent(plistName: identity.plistName)
@@ -391,8 +480,12 @@ struct GuardEscalation {
     var canRemove: Bool { status == .enabled || status == .requiresApproval }
 
     func update(severeUntil: Date?) -> BlockingProtectionState.Component {
-        let wasArmed = armed
-        armed = severeUntil != nil
+        lastSevereUntil = severeUntil
+        let wasArmed = armed, wasSevere = severeArmed
+        severeArmed = severeUntil != nil
+        let override = overrideActive()
+        refreshContinuity(override: override)
+        armed = severeArmed || continuityArmed
         guard armed else {
             stopWatch.setActive(false)
             // Spec §3.4 "nil : rien": no BTM call while idle. One status read when a block ends, so the
@@ -401,15 +494,17 @@ struct GuardEscalation {
             component = idleComponent
             return component
         }
-        if !wasArmed { lastPing = .distantPast; kickstartUsed = false; bootedOut = false; notArmedRetried = false; removalFailedNotice = false }
-        if overrideActive() {
+        if !wasArmed || (severeArmed && !wasSevere) {
+            lastPing = .distantPast; kickstartUsed = false; bootedOut = false; notArmedRetried = false; removalFailedNotice = false
+        }
+        if override {
             // An installer is replacing or removing this copy with the override: never bring the guard back.
             stopWatch.setActive(false)
             component = .notInstalled
             return component
         }
-        stopWatch.setActive(true)
-        guard !isWorking else { return component }
+        stopWatch.setActive(severeArmed)
+        guard !isWorking else { return visibleComponent }
         switch status {
         case nil:
             readStatus()
@@ -430,12 +525,55 @@ struct GuardEscalation {
         @unknown default:
             component = .failed(GuardFailure.unknownStatus)
         }
-        return component
+        return visibleComponent
+    }
+
+    /// Continuity alone never shows under « Niveau »: the badge stays what it was outside a block.
+    private var visibleComponent: BlockingProtectionState.Component { severeArmed ? component : idleComponent }
+
+    /// Writes or renews `guard-continuity` while the member wants it, after `continuityArmDelay` of this launch;
+    /// removes the file this process wrote once it is no longer wanted (or an installer's override runs).
+    private func refreshContinuity(override: Bool) {
+        guard continuityWanted(), !override, !continuityOverride() else {
+            continuityTimer?.invalidate(); continuityTimer = nil
+            if continuityArmed { continuityFiles.removeContinuity(); continuityArmed = false; continuityWrittenAt = .distantPast }
+            return
+        }
+        let now = Date() // wall: guard protocol (spec K §4, wall)
+        let age = now.throttleElapsed(since: startedAt)
+        guard age >= continuityArmDelay else { scheduleContinuity(after: continuityArmDelay - age); return }
+        if now.throttleElapsed(since: continuityWrittenAt) >= GuardContinuity.renewInterval || !continuityFiles.continuityExists() {
+            if GoalongGuardFiles.writeContinuity(continuityFiles, now: now) { continuityWrittenAt = now }
+        }
+        continuityArmed = now.throttleElapsed(since: continuityWrittenAt) < GuardContinuity.horizon
+        if continuityTimer == nil { scheduleContinuity(after: GuardContinuity.renewInterval) }
+    }
+
+    private func scheduleContinuity(after delay: TimeInterval) {
+        guard continuityTimer == nil else { return }
+        let timer = Timer(timeInterval: max(0.05, delay), repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.continuityTimer = nil
+                _ = self.update(severeUntil: self.lastSevereUntil)
+            }
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common); continuityTimer = timer
     }
 
     func removeService() {
         // A BTM call in flight could register the service again right after this removal.
-        guard !armed, !isWorking else { return }
+        guard !severeArmed else { return }
+        // A BTM call in flight (a refresh just pinged): remove once it ends, never drop the click.
+        guard !isWorking else { removalPending = true; return }
+        removalPending = false
+        // T-059 lot 5: removing the service also ends the reopening after a forced quit, until a new consent.
+        GuardContinuityConsent.record(defaults, accepted: false)
+        continuityTimer?.invalidate(); continuityTimer = nil
+        continuityFiles.removeContinuity()
+        continuityArmed = false; armed = false; continuityWrittenAt = .distantPast
+        stopWatch.setActive(false)
         closeConnection()
         defaults.removeObject(forKey: Self.registeredBuildKey)
         // The member removed the service: no protected red-screen range brings it back before a new consent.
@@ -520,7 +658,13 @@ struct GuardEscalation {
         let changed = status != next || component != next2
         status = next; statusRead = Date(); component = armed ? next2 : idleComponent // wall: status poll throttle
         if next == .enabled, defaults.string(forKey: Self.registeredBuildKey) == nil { defaults.set(build, forKey: Self.registeredBuildKey) }
-        if changed { onChange?() }
+        if removalPending {
+            removalPending = false
+            if !severeArmed { removeService(); return }
+        }
+        guard changed else { return }
+        // Module off, the keeper's client has no `onChange`: an armed client goes on itself (status read → ping).
+        if let onChange { onChange() } else if armed { _ = update(severeUntil: lastSevereUntil) }
     }
 
     private func closeConnection() {

@@ -9,8 +9,8 @@ import Security
 import XPC
 
 // Blocking guard: a launchd user agent (SMAppService, no root, no UI). It acts only while its own
-// copy's `Blocking/guard-until` is in the future, and only on its own app. Otherwise it exits 0 at once
-// and launchd (KeepAlive SuccessfulExit=false) leaves it stopped.
+// copy's `Blocking/guard-until` is in the future, or (installed Goalong only) while `guard-continuity` is valid,
+// and only on its own app. Otherwise it exits 0 at once and launchd (KeepAlive SuccessfulExit=false) leaves it stopped.
 var executableSize: UInt32 = 0
 _NSGetExecutablePath(nil, &executableSize)
 var executableBuffer = [CChar](repeating: 0, count: Int(executableSize))
@@ -61,6 +61,8 @@ environment.observeSession = { handler in
     }
 }
 environment.build = build
+// T-059 lot 5: reopening after a forced quit outside a severe block is for the installed Goalong only, never Goalong Dev.
+environment.continuityAllowed = identity.bundleIdentifier == GuardIdentity.releaseBundleIdentifier
 
 let engine = GuardEngine(files: files, environment: environment, queue: .main) { code in
     logger.log("guard exits with \(code)")

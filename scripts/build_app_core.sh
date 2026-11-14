@@ -422,8 +422,9 @@ fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
-# Spec K: the blocking guard agent. The app registers it with SMAppService only when the member
-# starts a severe block; launchd keeps it alive (never faster than every 10 s) until it exits 0.
+# Spec K: the blocking guard agent. The app registers it with SMAppService when the member starts a
+# severe block, or once the member accepted that Goalong reopens after a forced quit (T-059 lot 5,
+# guard-continuity); launchd keeps it alive (never faster than every 10 s) until it exits 0.
 GUARD_LABEL="$BUNDLE_ID.blocking-guard"
 mkdir -p "$CONTENTS/Library/LaunchAgents"
 cat > "$CONTENTS/Library/LaunchAgents/$GUARD_LABEL.plist" <<PLIST

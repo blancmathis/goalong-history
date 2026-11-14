@@ -69,13 +69,48 @@ public struct GuardState: Codable, Equatable, Sendable {
 
 /// `guard-override`: written by `--unregister-guard` when an installer runs with the documented override
 /// during a severe block. While fresh, the running app neither re-registers the guard nor ignores SIGTERM.
+/// Also written without a severe block while `guard-continuity` exists (T-059 lot 5): that token (`severe == false`)
+/// only stops the reopening after a forced quit, never a severe block nor the SIGTERM refusal.
 public struct GuardOverride: Codable, Equatable, Sendable {
     public static let lifetime: TimeInterval = 600
     public var pid: Int32
     /// Unix seconds.
     public var writtenAt: Double
-    public init(pid: Int32, writtenAt: Double) { self.pid = pid; self.writtenAt = writtenAt }
+    /// False: written for continuity only. Absent (older tokens) counts as true.
+    public var severe: Bool?
+    public init(pid: Int32, writtenAt: Double, severe: Bool = true) {
+        self.pid = pid; self.writtenAt = writtenAt; self.severe = severe
+    }
+    /// The installer's documented override was used during a severe block.
+    public var coversSevereBlock: Bool { severe != false }
     public func isFresh(now: Double) -> Bool { writtenAt <= now + 5 && now - writtenAt <= Self.lifetime }
+}
+
+/// `guard-continuity` (T-059 lot 5): the member accepted that Goalong reopens after a forced quit. Written and renewed
+/// by the healthy app with a short horizon, removed on an allowed « Quitter ». Separate from `guard-until`: it never
+/// refuses an installer or `--unregister-guard`, and a stale or forged file arms the guard for minutes at most.
+public struct GuardContinuity: Codable, Equatable, Sendable {
+    /// Longest horizon the guard accepts, from the moment it reads the file.
+    public static let maximumHorizon: TimeInterval = 15 * 60
+    /// Horizon the app writes, renewed every `renewInterval` while it runs.
+    public static let horizon: TimeInterval = 10 * 60
+    public static let renewInterval: TimeInterval = 3 * 60
+    /// The app's pid when it wrote the file (diagnostic only).
+    public var pid: Int32
+    /// Unix seconds.
+    public var until: Double
+    /// `kern.boottime` and `kern.bootsessionuuid` of the writer: a file of another boot arms nothing.
+    public var bootTime: Double
+    public var bootSession: String?
+    public init(pid: Int32, until: Double, bootTime: Double, bootSession: String? = nil) {
+        self.pid = pid; self.until = until; self.bootTime = bootTime; self.bootSession = bootSession
+    }
+
+    /// Same boot, still ahead, and never further than `maximumHorizon`.
+    public func isValid(now: Double, bootTime: Double, bootSession: String) -> Bool {
+        GuardDecision.sameBoot(self.bootTime, self.bootSession, bootTime, bootSession)
+            && until > now && until <= now + Self.maximumHorizon
+    }
 }
 
 /// Result of reading `guard-until`. Anything but `.date` arms nothing (fail open).
@@ -90,6 +125,7 @@ public enum GuardMarker: Equatable, Sendable {
 public struct GuardFiles: Sendable {
     public static let until = "guard-until", release = "guard-release", lease = "guard-lease"
     public static let health = "guard-health", state = "guard-state.json", override = "guard-override"
+    public static let continuity = "guard-continuity"
     /// A marker further than this arms nothing: a typo or a forged file can never lock the Mac for years.
     public static let maximumArming: TimeInterval = 400 * 86_400
 
@@ -120,6 +156,7 @@ public struct GuardFiles: Sendable {
     public func readHealth() -> GuardHealth? { decode(Self.health) }
     public func readState() -> GuardState? { decode(Self.state) }
     public func readOverride() -> GuardOverride? { decode(Self.override) }
+    public func readContinuity() -> GuardContinuity? { decode(Self.continuity) }
 
     // MARK: Writing
 
@@ -135,6 +172,10 @@ public struct GuardFiles: Sendable {
     @discardableResult public func writeState(_ value: GuardState) -> Bool { encode(value, to: Self.state, create: false) }
     @discardableResult public func writeOverride(_ value: GuardOverride) -> Bool { encode(value, to: Self.override) }
     @discardableResult public func removeLease() -> Bool { remove(Self.lease) }
+    @discardableResult public func writeContinuity(_ value: GuardContinuity) -> Bool { encode(value, to: Self.continuity) }
+    @discardableResult public func removeContinuity() -> Bool { remove(Self.continuity) }
+    /// True when `guard-continuity` exists as a name (cheap stat, no read).
+    public func continuityExists() -> Bool { exists(Self.continuity) }
     /// Called by the app at launch: a token always belongs to the process that wrote it.
     public func clearTokens() { _ = remove(Self.release); _ = remove(Self.lease) }
 

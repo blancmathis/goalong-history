@@ -47,7 +47,8 @@ enum GoalongProtection {
     }
 }
 
-/// Arms Goalong's guard for a protected red-screen range while the Blocage module is off (no `BlockingController`).
+/// Arms Goalong's guard for a protected red-screen range while the Blocage module is off (no `BlockingController`),
+/// and holds the guard client for the reopening after a forced quit (T-059 lot 5) in that case.
 /// Same marker (`guard-until`), same client, same relaunch policy as a severe block. With the module on, the
 /// controller writes the marker itself and this keeper is not used.
 @MainActor final class RedScreenGuardKeeper {
@@ -90,6 +91,12 @@ enum GoalongProtection {
            files.writeMarker(until: wanted) { memo = .some(wanted) }
         _ = client.update(severeUntil: wanted)
         schedule()
+    }
+
+    /// T-059 lot 5, module off: the client writes or removes `guard-continuity` and keeps the guard running, without
+    /// touching `guard-until` (before the red screen reports, a marker its range left must stay).
+    func refreshContinuity() {
+        _ = client?.update(severeUntil: memo.flatMap { $0 })
     }
 
     /// The module was switched on: its controller takes the client (and the marker) over.
