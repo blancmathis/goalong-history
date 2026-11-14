@@ -20,6 +20,8 @@ final class MenuBarItemVisibilityTests: XCTestCase {
         let plain = MenuBarItemVisibility.Screen(frame: CGRect(x: 1728, y: 0, width: 2560, height: 1440))
         XCTAssertEqual(MenuBarItemVisibility.state(itemFrame: CGRect(x: 3000, y: 1418, width: 24, height: 22), screens: [laptop, plain]), .shown)
         XCTAssertEqual(MenuBarItemVisibility.parkedBySystem.message?.contains("Autoriser dans la barre des menus"), true)
+        // T-048 C2: Control Centre can block the item while the switch is on; the text must not blame the switch alone.
+        XCTAssertEqual(MenuBarItemVisibility.parkedBySystem.message?.contains("déjà actif, coupe-le puis réactive-le"), true)
         XCTAssertEqual(MenuBarItemVisibility.underNotch.message?.contains("encoche"), true)
         XCTAssertNil(MenuBarItemVisibility.unknown.message)
         XCTAssertEqual(MenuBarItemVisibility.settingsURL.absoluteString, "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")

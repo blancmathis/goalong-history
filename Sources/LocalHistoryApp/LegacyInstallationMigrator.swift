@@ -15,6 +15,7 @@ import AppleScreenTime
 
             removeLegacyLaunchAgent()
             removeLegacyApplicationCopiesIfSafe()
+            AppBackupArchiver.runOnce()
         }
 
         private static func migrateOnboardingState() {
