@@ -42,21 +42,61 @@
             XCTAssertEqual(LaunchOrigin.current(nil, arguments: ["Goalong History"]), .unknown)
         }
 
+        private func shows(_ origin: LaunchOrigin, quiet: Double = 0, uptime: TimeInterval = 3600,
+                           login: Date? = Date(timeIntervalSince1970: 1_000)) -> Bool {
+            LaunchPresentation.showsDashboardAtLaunch(origin: origin, quietRelaunchUntil: quiet, now: now,
+                                                      systemUptime: uptime, sessionLogin: login)
+        }
+
         func testOnlyAMemberOpenOutsideBootAndUpdateShowsTheWindow() {
-            XCTAssertTrue(LaunchPresentation.showsDashboardAtLaunch(
-                origin: .member, quietRelaunchUntil: 0, now: now, systemUptime: 3600))
+            XCTAssertTrue(shows(.member))
             for other in [LaunchOrigin.loginItem, .serviceItem, .guardRelaunch, .document, .unknown] {
-                XCTAssertFalse(LaunchPresentation.showsDashboardAtLaunch(
-                    origin: other, quietRelaunchUntil: 0, now: now, systemUptime: 3600), "\(other)")
+                XCTAssertFalse(shows(other), "\(other)")
             }
             // Sparkle's relaunch: quiet marker still valid.
-            XCTAssertFalse(LaunchPresentation.showsDashboardAtLaunch(
-                origin: .member, quietRelaunchUntil: now.timeIntervalSince1970 + 60, now: now, systemUptime: 3600))
-            XCTAssertTrue(LaunchPresentation.showsDashboardAtLaunch(
-                origin: .member, quietRelaunchUntil: now.timeIntervalSince1970 - 1, now: now, systemUptime: 3600))
+            XCTAssertFalse(shows(.member, quiet: now.timeIntervalSince1970 + 60))
+            XCTAssertTrue(shows(.member, quiet: now.timeIntervalSince1970 - 1))
             // Session restore right after boot.
-            XCTAssertFalse(LaunchPresentation.showsDashboardAtLaunch(
-                origin: .member, quietRelaunchUntil: 0, now: now, systemUptime: 30))
+            XCTAssertFalse(shows(.member, uptime: 30))
+        }
+
+        /// Decision 2026-11-14: logout then login without reboot. Uptime is long; the login item's event may
+        /// lack the login-item flag (SMAppService). The new session's age keeps the window closed.
+        func testLoginItemAfterLogoutWithoutRebootStaysQuiet() {
+            let justLoggedIn = now.addingTimeInterval(-20)
+            XCTAssertFalse(shows(.member, uptime: 4 * 86_400, login: justLoggedIn))
+            XCTAssertFalse(shows(.loginItem, uptime: 4 * 86_400, login: now.addingTimeInterval(-3600)))
+            XCTAssertFalse(LaunchPresentation.isClearMemberOpen(origin: .member, now: now, systemUptime: 4 * 86_400,
+                                                                sessionLogin: justLoggedIn))
+            // Unknown login time: not a clear member's open.
+            XCTAssertFalse(shows(.member, login: nil))
+            // Same session, minutes later: Spotlight shows the window.
+            XCTAssertTrue(shows(.member, uptime: 4 * 86_400,
+                                login: now.addingTimeInterval(-LaunchPresentation.sessionQuietPeriod)))
+        }
+
+        func testConsoleLoginIsTheLatestUserConsoleRecord() {
+            typealias R = LoginSession.Record
+            let old = Date(timeIntervalSince1970: 100), new = Date(timeIntervalSince1970: 900)
+            let records = [
+                R(isUserProcess: true, line: "console", user: "member", date: old),
+                R(isUserProcess: true, line: "console", user: "member", date: new),
+                R(isUserProcess: true, line: "ttys000", user: "member", date: Date(timeIntervalSince1970: 950)),
+                R(isUserProcess: true, line: "console", user: "other", date: Date(timeIntervalSince1970: 990)),
+                R(isUserProcess: false, line: "console", user: "member", date: Date(timeIntervalSince1970: 999)),
+            ]
+            XCTAssertEqual(LoginSession.latestConsoleLogin(records, user: "member"), new)
+            XCTAssertNil(LoginSession.latestConsoleLogin(records, user: "nobody"))
+            // Live read (no console session on a CI runner): never in the future.
+            if let live = LoginSession.consoleLoginDate() { XCTAssertLessThanOrEqual(live, Date()) }
+        }
+
+        func testLoginItemFlagIsReadAsEnumOrType() {
+            let event = NSAppleEventDescriptor(eventClass: core, eventID: open, targetDescriptor: nil,
+                                               returnID: AEReturnID(kAutoGenerateReturnID),
+                                               transactionID: AETransactionID(kAnyTransactionID))
+            event.setParam(NSAppleEventDescriptor(typeCode: OSType(keyAELaunchedAsLogInItem)), forKeyword: keyAEPropData)
+            XCTAssertEqual(LaunchOrigin.current(event, arguments: ["Goalong History"]), .loginItem)
         }
 
         func testShowRequestIsScopedToTheBundle() {

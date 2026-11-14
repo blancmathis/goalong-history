@@ -195,8 +195,10 @@ import AppleScreenTime
                 NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                     .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
                     .activate()
-                // T-062: activating a menu-bar app shows nothing. A member's open asks it for its window.
-                if launchOrigin == .member {
+                // T-062: activating a menu-bar app shows nothing. A clear member's open asks it for its window.
+                if LaunchPresentation.isClearMemberOpen(
+                    origin: launchOrigin, now: Date(), systemUptime: ProcessInfo.processInfo.systemUptime,
+                    sessionLogin: LoginSession.consoleLoginDate()) {
                     DistributedNotificationCenter.default().postNotificationName(
                         LaunchPresentation.showRequestName(bundleIdentifier: ProductIdentity.bundleIdentifier),
                         object: nil, userInfo: nil, deliverImmediately: true)
@@ -540,7 +542,8 @@ import AppleScreenTime
             } else if !dashboardViewModel.navigationStore.showWelcome,
                       LaunchPresentation.showsDashboardAtLaunch(
                         origin: launchOrigin, quietRelaunchUntil: quietRelaunchUntil, now: Date(),
-                        systemUptime: ProcessInfo.processInfo.systemUptime) {
+                        systemUptime: ProcessInfo.processInfo.systemUptime,
+                        sessionLogin: LoginSession.consoleLoginDate()) {
                 // T-062: a member's open shows the window at once; no second launch needed.
                 dashboardWindowController?.show(section: nil)
             }
