@@ -270,6 +270,12 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     /// The empty list of rules: the rule of Jev stays under it, so it says « autre » (T-050 point 15).
     static let noRuleText = "Aucune autre règle. Partez d’un modèle, ou de « Nouvelle règle » : toujours, à des horaires, ou le temps d’une séance."
 
+    static let continuityOffText = "Goalong se relance s’il est forcé à quitter. Pour retirer ce service, activez Garde-fous."
+    /// The member said « OK » to the reopening (installed Goalong only, never the gallery or a test).
+    static var continuityRunsWithModuleOff: Bool {
+        GoalongGuardGate.continuityAllowed && GuardContinuityConsent.isGiven(GuardConsent.standardDefaults)
+    }
+
     private var protection: some View {
         GoalongSection(title: "Protection", subtitle: Self.protectionSubtitle, trailing: {
             if let blocking { BlockingProtectionPill(controller: blocking) }
@@ -279,6 +285,17 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
                     BlocagesFoldView(open: $open, fold: .protection, title: "Mot de passe, navigateurs, garde") {
                         BlockingProtectionDetails(controller: blocking).environment(\.goalongSectionTitleHidden, true)
                     }
+                } else if Self.continuityRunsWithModuleOff {
+                    // T-059 lot 5: the reopening runs with the module off; its « Retirer » (one rule) lives in Garde-fous.
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(Self.continuityOffText)
+                            .foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Activer Garde-fous") { GoalongModuleStore.shared.setEnabled(.blocking, true) }
+                            .buttonStyle(LHSecondaryButtonStyle())
+                            .accessibilityIdentifier("module-enable-blocking-guard")
+                    }
+                    .padding(.top, 6)
                 }
                 // T-050 point 10: the manual red and its brightness live in the menu bar; a held brightness is a rule.
                 if let braise {

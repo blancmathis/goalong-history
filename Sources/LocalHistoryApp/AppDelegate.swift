@@ -451,6 +451,7 @@ import AppleScreenTime
             MainActor.assumeIsolated {
                 BlockingRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .blocking) }
                 BlockingRuntime.shared.start(monitor: contextMonitor)
+                askContinuityConsentIfNeeded()
                 ConcentrationRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .concentration) }
                 ConcentrationRuntime.shared.onMenuBarText = { [weak self] text in self?.menuBarController?.setFocusTitle(text) }
                 let ambiance = dashboardViewModel.ambianceModule
@@ -949,6 +950,9 @@ import AppleScreenTime
                     files.writeRelease(GuardRelease(pid: getpid(), reason: release, writtenAt: Date().timeIntervalSince1970,
                                                     bootTime: GuardSystem.bootTime(), bootSession: GuardSystem.bootSession()))
                 }
+                // T-059 lot 5: an allowed « Quitter » ends the reopening too, after its token (no relaunch loop). So does
+                // a session end: a guard started at the next login of this boot must not open Goalong on its own.
+                files.removeContinuity()
             }
             BackgroundContinuityController.shared.stop(reason: reason)
 
@@ -1900,7 +1904,33 @@ import AppleScreenTime
                 .contains { $0.processIdentifier != currentPID && !$0.isTerminated }
         }
 
+        /// T-059 lot 5: asks once, installed Goalong only, whether Goalong may reopen after a forced quit. Only « OK »
+        /// lets the client register the service for it; a refusal is remembered and nothing reopens Goalong.
+        @MainActor private func askContinuityConsentIfNeeded() {
+            guard !GoalongGuardFiles.isGuardRelaunch,
+                  GuardContinuityConsent.shouldAsk(allowed: GoalongGuardGate.continuityAllowed,
+                                                   defaults: GuardConsent.standardDefaults) else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                MainActor.assumeIsolated {
+                    let defaults = GuardConsent.standardDefaults
+                    guard !GuardContinuityConsent.isAnswered(defaults) else { return }
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    let alert = NSAlert()
+                    alert.messageText = GuardContinuityConsent.title
+                    alert.informativeText = GuardContinuityConsent.text
+                    alert.addButton(withTitle: GuardContinuityConsent.accept)
+                    alert.addButton(withTitle: GuardContinuityConsent.decline)
+                    GuardContinuityConsent.record(defaults, accepted: alert.runModal() == .alertFirstButtonReturn)
+                    BlockingRuntime.shared.syncContinuity()
+                }
+            }
+        }
+
         private func presentFatalError(_ error: Error) {
+            // T-059 lot 5: « Quitter » here is the member's own quit. Outside a severe block it leaves `user_quit`
+            // (and removes `guard-continuity` after it), so the guard does not reopen a launch that cannot start.
+            // During a severe block nothing changes: the guard keeps reopening Goalong until the block ends.
+            if !GoalongGuardFiles.standard.markerExists() { userQuitConfirmed = true }
             NSApplication.shared.activate(ignoringOtherApps: true)
             let alert = NSAlert(error: error)
             alert.messageText = "Goalong n’a pas pu démarrer"

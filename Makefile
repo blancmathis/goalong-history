@@ -16,6 +16,7 @@ test:
 	./scripts/run_swift_tests.sh full
 	./scripts/test_isolated_home.sh
 	bash scripts/test_dev_app.sh
+	bash scripts/test_guard_agent_plist.sh
 	bash scripts/test_stable_release_identity.sh
 	bash scripts/test_skip_report.sh
 	bash scripts/test_clean_leaked_test_prefs.sh
