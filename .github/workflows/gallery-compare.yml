@@ -1,7 +1,9 @@
 name: Gallery compare
 
+# T-058: nightly (all of main's changes since ~1 day) and on demand, not on PRs.
 on:
-  pull_request:
+  schedule:
+    - cron: '7 3 * * *'
   workflow_dispatch:
     inputs:
       base:
@@ -34,5 +36,12 @@ jobs:
         run: bash scripts/test_gallery_script.sh
       - name: Render base and head, diff them
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base }}
-        run: python3 scripts/gallery.py compare --base "$BASE" --shards 3
+          BASE: ${{ inputs.base }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$BASE" ]]; then
+            # Nightly: main as it was ~1 day ago (falls back to the root of a younger history).
+            BASE="$(git rev-list -1 --before='26 hours ago' origin/main)"
+            BASE="${BASE:-$(git rev-list --max-parents=0 HEAD | tail -n1)}"
+          fi
+          python3 scripts/gallery.py compare --base "$BASE" --shards 3

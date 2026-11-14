@@ -1,13 +1,20 @@
 name: Native brand motion integration
 
+# T-058: after the merge and nightly, not on PRs. Publication waits for this job on the
+# exact main commit (scripts/wait_main_gates.py).
 on:
   push:
     branches: [main, motion/integration-20260917]
-  pull_request:
+  schedule:
+    - cron: '47 2 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: motion-integration-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -67,4 +74,4 @@ jobs:
           name: Goalong-Gate-${{ github.job }}-${{ github.run_attempt }}
           path: gate-receipt.json
           if-no-files-found: error
-          retention-days: 7  # promotion reads PR gate receipts at the main push
+          retention-days: 7  # promotion reads this main-commit receipt

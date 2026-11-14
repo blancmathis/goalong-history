@@ -8,9 +8,12 @@ import tempfile
 from pathlib import Path
 
 REPO = 'blancmathis/goalong-history'
+# T-058 (2026-11-12): these gates no longer run on PRs (PRs only run the fast gate). They run
+# once per main commit, and publication or local deploy needs them green on that exact
+# commit. The native sharing test now runs inside build-test-package.
 GATES = {'build-test-package': '.github/workflows/macos.yml',
-         'verify': '.github/workflows/motion-integration.yml',
-         'native-sharing': '.github/workflows/sharing-acceptance.yml'}
+         'verify': '.github/workflows/motion-integration.yml'}
+GATE_EVENTS = {'push', 'workflow_dispatch'}
 
 class PendingGates(ValueError):
     """Missing/unfinished gates can be reevaluated without a publication attempt."""
@@ -69,7 +72,7 @@ def gates_for(candidates, tree, revision, merged_at=None):
             if (run['conclusion'] != 'success' or run['status'] != 'completed'
                     or run['head_sha'] != tested or run['path'].split('@')[0] != path
                     or run['head_repository']['full_name'] != REPO
-                    or run['event'] not in {'pull_request', 'push', 'workflow_dispatch'}):
+                    or run['event'] not in GATE_EVENTS):
                 break
             jobs = pages(f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", 'jobs')
             job = next((j for j in jobs if j['id'] == int(match[2])), None)
@@ -93,7 +96,7 @@ def gates_for(candidates, tree, revision, merged_at=None):
             return {'sourceCommit': revision, 'tree': tree, 'testedCommit': tested, 'gateEvidence': evidence,
                     'runs': {n: e['runId'] for n, e in evidence.items()},
                     'buildRunId': producer['runId'], 'buildRunAttempt': producer['runAttempt'], 'mergedAt': merged_at}
-    raise PendingGates('All three official hosted gates and their exact-checkout receipts must pass')
+    raise PendingGates('All official hosted gates and their exact-checkout receipts must pass on this main commit')
 
 def source_gates(revision):
     if not re.fullmatch(r'[0-9a-f]{40}', revision):
@@ -106,7 +109,7 @@ def source_gates(revision):
         if (pr['merged_at'] and pr['merge_commit_sha'] == revision and pr['base']['ref'] == 'main'
                 and pr['head']['repo'] and pr['head']['repo']['full_name'] == REPO):
             merged_at = pr['merged_at']
-            candidates.append(pr['head']['sha'])
+            # The PR head is no longer a candidate: PRs do not run the full suite (T-058).
     return gates_for(candidates, tree, revision, merged_at)
 
 if __name__ == '__main__':

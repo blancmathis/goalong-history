@@ -19,7 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--start", action="store_true", help="load the agent now")
     parser.add_argument("--remove", action="store_true", help="unload and delete the agent and its controller copy")
-    parser.add_argument("--interval", type=int, default=120)
+    parser.add_argument("--interval", type=int, default=30)  # T-058: checks take ~1 min
     args = parser.parse_args()
     if os.uname().sysname != "Darwin" or os.getuid() == 0:
         parser.error("Requires the current non-root Mac user")

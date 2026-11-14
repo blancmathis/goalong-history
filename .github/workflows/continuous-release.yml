@@ -37,8 +37,31 @@ permissions:
   pull-requests: read
 
 jobs:
-  promote-prepared:
+  main-gates:
+    # T-058 (2026-11-12): PRs only pass the fast gate. Nothing is published before the full
+    # suite (macos.yml) and the motion test are green on this exact main commit. Waits on a
+    # cheap Linux runner, not on a macOS one.
     if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      ready: ${{ steps.wait.outputs.ready }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Wait for the post-merge gates on this exact commit
+        id: wait
+        run: python3 scripts/wait_main_gates.py "$GITHUB_SHA"
+
+  promote-prepared:
+    needs: main-gates
+    if: github.event_name == 'push' && needs.main-gates.outputs.ready == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     concurrency:
