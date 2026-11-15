@@ -29,7 +29,8 @@
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: deviceStore.deviceID,
                     selectedDay: navigationStore.selectedDay,
-                    accessEnabled: false
+                    accessEnabled: false,
+                    deviceIDProvider: { [weak deviceStore] in deviceStore?.deviceID ?? "" }
                 )
             )
         }

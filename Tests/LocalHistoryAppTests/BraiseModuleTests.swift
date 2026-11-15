@@ -11,9 +11,10 @@ final class BraiseTestGamma: BraiseGammaDriving {
     var changes: [Bool] = []
     var restores = 0
     var reject = false
+    var rejectMessage = "Écran incompatible."
     func set(active: Bool, intensity: Double, brightness: Double, animated: Bool) {
         changes.append(active)
-        if reject, active { onError?("Écran incompatible.") }
+        if reject, active { onError?(rejectMessage) }
     }
     func restore() { restores += 1 }
     func checkAfterSystemChange() {}

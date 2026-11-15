@@ -22,7 +22,8 @@ struct GoalongActivityAppleCard: View {
         _screenTime = StateObject(wrappedValue: AppleScreenTimeDashboardModel(
             rootDirectory: AppPaths.screenTimeDirectory, deviceID: deviceStore.deviceID, selectedDay: day,
             accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime),
-            includesUnfilteredSummary: true))
+            includesUnfilteredSummary: true,
+            deviceIDProvider: { [weak deviceStore] in deviceStore?.deviceID ?? "" }))
     }
 
     private var summary: AppleScreenTimeDaySummary? {

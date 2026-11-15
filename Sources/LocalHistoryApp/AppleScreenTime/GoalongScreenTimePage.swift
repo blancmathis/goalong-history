@@ -25,7 +25,8 @@ struct GoalongScreenTimePage: View {
         _screenTime = StateObject(wrappedValue: screenTimeModel ?? AppleScreenTimeDashboardModel(
             rootDirectory: AppPaths.screenTimeDirectory, deviceID: device.deviceID,
             selectedDay: navigation.selectedDay,
-            accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)))
+            accessEnabled: GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime),
+            deviceIDProvider: { [weak device] in device?.deviceID ?? "" }))
     }
 
     var body: some View {

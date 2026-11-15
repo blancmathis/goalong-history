@@ -202,6 +202,23 @@ import XCTest
         XCTAssertFalse(c.active); XCTAssertNil(c.pendingStop); XCTAssertTrue(c.ranges.follows)
     }
 
+    /// T-064 lot 6 (D2 P2): a slow restore guardian is not a reason to skip a protected range.
+    func testSlowGuardianNeverSkipsAProtectedRange() throws {
+        let gamma = BraiseTestGamma()
+        let clocks = Clocks(wednesday22h), c = try controller(clocks, gamma: gamma, password: "secret")
+        try c.saveRange(evening(.password), intensity: 1)
+        XCTAssertNotNil(c.protectedWindow)
+        gamma.rejectMessage = GammaError.watchdog.localizedDescription; gamma.reject = true
+        c.evaluate()
+        XCTAssertNotNil(c.protectedWindow, "the protected range is still in force")
+        XCTAssertTrue(c.ranges.skips.isEmpty, "not skipped to its end")
+        XCTAssertTrue(c.active, "red stays asked for; the next tour retries")
+        // Any other fault still gives the colors back, protected range included.
+        gamma.rejectMessage = GammaError.rejected.localizedDescription
+        c.evaluate()
+        XCTAssertFalse(c.ranges.skips.isEmpty)
+    }
+
     func testPasswordRangeAndNoPasswordCountsAsLocked() throws {
         let clocks = Clocks(wednesday22h), c = try controller(clocks, password: "secret")
         try c.saveRange(evening(.password), intensity: 1)
@@ -415,6 +432,17 @@ final class RedScreenGammaOriginTests: XCTestCase {
         gamma.restore()
         XCTAssertTrue(screens.isNormal(1)); XCTAssertTrue(screens.isNormal(7))
         XCTAssertTrue(noRedTableWritten(after: before, screens), "stop writes no red table back")
+    }
+
+    /// T-064 lot 6 (D2 P3): an unreadable recovery file gives the system colors back, then goes away.
+    func testUnreadableRecoveryFileRestoresSystemColorsAndIsRemoved() throws {
+        let dir = try directory(), screens = FakeGammaScreens([1])
+        XCTAssertTrue(screens.write(FakeGammaScreens.ramp(1).scaled(Gains(r: 1, g: 0.4, b: 0.2))))
+        let file = dir.appendingPathComponent("display-recovery-cut.json")
+        try Data("[{\"displayID\":1,".utf8).write(to: file)
+        GammaController.recoverPending(in: dir, screens: screens)
+        XCTAssertTrue(screens.isNormal(1))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
 
     /// Same, without a key: the red table read is never an origin; ColorSync gives every origin back.

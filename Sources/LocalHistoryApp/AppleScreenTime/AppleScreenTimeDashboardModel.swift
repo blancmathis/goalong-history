@@ -43,7 +43,12 @@
 
         private let store: AppleScreenTimeStore?
         private let appleSource: AppleSystemScreenTimeSource
-        private let collectionProvider: CollectionProvider
+        private var collectionProvider: CollectionProvider
+        private let rootDirectory: URL
+        /// The archive could not be opened at start (device ID unavailable, Keychain locked): each refresh tries again
+        /// with the current device ID (B2 P2, T-064).
+        private var repositoryPending = false
+        private let deviceIDProvider: (() -> String)?
         private let includesUnfilteredSummary: Bool
         let refreshInterval: TimeInterval
         private let queue = DispatchQueue(
@@ -62,8 +67,11 @@
             accessEnabled: Bool = true,
             refreshInterval: TimeInterval = AppleScreenTimeDashboardModel.defaultRefreshInterval,
             includesUnfilteredSummary: Bool = false,
+            deviceIDProvider: (() -> String)? = nil,
             collectionProvider: CollectionProvider? = nil
         ) {
+            self.rootDirectory = rootDirectory
+            self.deviceIDProvider = deviceIDProvider
             let source = AppleSystemScreenTimeSource(deviceID: deviceID)
             self.appleSource = source
             if let collectionProvider {
@@ -77,6 +85,7 @@
                     self.collectionProvider = { repository.collect(for: $0) }
                 } catch {
                     let message = GoalongUserFacingError.message(error)
+                    self.repositoryPending = true
                     self.collectionProvider = { _ in
                         Self.storageUnavailableCollection(message: message)
                     }
@@ -179,7 +188,20 @@
             }
         }
 
+        /// Opens the archive once the device ID is known. Returns true when it is now open.
+        @discardableResult
+        func retryRepositoryIfNeeded() -> Bool {
+            guard repositoryPending, let id = deviceIDProvider?() else { return !repositoryPending }
+            guard let repository = try? GoalongScreenTimeRepositoryProvider.repository(rootDirectory: rootDirectory, deviceID: id) else {
+                return false
+            }
+            collectionProvider = { repository.collect(for: $0) }
+            repositoryPending = false
+            return true
+        }
+
         func refresh() {
+            retryRepositoryIfNeeded()
             guard !GoalongGlobalPause.isPaused() else { isBusy = false; return }
             guard accessEnabled else { return }
             guard isActive else { return }
