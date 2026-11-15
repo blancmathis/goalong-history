@@ -253,6 +253,8 @@ public final class AgentActivityStore: @unchecked Sendable {
     private static let absoluteMaximumIndexEntries = 50_000
     private static let maximumConfigurationBytes: Int64 = 1 * 1_024 * 1_024
     private static let maximumSerializedIndexBytes: Int64 = 12 * 1_024 * 1_024
+    private static let fastIndexEncodeHeadroomBytes: Int64 = 3 * 1_024 * 1_024
+    private static let fastIndexEncodeMaximumNewEntries = 256
     private static let maximumSignalBytes: Int64 = 16 * 1_024
     private static let minimumUnavailableRetryInterval: TimeInterval = 60
     static let maximumTransientRecords = 256
@@ -303,6 +305,9 @@ public final class AgentActivityStore: @unchecked Sendable {
     private var loadedIndexSignature: FileSignature?
     private var loadedRawEntryCount = 0
     private var successfulIndexWriteCount = 0
+    private var fastIndexEncodeCount = 0
+    /// Tests only: always take the per-entry eviction pass (the pre-T-064 path), to compare.
+    var forceIndexEvictionPassForTesting = false
 
     private var lock: NSRecursiveLock { Self.processLock }
 
@@ -517,6 +522,12 @@ public final class AgentActivityStore: @unchecked Sendable {
             visitedCount: visited,
             totalCount: positions.count
         )
+    }
+
+    func fastIndexEncodeCountForTesting() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return fastIndexEncodeCount
     }
 
     func indexWriteCountForTesting() -> Int {
@@ -1602,11 +1613,17 @@ public final class AgentActivityStore: @unchecked Sendable {
     }
 
     private func persistIndex() throws {
-        try enforceSerializedIndexBound()
-        index.entries.sort { $0.id < $1.id }
-        rebuildEntryLookups()
-        guard indexIsStructurallyValid(index) else { throw AgentActivityStoreError.indexCorrupt }
-        let data = try encoder.encode(index)
+        let data: Data
+        if let fast = try encodeIndexBelowBoundWithoutEviction() {
+            data = fast
+            fastIndexEncodeCount += 1
+        } else {
+            try enforceSerializedIndexBound()
+            index.entries.sort { $0.id < $1.id }
+            rebuildEntryLookups()
+            guard indexIsStructurallyValid(index) else { throw AgentActivityStoreError.indexCorrupt }
+            data = try encoder.encode(index)
+        }
         guard Int64(data.count) <= Self.maximumSerializedIndexBytes else {
             throw AgentActivityStoreError.indexCorrupt
         }
@@ -1615,6 +1632,24 @@ public final class AgentActivityStore: @unchecked Sendable {
         loadedIndexSignature = fileSignature(at: indexFile)
         loadedRawEntryCount = index.entries.count
         successfulIndexWriteCount += 1
+    }
+
+    /// T-064 : the common commit (an index well under the ceiling) is encoded once, not once per entry plus once
+    /// whole. Only when the last written index was near the ceiling, or this encoding ends above it, does the
+    /// per-entry eviction below run. The materialized buffer stays near the ceiling: the previous index had at
+    /// least `fastIndexEncodeHeadroomBytes` of room, and one commit adds far less.
+    private func encodeIndexBelowBoundWithoutEviction() throws -> Data? {
+        guard !forceIndexEvictionPassForTesting,
+            let previous = loadedIndexSignature?.byteCount ?? (index.entries.isEmpty ? 0 : nil),
+            previous <= Self.maximumSerializedIndexBytes - Self.fastIndexEncodeHeadroomBytes,
+            // Each metadata entry is a few KiB at most: this many new ones stay inside the headroom.
+            index.entries.count <= loadedRawEntryCount + Self.fastIndexEncodeMaximumNewEntries
+        else { return nil }
+        index.entries.sort { $0.id < $1.id }
+        rebuildEntryLookups()
+        guard indexIsStructurallyValid(index) else { throw AgentActivityStoreError.indexCorrupt }
+        let data = try encoder.encode(index)
+        return Int64(data.count) <= Self.maximumSerializedIndexBytes ? data : nil
     }
 
     /// Enforces the on-disk byte ceiling without ever materializing an oversized whole index.

@@ -90,6 +90,10 @@ final class SupportStallMonitor {
     private var busySince: TimeInterval = 0
     private var iteration: UInt64 = 0
     private var sampled: (iteration: UInt64, frames: [String])?
+    /// The watchdog has a pending deadline. Main arms it only when it is not (T-064): a busy run loop wakes
+    /// 20–120 times a second, and re-scheduling a strict timer at every wake and sleep cost two wakeups each.
+    private var armed = false
+    private var armCount = 0
     // Main thread only.
     private var lastRecord: TimeInterval = 0
     private var skipped = 0
@@ -110,8 +114,11 @@ final class SupportStallMonitor {
             imageEnd = imageStart + Self.textSize(of: base)
         }
         let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
-        timer.setEventHandler { [weak self] in self?.sampleMainThread() }
+        timer.setEventHandler { [weak self, weak timer] in
+            guard let timer else { return }; self?.sampleMainThread(rearming: timer)
+        }
         timer.schedule(deadline: .distantFuture)
+        os_unfair_lock_lock(&lock); armed = false; os_unfair_lock_unlock(&lock)
         timer.resume(); self.timer = timer
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue
             | CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue, true, 0) { [weak self] _, activity in
@@ -126,13 +133,19 @@ final class SupportStallMonitor {
         observer = nil; timer?.cancel(); timer = nil
     }
 
+    /// Times the watchdog was (re)scheduled; read by tests.
+    var armCountForTesting: Int { os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }; return armCount }
+
     private func woke() {
-        os_unfair_lock_lock(&lock); busySince = ProcessInfo.processInfo.systemUptime; iteration &+= 1; os_unfair_lock_unlock(&lock)
-        timer?.schedule(deadline: .now() + Self.threshold)
+        os_unfair_lock_lock(&lock)
+        busySince = ProcessInfo.processInfo.systemUptime; iteration &+= 1
+        let arm = !armed; if arm { armed = true; armCount += 1 }
+        os_unfair_lock_unlock(&lock)
+        if arm { timer?.schedule(deadline: .now() + Self.threshold) }
     }
 
+    /// The pending deadline stays armed across short iterations; the watchdog re-checks the current one.
     private func willSleep() {
-        timer?.schedule(deadline: .distantFuture)
         let now = ProcessInfo.processInfo.systemUptime
         os_unfair_lock_lock(&lock)
         let started = busySince, current = iteration, frames = sampled?.iteration == current ? sampled?.frames : nil
@@ -153,10 +166,14 @@ final class SupportStallMonitor {
 
     /// Watchdog queue. No allocation happens while the main thread is suspended: it may hold
     /// the malloc lock.
-    private func sampleMainThread() {
+    private func sampleMainThread(rearming timer: DispatchSourceTimer) {
         os_unfair_lock_lock(&lock)
         let current = iteration, busy = busySince > 0, done = sampled?.iteration == current
+        // The deadline was armed by an earlier iteration: wait until this one has run for the threshold.
+        let remaining = busy ? busySince + Self.threshold - ProcessInfo.processInfo.systemUptime : 0
+        if busy, !done, remaining > 0.001 { armCount += 1 } else { armed = false }
         os_unfair_lock_unlock(&lock)
+        if busy, !done, remaining > 0.001 { timer.schedule(deadline: .now() + remaining); return }
         guard busy, !done, mainThread != 0, imageEnd > imageStart else { return }
         guard thread_suspend(mainThread) == KERN_SUCCESS else { return }
         let count = copyFrames()

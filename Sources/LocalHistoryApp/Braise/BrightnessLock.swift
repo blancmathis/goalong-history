@@ -139,7 +139,9 @@ final class DisplayServicesBrightness: DisplayBrightnessDriving, @unchecked Send
 }
 
 /// Puts the screens back to the target whenever anything (keys F1/F2, Control Centre, Settings, ambient light) moves
-/// them. Polls every `interval` on its own queue while a target is set; nothing runs without one.
+/// them. Polls every `interval` on its own queue while a target is set; nothing runs without one. While the screens
+/// sleep or the session is away (`setPaused`), nobody can see or move the brightness: the poll stops and comes back,
+/// with one immediate pass, when the screens wake (T-064).
 final class BrightnessEnforcer: @unchecked Sendable {
     static let interval: TimeInterval = 0.1
     private let driver: DisplayBrightnessDriving
@@ -150,21 +152,37 @@ final class BrightnessEnforcer: @unchecked Sendable {
     private var displays: [UInt32] = []
     private var timer: DispatchSourceTimer?
     private var correctionCount = 0
+    private var paused = false
 
     init(driver: DisplayBrightnessDriving, runsTimer: Bool) { self.driver = driver; self.runsTimer = runsTimer }
 
     /// Corrections made since start (each one = a screen put back to the target).
     var corrections: Int { state.withLock { correctionCount } }
     var isRunning: Bool { state.withLock { timer != nil } }
+    var isPaused: Bool { state.withLock { paused } }
+
+    /// Screens asleep or session away (true): no poll. Screens awake again (false): the poll restarts at once.
+    func setPaused(_ value: Bool) {
+        state.lock()
+        let changed = paused != value
+        paused = value
+        let (wanted, ids) = (target, displays)
+        state.unlock()
+        guard changed else { return }
+        update(target: wanted, displays: ids, force: true)
+    }
 
     /// A new target (nil stops). The displays are the controllable ones, read on the main thread by the controller.
-    func update(target value: Double?, displays ids: [UInt32]) {
+    func update(target value: Double?, displays ids: [UInt32]) { update(target: value, displays: ids, force: false) }
+
+    private func update(target value: Double?, displays ids: [UInt32], force: Bool) {
         let wanted = value.map(BrightnessLockRules.clamp)
         let start: Bool
         state.lock()
-        let changed = target != wanted || displays != ids
+        let changed = force || target != wanted || displays != ids
         target = wanted; displays = wanted == nil ? [] : ids
-        if wanted == nil || ids.isEmpty { timer?.cancel(); timer = nil; start = false } else { start = runsTimer && timer == nil }
+        if wanted == nil || ids.isEmpty || paused { timer?.cancel(); timer = nil; start = false } else { start = runsTimer && timer == nil }
+        let pausedNow = paused
         state.unlock()
         if start {
             let source = DispatchSource.makeTimerSource(queue: queue)
@@ -172,7 +190,7 @@ final class BrightnessEnforcer: @unchecked Sendable {
             source.setEventHandler { [weak self] in self?.tick() }
             state.withLock { timer = source }
             source.resume()
-        } else if changed, runsTimer, wanted != nil { queue.async { [weak self] in self?.tick() } }
+        } else if changed, runsTimer, wanted != nil, !pausedNow { queue.async { [weak self] in self?.tick() } }
     }
 
     /// One pass: every controllable screen away from the target is put back. Called by the timer, or by tests.

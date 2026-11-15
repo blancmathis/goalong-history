@@ -37,8 +37,25 @@
             }
             XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 15, sessionAvailable: true), 2)
             XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 60, sessionAvailable: true), 5)
-            XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 3_600, sessionAvailable: true), 5)
+            XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 599, sessionAvailable: true), 5)
+            // T-064 lot4 n°5 : after 10 min without input, the AX sample backs off to 30 s.
+            XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 600, sessionAvailable: true), 30)
+            XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 3_600, sessionAvailable: true), 30)
             XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 0, sessionAvailable: false), 60)
+        }
+
+        /// T-064 lot4 n°5 : the deep-idle back-off never delays the return of input. The cheap input-clock check
+        /// still runs every 5 s; any input in the last 15 s ends the wait and the next poll is 0.75 s again.
+        func testDeepIdleBlockingPollResumesWithinTheSameCheckDelay() {
+            XCTAssertEqual(ContextMonitor.blockingIdleCheckInterval, 5)
+            XCTAssertTrue(ContextMonitor.blockingIdleCheckDefers(idleSeconds: 900, remaining: 20))
+            XCTAssertFalse(ContextMonitor.blockingIdleCheckDefers(idleSeconds: 1, remaining: 20))
+            XCTAssertFalse(ContextMonitor.blockingIdleCheckDefers(idleSeconds: 900, remaining: 0))
+            XCTAssertEqual(ContextMonitor.blockingPollInterval(idleSeconds: 1, sessionAvailable: true), 0.75)
+            // Hour of film with blocking on: AX samples before (5 s) vs after (30 s).
+            let before = Int(3_600 / 5.0), after = Int(3_600 / ContextMonitor.blockingPollInterval(idleSeconds: 3_600, sessionAvailable: true))
+            print("[T-064 n°5] échantillons AX par heure d'inactivité : avant=\(before) après=\(after)")
+            XCTAssertEqual(after, 120)
         }
 
         // MARK: E3 — checkpoint barrier, seal full sync

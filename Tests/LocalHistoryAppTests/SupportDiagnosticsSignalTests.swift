@@ -253,6 +253,28 @@ final class SupportDiagnosticsSignalTests: XCTestCase {
 
     @inline(never) static func stallTestBlockingWork() { usleep(300_000) }
 
+    /// T-064 lot4 n°6 : a busy run loop (many short iterations) no longer re-schedules the watchdog at each one.
+    func testStallMonitorArmsItsWatchdogOncePerBurstNotPerIteration() {
+        let monitor = SupportStallMonitor()
+        monitor.start()
+        defer { monitor.stop() }
+        let iterations = 500
+        let done = expectation(description: "burst")
+        var remaining = iterations
+        func hop() {
+            remaining -= 1
+            if remaining == 0 { done.fulfill() } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.0005) { hop() }
+            }
+        }
+        DispatchQueue.main.async { hop() }
+        wait(for: [done], timeout: 10)
+        let arms = monitor.armCountForTesting
+        // Before: two schedules per iteration (wake + sleep), so ≥ 2 × 500.
+        print("[T-064 n°6] reprogrammations du chien de garde pour \(iterations) tours : avant≥\(2 * iterations) après=\(arms)")
+        XCTAssertLessThan(arms, iterations / 2)
+    }
+
     func testStallMonitorNamesTheAppFrameThatBlockedMain() throws {
         let monitor = SupportStallMonitor()
         monitor.start()

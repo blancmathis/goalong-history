@@ -144,8 +144,13 @@ struct RedScreenRefusal: LocalizedError, Equatable {
                 .NSSystemTimeZoneDidChange, .NSCalendarDayChanged, Notification.Name("NSSystemClockDidChangeNotification")])
             observe(NSWorkspace.shared.notificationCenter, names: [NSWorkspace.didWakeNotification,
                 NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification])
+            observeScreensAway()
             let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.evaluate(); self?.gamma.checkAfterSystemChange() }
+                MainActor.assumeIsolated {
+                    // A missed wake notice never leaves the lock off longer than this tick.
+                    self?.enforcer.setPaused(Self.screensAwayNow())
+                    self?.evaluate(); self?.gamma.checkAfterSystemChange()
+                }
             }
             timer.tolerance = 4; RunLoop.main.add(timer, forMode: .common); maintenanceTimer = timer
         }
@@ -167,6 +172,38 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             }
             observers.append((center, token))
         }
+    }
+
+    /// Screens asleep, session switched away or screen locked: nobody sees the brightness, so the 10 Hz poll pauses.
+    /// Any wake, return or unlock resumes it with an immediate pass (T-064).
+    private func observeScreensAway() {
+        let workspace = NSWorkspace.shared.notificationCenter, distributed = DistributedNotificationCenter.default()
+        let events: [(NotificationCenter, Notification.Name, Bool)] = [
+            (workspace, NSWorkspace.screensDidSleepNotification, true), (workspace, NSWorkspace.willSleepNotification, true),
+            (workspace, NSWorkspace.sessionDidResignActiveNotification, true),
+            (distributed, Notification.Name("com.apple.screenIsLocked"), true),
+            (workspace, NSWorkspace.screensDidWakeNotification, false), (workspace, NSWorkspace.didWakeNotification, false),
+            (workspace, NSWorkspace.sessionDidBecomeActiveNotification, false),
+            (distributed, Notification.Name("com.apple.screenIsUnlocked"), false),
+        ]
+        for (center, name, away) in events {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.running else { return }
+                    // A wake resumes at once, even if the screen is still locked: the 30 s tick pauses again if so.
+                    self.enforcer.setPaused(away)
+                }
+            }
+            observers.append((center, token))
+        }
+    }
+
+    /// True when the main screen sleeps, the session is not on the console, or the screen is locked.
+    nonisolated static func screensAwayNow() -> Bool {
+        if CGDisplayIsAsleep(CGMainDisplayID()) != 0 { return true }
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        if let onConsole = session[kCGSessionOnConsoleKey as String] as? Bool, !onConsole { return true }
+        return (session["CGSSessionScreenIsLocked"] as? Bool) ?? false
     }
 
     /// A screen plugged or unplugged, a wake, a clock change: red on reaches every screen; red off touches none.

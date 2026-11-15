@@ -393,6 +393,36 @@ final class AXAdversarialReviewTests: XCTestCase {
     }
     private final class Counter { var value = 0 }
 
+    /// T-064 lot4 n°9: an unchanged (deduplicated) capture restarts the 2 s cooldown, like a recorded one.
+    func testDeduplicatedSemanticCaptureRestartsTheTypingCooldown() throws {
+        richConsent(true)
+        let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
+        let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: params).snapshot })
+        let evidence = AXContextEvidence(snapshot: snapshot, boundary: AXReadBoundary(window: tree.window, pid: 42))
+        let reads = Counter()
+        let runtime = ActivityAnalysisRuntime(client: tree.client, hostGate: .testOpen, richContextEnabled: { [consent] in consent.value },
+            applicationWitness: { _ in { true } }, allowsSemantic: { _ in true }, semanticRead: { _, _, _ in
+                reads.value += 1
+                return AXRichContextCapture(text: "Public cooldown fixture", source: "visible", redacted: false, truncated: false, fingerprint: "same-F")
+            })
+        runtime.start(recorder: rig.recorder, state: rig.state, configManager: rig.config,
+            currentContext: { $0(evidence) }, semanticContextStore: rig.semantic, memoryStore: rig.memory, automaticWork: false)
+        func capture() {
+            runtime.captureObservedContext(trigger: "value_changed", context: snapshot)
+            try? rig.recorder.flushAndWait(); tick(0.3)
+        }
+        capture()
+        XCTAssertEqual(reads.value, 1)
+        tick(ActivityAnalysisRuntime.observedContextRecentCaptureCooldown + 0.1)
+        capture()  // after the cooldown: AX re-read, same text → deduplicated
+        XCTAssertEqual(reads.value, 2)
+        capture()  // within 2 s of that unchanged read: skipped
+        print("[T-064 n°9] lectures AX pour 3 saisies (la 3e < 2 s après un doublon) : avant=3 après=\(reads.value)")
+        XCTAssertEqual(reads.value, 2, "A deduplicated capture must restart the recent-capture cooldown")
+        XCTAssertEqual(try events(stream(rig, date: date)).filter { $0.kind == .semanticSnapshot }.count, 1)
+        runtime.stop(); try rig.recorder.closeAndWait()
+    }
+
     func testReviewConsentRevokedBetweenSemanticPayloadAndReference() throws {
         richConsent(true)
         let date = Date(), params = input(), tree = ScriptedAXTree(), rig = try rig(at: date)

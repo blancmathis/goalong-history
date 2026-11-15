@@ -285,6 +285,46 @@ final class AgentActivityMetadataPrivacyTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: reloaded.indexFile), bytesBefore)
     }
 
+    /// T-064 lot4 n°1 : under the ceiling, a commit encodes the index once (no per-entry pass); the entries
+    /// written are identical to the eviction path.
+    func testCommitUnderCeilingEncodesOnceAndWritesTheSameEntries() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_787_472_100)
+        let padding = String(repeating: "q", count: 700)
+        func record(_ index: Int, modified: Double = 0) -> AgentCaptureRecord {
+            let relativePath = "\(padding)-\(String(format: "%05d", index)).jsonl"
+            return AgentCaptureRecord(index: AgentSourceIndexEntry(
+                id: "entry-\(index)", stableConversationID: "bench-\(index)", watchedFolderID: "bench-folder",
+                watchedFolderName: "Custom", provider: .custom,
+                reference: AgentSourceReference(kind: .file, path: "/fixture/\(relativePath)"),
+                relativePath: relativePath, sourceCreatedAt: observedAt,
+                sourceModifiedAt: observedAt.addingTimeInterval(modified),
+                firstIndexedAt: observedAt, lastObservedAt: observedAt.addingTimeInterval(Double(index) + modified),
+                byteCount: Int64(1 + Int(modified)), sha256: String(repeating: "c", count: 64)
+            ), isAnalyzed: false)
+        }
+        let initial = (0..<4_000).map { record($0) }
+        func run(forceEviction: Bool) throws -> (seconds: Double, bytes: Int, entries: [AgentSourceIndexEntry], fast: Int) {
+            let root = try makeTemporaryDirectory("metadata-fast-encode-\(forceEviction)")
+            _ = try AgentActivityStore(rootDirectory: root).upsertBatch(initial, maximumEntries: 10_000)
+            let store = try AgentActivityStore(rootDirectory: root)
+            store.forceIndexEvictionPassForTesting = forceEviction
+            let started = Date()
+            for round in 1...10 {
+                XCTAssertTrue(try store.upsert(record(round * 7, modified: Double(round)), maximumEntries: 10_000))
+            }
+            let reloaded = try AgentActivityStore(rootDirectory: root).entries().sorted { $0.id < $1.id }
+            return (Date().timeIntervalSince(started) / 10, try Data(contentsOf: store.indexFile).count,
+                    reloaded, store.fastIndexEncodeCountForTesting())
+        }
+        let slow = try run(forceEviction: true), fast = try run(forceEviction: false)
+        print(String(format: "[T-064 n°1] validation d'un index de %.1f Mo (4 000 entrées) : avant=%.1f ms après=%.1f ms",
+                     Double(fast.bytes) / 1_048_576, slow.seconds * 1_000, fast.seconds * 1_000))
+        XCTAssertEqual(fast.entries, slow.entries)
+        XCTAssertEqual(fast.entries.count, 4_000)
+        XCTAssertEqual(fast.fast, 10)
+        XCTAssertEqual(slow.fast, 0)
+    }
+
     private func makeRecord(
         stableID: String,
         observedAt: Date,

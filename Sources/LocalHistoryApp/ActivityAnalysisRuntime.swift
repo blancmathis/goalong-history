@@ -361,6 +361,14 @@ import AppleScreenTime
             semanticContextStore?.resetDeduplicationCache()
         }
 
+        private func noteSemanticCapture(contextKey: String, at date: Date) {
+            lastSemanticCaptureDates[contextKey] = date
+            if lastSemanticCaptureDates.count > 256,
+               let oldest = lastSemanticCaptureDates.min(by: { $0.value < $1.value })?.key {
+                lastSemanticCaptureDates.removeValue(forKey: oldest)
+            }
+        }
+
         static func shouldAttemptObservedContextCapture(
             lastCaptureAt: Date?,
             now: Date
@@ -562,6 +570,11 @@ import AppleScreenTime
             if deduplicate {
                 guard lastRichContextFingerprints[contextKey] != capture.fingerprint,
                       pendingRichContextFingerprints[contextKey]?.fingerprint != capture.fingerprint else {
+                    // T-064 n°9: an unchanged capture still costs a full AX read; it restarts the
+                    // recent-capture cooldown so typing bursts don't re-read the same text every event.
+                    if lastRichContextFingerprints[contextKey] == capture.fingerprint {
+                        noteSemanticCapture(contextKey: contextKey, at: Date())
+                    }
                     completion(); return
                 }
                 pendingRichContextFingerprints[contextKey] = (commitID, capture.fingerprint)
@@ -622,11 +635,7 @@ import AppleScreenTime
                                 self.lastRichContextFingerprints[firstKey] = nil
                             }
                         }
-                        self.lastSemanticCaptureDates[contextKey] = committedAt
-                        if self.lastSemanticCaptureDates.count > 256,
-                           let oldest = self.lastSemanticCaptureDates.min(by: { $0.value < $1.value })?.key {
-                            self.lastSemanticCaptureDates.removeValue(forKey: oldest)
-                        }
+                        self.noteSemanticCapture(contextKey: contextKey, at: committedAt)
                     }
                 } catch {
                     SupportDiagnostics.shared.failure(error, component: .analysis)

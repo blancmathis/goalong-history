@@ -46,6 +46,13 @@
                 accessibilityEventMonitor?.stop()
             } else { accessibilityEventMonitor?.start(); scheduleNextPoll() }
         }
+        /// T-064 n°10: an app activation already triggers `onChange("application_activation")` while the
+        /// event monitor runs; a second `sampleNow()` from the app delegate only re-reads the same AX tree.
+        var applicationActivationNeedsSample: Bool { accessibilityEventMonitor?.isObservingActivation != true }
+        func sampleOnApplicationActivation() {
+            guard applicationActivationNeedsSample else { return }
+            sampleNow()
+        }
         static func usesBlockingOnlyLane(capturing: Bool, blockingEnabled: Bool) -> Bool { blockingEnabled && !capturing }
         private var timer: Timer?
         private var accessibilityEventMonitor: AccessibilityEventMonitor?
@@ -217,9 +224,25 @@
             let boundedInterval = !blockingSessionAvailable ? interval : min(ForegroundUsageObservation.heartbeatInterval,
                 (JevIngress.shared.isEnabled || lastForegroundEvidence != nil)
                     ? min(interval, JevIngress.shared.isEnabled ? JevIngress.foregroundSampleInterval : ForegroundActivityProbe.interval) : interval)
-            let timer = Timer(timeInterval: boundedInterval, repeats: false) { [weak self] _ in
+            armPollTimer(boundedInterval, blockingSessionAvailable: blockingSessionAvailable,
+                         due: Date().addingTimeInterval(boundedInterval))
+        }
+
+        /// Arms the one-shot fallback poll. Deep idle with blocking on (T-064): the AX sample waits `interval`, but a
+        /// cheap input-clock check runs every `blockingIdleCheckInterval`, so returning input brings the fast cadence
+        /// back as quickly as before.
+        private func armPollTimer(_ interval: TimeInterval, blockingSessionAvailable: Bool, due: Date) {
+            let checksIdle = blockingObservationEnabled && blockingSessionAvailable
+                && interval > Self.blockingIdleCheckInterval
+            let wait = checksIdle ? min(Self.blockingIdleCheckInterval, max(0.05, due.timeIntervalSinceNow)) : interval
+            let timer = Timer(timeInterval: wait, repeats: false) { [weak self] _ in
                 guard let self else { return }
                 self.timer = nil
+                if checksIdle, self.blockingObservationEnabled, self.pollingIsActive,
+                   Self.blockingIdleCheckDefers(idleSeconds: self.idleSeconds(), remaining: due.timeIntervalSinceNow) {
+                    self.armPollTimer(interval, blockingSessionAvailable: true, due: due)
+                    return
+                }
                 if self.blockingObservationEnabled {
                     // History may still own its one pending sample. The fallback
                     // blocking poll only depends on its reserved reader finishing.
@@ -235,7 +258,7 @@
             }
             // Give macOS a small coalescing window while keeping the fallback refresh
             // comfortably below one minute even after timer tolerance.
-            timer.tolerance = min(1.0, interval * 0.1)
+            timer.tolerance = min(1.0, wait * 0.1)
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
         }
@@ -270,7 +293,21 @@
             let idle = max(0, idleSeconds)
             if idle < 15 { return blockingActivePollInterval }
             if idle < 60 { return 2 }
-            return 5
+            if idle < blockingDeepIdleSeconds { return 5 }
+            return blockingDeepIdlePollInterval
+        }
+
+        /// After 10 min without input (film, reading), the AX sample backs off to 30 s (T-064). The poll only
+        /// covers missed events; block starts use `BlockingController`'s own boundary timer on the last target.
+        static let blockingDeepIdleSeconds: TimeInterval = 600
+        static let blockingDeepIdlePollInterval: TimeInterval = 30
+        /// The input clock is still read this often, so the first input after a deep idle restarts the 0.75 s
+        /// cadence within the same 5 s as before.
+        static let blockingIdleCheckInterval: TimeInterval = 5
+
+        /// True while the user stays idle and the sample is not due: the check re-arms without any AX read.
+        static func blockingIdleCheckDefers(idleSeconds: TimeInterval, remaining: TimeInterval) -> Bool {
+            idleSeconds >= 15 && remaining > 0.5
         }
 
         /// The event tap, workspace notifications and AX observers remain immediate.
