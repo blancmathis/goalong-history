@@ -72,10 +72,18 @@
         private static let commitLockName = ".jsonl-commit.lock"
 
         private let queue = DispatchQueue(label: "ai.goalong.localhistory.jsonl-store")
+        /// Explicit deletions stream whole day journals. They run here, not on `queue`,
+        /// so live appends (the recorder's writer) and `flush()` never wait for a long
+        /// rewrite. Each rewrite copies the rows appended meanwhile under the exclusive
+        /// commit lock before its rename, which keeps them exactly as a serial append
+        /// after the deletion would have.
+        private let deletionQueue = DispatchQueue(label: "ai.goalong.localhistory.jsonl-store.deletion")
         private let encoder: JSONEncoder
         private let decoder: JSONDecoder
+        private let deletionDecoder: JSONDecoder
         private let eventsDirectory: URL
         private let beforeDeletionCommit: (() -> Void)?
+        private let beforeDeletionCommitLock: (() -> Void)?
         private let beforeDeleteAllUnlink: ((URL) -> Void)?
         private let eventFilePermissionSetter: (Int32, mode_t) -> Int32
         private let rowWriter: (FileHandle, Data) throws -> Void
@@ -98,6 +106,7 @@
             eventsDirectory: URL = AppPaths.eventsDirectory,
             prepareApplicationStorage: Bool = true,
             beforeDeletionCommit: (() -> Void)? = nil,
+            beforeDeletionCommitLock: (() -> Void)? = nil,
             scavengerNow: Date = Date(),
             beforeDeleteAllUnlink: ((URL) -> Void)? = nil,
             beforeScavengerUnlink: ((URL) -> Void)? = nil,
@@ -108,6 +117,7 @@
         ) throws {
             self.eventsDirectory = Self.normalizedDirectoryURL(eventsDirectory)
             self.beforeDeletionCommit = beforeDeletionCommit
+            self.beforeDeletionCommitLock = beforeDeletionCommitLock
             self.beforeDeleteAllUnlink = beforeDeleteAllUnlink
             self.eventFilePermissionSetter = eventFilePermissionSetter
             self.rowWriter = rowWriter
@@ -118,6 +128,8 @@
 
             decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
+            deletionDecoder = JSONDecoder()
+            deletionDecoder.dateDecodingStrategy = .iso8601
 
             if prepareApplicationStorage {
                 try AppPaths.prepare()
@@ -262,10 +274,10 @@
         }
 
         func deleteEvents(since cutoff: Date, completion: @escaping (Result<Int, Error>) -> Void) {
-            queue.async { [weak self] in
+            deletionQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    try self.closeCurrentHandle()
+                    try self.drainAppendsSubmittedBeforeDeletion()
                     let directory = try Self.openVerifiedDirectory(at: self.eventsDirectory)
                     defer { _ = Darwin.close(directory.descriptor) }
                     let deleted = try self.rewriteFilesKeepingEvents(
@@ -291,7 +303,7 @@
             requireEveryID: Bool = true,
             completion: @escaping (Result<JSONLTargetedDeletionOutcome, Error>) -> Void
         ) {
-            queue.async { [weak self] in
+            deletionQueue.async { [weak self] in
                 guard let self else { return }
                 do {
                     guard !eventIDs.isEmpty else {
@@ -313,7 +325,7 @@
                     guard eventIDs.count <= 32_768 else {
                         throw JSONLStoreError.targetedDeletionExceedsLimit(eventIDs.count, 32_768)
                     }
-                    try self.closeCurrentHandle()
+                    try self.drainAppendsSubmittedBeforeDeletion()
                     let directory = try Self.openVerifiedDirectory(at: self.eventsDirectory)
                     defer { _ = Darwin.close(directory.descriptor) }
                     let outcome = try self.rewriteFilesKeepingEvents(
@@ -332,17 +344,21 @@
         }
 
         func deleteAll(completion: @escaping (Result<Int, Error>) -> Void) {
-            queue.async { [weak self] in
+            // Ordered after any running rewrite; the unlinks themselves are short and
+            // stay on the append queue so no handle outlives them.
+            deletionQueue.async { [weak self] in
                 guard let self else { return }
                 do {
-                    try self.closeCurrentHandle()
-                    let directory = try Self.openVerifiedDirectory(at: self.eventsDirectory)
-                    defer { _ = Darwin.close(directory.descriptor) }
-                    let deleted = try Self.deleteAllEventFiles(
-                        in: directory,
-                        directoryURL: self.eventsDirectory,
-                        beforeUnlink: self.beforeDeleteAllUnlink
-                    )
+                    let deleted = try self.queue.sync {
+                        try self.closeCurrentHandle()
+                        let directory = try Self.openVerifiedDirectory(at: self.eventsDirectory)
+                        defer { _ = Darwin.close(directory.descriptor) }
+                        return try Self.deleteAllEventFiles(
+                            in: directory,
+                            directoryURL: self.eventsDirectory,
+                            beforeUnlink: self.beforeDeleteAllUnlink
+                        )
+                    }
                     DispatchQueue.main.async { completion(.success(deleted)) }
                 } catch {
                     SupportDiagnostics.shared.failure(error, component: .storage)
@@ -550,13 +566,23 @@
             return fileNames.sorted()
         }
 
+        /// Rows already submitted to the append queue belong to the deletion's snapshot,
+        /// exactly as when deletions ran on that queue. Closing syncs them first.
+        private func drainAppendsSubmittedBeforeDeletion() throws {
+            try queue.sync { try closeCurrentHandle() }
+        }
+
+        private func publishDeletionMetrics(_ metrics: JSONLDeletionMetrics) {
+            queue.sync { latestDeletionMetrics = metrics }
+        }
+
         private func rewriteFilesKeepingEvents(
             before cutoff: Date,
             directory: DirectoryHandle
         ) throws -> Int {
             var metrics = JSONLDeletionMetrics()
             var semanticSnapshotIDs = Set<String>()
-            defer { latestDeletionMetrics = metrics }
+            defer { publishDeletionMetrics(metrics) }
             let earliestPotentialFileDay = AppPaths.localDayString(
                 for: cutoff.addingTimeInterval(-Self.maximumSourceTimeZoneDistance)
             )
@@ -588,7 +614,7 @@
             directory: DirectoryHandle
         ) throws -> JSONLTargetedDeletionOutcome {
             var metrics = JSONLDeletionMetrics()
-            defer { latestDeletionMetrics = metrics }
+            defer { publishDeletionMetrics(metrics) }
             let earliestPotentialFileDay = AppPaths.localDayString(
                 for: start.addingTimeInterval(-Self.maximumSourceTimeZoneDistance)
             )
@@ -660,8 +686,10 @@
                     file: fileURL,
                     directoryDescriptor: directory.descriptor,
                     relativeName: fileName,
+                    // Live appends may grow today's journal while it is classified.
+                    allowVerifiedAppendOnlyGrowth: true,
                     onLine: { raw, _ in
-                        guard let event = try? decoder.decode(HistoryEvent.self, from: raw) else {
+                        guard let event = try? deletionDecoder.decode(HistoryEvent.self, from: raw) else {
                             classificationFailed = true
                             return
                         }
@@ -715,8 +743,16 @@
             }
             defer { _ = Darwin.close(sourceDescriptor) }
 
+            // Appends write whole rows under the exclusive commit lock: a size read
+            // under the shared lock always ends on a row boundary.
             var initialStatus = stat()
-            guard Darwin.fstat(sourceDescriptor, &initialStatus) == 0,
+            let statResult = try Self.withSharedCommitLock(
+                in: directory.descriptor,
+                directoryURL: eventsDirectory
+            ) {
+                Darwin.fstat(sourceDescriptor, &initialStatus)
+            }
+            guard statResult == 0,
                 (initialStatus.st_mode & S_IFMT) == S_IFREG,
                 initialStatus.st_nlink == 1,
                 initialStatus.st_size >= 0
@@ -785,7 +821,7 @@
 
             func writeBufferedLine(hasNewline: Bool) throws {
                 metrics.rowsVisited += 1
-                if let event = try? decoder.decode(HistoryEvent.self, from: lineBuffer) {
+                if let event = try? deletionDecoder.decode(HistoryEvent.self, from: lineBuffer) {
                     if rule.matches(event) {
                         metrics.rowsDeleted += 1
                         fileDeletedRows += 1
@@ -930,26 +966,47 @@
                 }
             }
 
+            beforeDeletionCommitLock?()
             try Self.withExclusiveCommitLock(
                 in: directory.descriptor,
                 directoryURL: eventsDirectory
             ) {
                 beforeDeletionCommit?()
                 try Self.requireCurrentDirectory(directory, at: eventsDirectory)
-                try Self.requireUnchangedSource(
+                let sourceURL = eventsDirectory.appendingPathComponent(fileName)
+                let temporaryURL = eventsDirectory.appendingPathComponent(temporaryName)
+                let appendedBytes = try Self.appendedByteCount(
                     named: fileName,
                     in: directory.descriptor,
                     descriptor: sourceDescriptor,
                     initialStatus: initialStatus,
-                    sourceURL: eventsDirectory.appendingPathComponent(fileName)
+                    sourceURL: sourceURL
                 )
                 try Self.requireUnchangedSource(
                     named: temporaryName,
                     in: directory.descriptor,
                     descriptor: temporaryDescriptor,
                     initialStatus: initialTemporaryStatus,
-                    sourceURL: eventsDirectory.appendingPathComponent(temporaryName)
+                    sourceURL: temporaryURL
                 )
+                if appendedBytes > 0 {
+                    // Rows appended after the snapshot were written after the deletion
+                    // started: keep them verbatim, as a serial append would have.
+                    try Self.copyRange(
+                        from: sourceDescriptor,
+                        offset: Int64(initialStatus.st_size),
+                        count: appendedBytes,
+                        to: temporaryDescriptor,
+                        sourceURL: sourceURL,
+                        temporaryURL: temporaryURL
+                    )
+                    outputBytes += appendedBytes
+                    metrics.sourceBytesRead += appendedBytes
+                    guard Darwin.fchmod(temporaryDescriptor, mode_t(0o600)) == 0 else {
+                        throw JSONLStoreError.couldNotSecureDeletionTemporaryFile(temporaryURL)
+                    }
+                    try Self.synchronize(descriptor: temporaryDescriptor, fileURL: temporaryURL)
+                }
 
                 if outputBytes == 0 {
                     let unlinkResult = fileName.withCString {
@@ -993,6 +1050,77 @@
                     descriptor: directory.descriptor,
                     fileURL: eventsDirectory
                 )
+            }
+        }
+
+        /// Bytes appended to the source since `initialStatus`. Only growth of the same
+        /// single-link inode at the same path is accepted; any other change (rename,
+        /// truncation, in-place rewrite of the snapshot size) still fails the deletion.
+        private static func appendedByteCount(
+            named fileName: String,
+            in directoryDescriptor: Int32,
+            descriptor sourceDescriptor: Int32,
+            initialStatus: stat,
+            sourceURL: URL
+        ) throws -> Int64 {
+            var descriptorStatus = stat()
+            var pathStatus = stat()
+            let pathResult = fileName.withCString {
+                Darwin.fstatat(directoryDescriptor, $0, &pathStatus, AT_SYMLINK_NOFOLLOW)
+            }
+            guard Darwin.fstat(sourceDescriptor, &descriptorStatus) == 0, pathResult == 0 else {
+                throw JSONLStoreError.sourceChangedDuringDeletion(sourceURL)
+            }
+            if sameSourceSnapshot(initialStatus, descriptorStatus),
+                sameSourceSnapshot(initialStatus, pathStatus)
+            {
+                return 0
+            }
+            guard sameAppendedSource(initialStatus, descriptorStatus),
+                sameAppendedSource(initialStatus, pathStatus),
+                descriptorStatus.st_size == pathStatus.st_size
+            else {
+                throw JSONLStoreError.sourceChangedDuringDeletion(sourceURL)
+            }
+            return Int64(descriptorStatus.st_size) - Int64(initialStatus.st_size)
+        }
+
+        private static func sameAppendedSource(_ lhs: stat, _ rhs: stat) -> Bool {
+            lhs.st_dev == rhs.st_dev
+                && lhs.st_ino == rhs.st_ino
+                && rhs.st_size > lhs.st_size
+                && (rhs.st_mode & S_IFMT) == S_IFREG
+                && lhs.st_nlink == 1
+                && rhs.st_nlink == 1
+        }
+
+        private static func copyRange(
+            from sourceDescriptor: Int32,
+            offset start: Int64,
+            count: Int64,
+            to destinationDescriptor: Int32,
+            sourceURL: URL,
+            temporaryURL: URL
+        ) throws {
+            var buffer = [UInt8](repeating: 0, count: deletionReadChunkBytes)
+            var offset = start
+            let end = start + count
+            while offset < end {
+                let requested = min(buffer.count, Int(end - offset))
+                let bytesRead = buffer.withUnsafeMutableBytes { raw -> Int in
+                    guard let base = raw.baseAddress else { return 0 }
+                    return Darwin.pread(sourceDescriptor, base, requested, off_t(offset))
+                }
+                if bytesRead < 0, errno == EINTR { continue }
+                guard bytesRead > 0 else {
+                    throw JSONLStoreError.couldNotReadEventFile(sourceURL)
+                }
+                try writeAll(
+                    Data(buffer[0..<bytesRead]),
+                    to: destinationDescriptor,
+                    fileURL: temporaryURL
+                )
+                offset += Int64(bytesRead)
             }
         }
 

@@ -1487,9 +1487,17 @@ import LocalHistoryQueryCLI
             }
         }
         let pauseEnds = Dictionary(uniqueKeysWithValues: lists.compactMap { list in pauseEnd(of: list.id, at: now).map { (list.id, $0) } })
+        purgeExpiredFrictionAllowances(now: now)
         return BlockingTimerInput(lists: lists, activeBlocks: activeBlocks, usage: todayUsage(), pauseEnds: pauseEnds,
-                                  allowances: frictionAllowances.filter { $0.value > now }, upcomingStarts: starts, target: lastObservation)
+                                  allowances: frictionAllowances, upcomingStarts: starts, target: lastObservation)
     }
+
+    /// Expired allowances grant nothing (readers compare to `now`); dropping them keeps
+    /// the dictionary bounded during a long block.
+    private func purgeExpiredFrictionAllowances(now: Date) {
+        frictionAllowances = frictionAllowances.filter { $0.value > now }
+    }
+    var frictionAllowanceCountForTesting: Int { frictionAllowances.count }
 
     private var hasPersistedWork: Bool { !document.lists.isEmpty || !document.sessions.isEmpty || document.freeze != nil || document.passwordLock != nil }
     /// The running apps, as the triggers read them (the page names the open ones from the same source).
@@ -1857,6 +1865,7 @@ import LocalHistoryQueryCLI
         var usage = todayUsage(); usage.continued = usage.continued ?? [:]; usage.continued?[list.id, default: 0] += 1
         document.usage = usage; commit(reenforce: false)
         guard !storeFailed else { return }
+        purgeExpiredFrictionAllowances(now: clock())
         frictionAllowances[value.key] = clock().addingTimeInterval(Double(list.allowanceMinutes * 60))
         backend?.continueSlowDown(target); clearFriction()
         onTimerInputChanged?()

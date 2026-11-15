@@ -28,6 +28,17 @@ final class BlockingFrictionTests: XCTestCase {
         c.renounceFriction(); XCTAssertEqual(c.frictionUsage?.renounced?[list.id], 1); XCTAssertEqual(backend.renounces, 1)
         XCTAssertEqual(c.frictionUsage?.continued?[list.id], 1)
     }
+    /// T-064 lot 11: expired allowances grant nothing and are dropped when read.
+    @MainActor func testExpiredFrictionAllowancesAreDroppedWhenRead() {
+        var now = Date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], action: .slowDown, slowDownSeconds: 3, continueMinutes: 1)
+        let backend = FrictionBackend(), c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3_600), lock: .free)
+        c.observe(target(now)); XCTAssertNotNil(c.friction)
+        now = now.addingTimeInterval(3); c.continueFriction(); XCTAssertEqual(backend.continues, 1)
+        XCTAssertEqual(c.frictionAllowanceCountForTesting, 1); XCTAssertEqual(c.timerInput.allowances.count, 1)
+        now = now.addingTimeInterval(61)
+        XCTAssertEqual(c.timerInput.allowances.count, 0); XCTAssertEqual(c.frictionAllowanceCountForTesting, 0)
+    }
     @MainActor func testHardBlockAlwaysWinsAndPrivateWindowFollowsSlowDown() {
         let now = Date(); let slow = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown)
         let hard = BlockList(name: "Hard", sites: [.init(pattern: "example.org")])
