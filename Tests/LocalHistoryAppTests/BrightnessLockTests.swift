@@ -12,13 +12,15 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
     private let screens: [BrightnessDisplay]
     let available: Bool
     private(set) var sets = 0
+    private var readCount = 0
+    var reads: Int { lock.withLock { readCount } }
     init(screens: [BrightnessDisplay] = [BrightnessDisplay(id: 1, builtIn: true, controllable: true)], level: Double = 0.8, available: Bool = true) {
         self.screens = screens; self.available = available
         levels = Dictionary(uniqueKeysWithValues: screens.filter(\.controllable).map { ($0.id, level) })
     }
     var isAvailable: Bool { available }
     func displays() -> [BrightnessDisplay] { screens }
-    func brightness(of display: UInt32) -> Double? { lock.withLock { levels[display] } }
+    func brightness(of display: UInt32) -> Double? { lock.withLock { readCount += 1; return levels[display] } }
     func setBrightness(_ value: Double, of display: UInt32) -> Bool {
         lock.withLock { guard levels[display] != nil else { return false }; levels[display] = value; sets += 1; return true }
     }
@@ -199,6 +201,30 @@ final class FakeBrightness: DisplayBrightnessDriving, @unchecked Sendable {
         enforcer.tick(); XCTAssertEqual(screens.brightness(of: 1) ?? -1, 0.5, accuracy: 0.0001)
         enforcer.stop(); screens.userSets(0.9); enforcer.tick()
         XCTAssertEqual(screens.brightness(of: 1) ?? -1, 0.9, accuracy: 0.0001)
+    }
+
+    /// T-064 lot4 n°7 : screens asleep or session locked = no 10 Hz poll; the wake brings the lock back at once.
+    func testPausedEnforcerStopsPollingAndWakeCorrectsAtOnce() {
+        let screens = FakeBrightness(), enforcer = BrightnessEnforcer(driver: screens, runsTimer: true)
+        defer { enforcer.stop() }
+        enforcer.update(target: 0.5, displays: [1])
+        XCTAssertTrue(enforcer.isRunning)
+        let awake0 = screens.reads; Thread.sleep(forTimeInterval: 0.5); let awakeReads = screens.reads - awake0
+        enforcer.setPaused(true)
+        XCTAssertFalse(enforcer.isRunning)
+        Thread.sleep(forTimeInterval: 0.05)
+        let asleep0 = screens.reads; Thread.sleep(forTimeInterval: 0.5); let asleepReads = screens.reads - asleep0
+        print("[T-064 n°7] lectures DisplayServices en 0,5 s : éveillé=\(awakeReads) endormi=\(asleepReads)")
+        XCTAssertGreaterThanOrEqual(awakeReads, 2)
+        XCTAssertEqual(asleepReads, 0)
+        // A new target while asleep is kept, not enforced.
+        enforcer.update(target: 0.4, displays: [1]); XCTAssertFalse(enforcer.isRunning)
+        screens.userSets(0.9)
+        enforcer.setPaused(false)
+        XCTAssertTrue(enforcer.isRunning)
+        let deadline = Date().addingTimeInterval(1)
+        while abs((screens.brightness(of: 1) ?? 0) - 0.4) > 0.0001, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+        XCTAssertEqual(screens.brightness(of: 1) ?? -1, 0.4, accuracy: 0.0001)
     }
 
     func testNextOccurrence() throws {

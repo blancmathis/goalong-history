@@ -252,6 +252,24 @@
             XCTAssertEqual(result, [false, false, true])
         }
 
+        /// T-064 lot4 n°4 : a 10 min tick with no new entry recomputes nothing (exact revision cache).
+        func testUnchangedDayTickReadsAndWritesNothing() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.container) }
+            _ = try writeEvents((0..<200).map { fixtureEvent(at: fixture.day.addingTimeInterval(Double($0) * 30), id: "click-\($0)") }, fixture: fixture)
+            let coordinator = makeCoordinator(fixture: fixture)
+            let first = try coordinator.process(day: fixture.day, tokenBudget: 1_600, forceVerification: false,
+                                                includeActivityMemory: true)
+            let tick = try coordinator.process(day: fixture.day, tokenBudget: 1_600, forceVerification: false,
+                                               includeActivityMemory: true)
+            print("[T-064 n°4] cycle sans entrée nouvelle : octets lus avant=\(first.sourceBytesRead) après=\(tick.sourceBytesRead), vues écrites avant=\(first.derivedViewsWritten) après=\(tick.derivedViewsWritten)")
+            XCTAssertGreaterThan(first.sourceBytesRead, 0)
+            XCTAssertTrue(tick.usedCachedRevision)
+            XCTAssertEqual(tick.sourceBytesRead, 0)
+            XCTAssertEqual(tick.sourceReadPasses, 0)
+            XCTAssertEqual(tick.derivedViewsWritten, 0)
+        }
+
         func testRevisionCacheInvalidationForcesPostClearSourceRead() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.container) }

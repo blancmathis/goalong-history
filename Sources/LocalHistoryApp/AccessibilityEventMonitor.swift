@@ -285,6 +285,8 @@ final class AccessibilityEventMonitor {
         let owner = owner
         thread.shutdown { owner.detach() }
     }
+    /// True while this monitor samples on every app activation (its `onChange("application_activation")`).
+    var isObservingActivation: Bool { activationToken != nil }
     func start() {
         stop()
         activationToken = NSWorkspace.shared.notificationCenter.addObserver(

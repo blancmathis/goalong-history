@@ -32,7 +32,10 @@ final class GoalongDeveloperFileMonitor {
     }
     static let ignoredNames: Set<String> = [".git", ".build", "node_modules", "DerivedData", "dist", "build", "cache", "caches", ".cache", ".DS_Store"]
     /// FSEvents accepts at most 8 exclusion paths. Prefer folders that exist; `permits` still filters the rest.
-    static func exclusionPaths(roots: [String], exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> [String] {
+    /// T-064 n°8: nested build folders (worktrees, packages) fill the slots left after the top-level ones,
+    /// most recently written first: they are the ones a running build floods with events.
+    static func exclusionPaths(roots: [String], exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+                               nested: (String) -> [String] = { nestedHeavyFolders(under: $0) }) -> [String] {
         let names = [".build", "node_modules", "DerivedData", ".git"]
         var result: [String] = []
         for name in names {
@@ -41,7 +44,34 @@ final class GoalongDeveloperFileMonitor {
                 if result.count < 8, !result.contains(path), exists(path) { result.append(path) }
             }
         }
+        for root in roots.sorted() where result.count < 8 {
+            for path in nested(root) where result.count < 8 && !result.contains(path) { result.append(path) }
+        }
         return result
+    }
+    static let nestedHeavyNames: Set<String> = [".build", "node_modules", "DerivedData"]
+    /// Heavy folders two to `maxDepth` levels below `root`, newest first. Bounded: never enters heavy or
+    /// hidden folders, stops after `maxDirectories` listings.
+    static func nestedHeavyFolders(under root: String, maxDepth: Int = 4, maxDirectories: Int = 400,
+                                   list: (String) -> [String]? = { try? FileManager.default.contentsOfDirectory(atPath: $0) },
+                                   isDirectory: (String) -> Bool = { var d: ObjCBool = false; return FileManager.default.fileExists(atPath: $0, isDirectory: &d) && d.boolValue },
+                                   modified: (String) -> Date = { ((try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date) ?? .distantPast }) -> [String] {
+        var found: [String] = [], frontier = [(root, 0)], listed = 0
+        while !frontier.isEmpty, listed < maxDirectories {
+            let (folder, depth) = frontier.removeFirst()
+            guard let children = list(folder) else { continue }
+            listed += 1
+            for name in children.sorted() {
+                let path = folder + "/" + name
+                if nestedHeavyNames.contains(name) {
+                    if depth >= 1, isDirectory(path) { found.append(path) }
+                } else if depth + 1 < maxDepth, !name.hasPrefix(".") || name == ".claude" || name == ".worktrees",
+                          !ignoredNames.contains(name), isDirectory(path) {
+                    frontier.append((path, depth + 1))
+                }
+            }
+        }
+        return found.map { ($0, modified($0)) }.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0 < $1.0 }.map(\.0)
     }
     /// Every spelling of the app's data folders: our own journal writes must never count as activity.
     static func ownDataRoots(_ roots: [URL]) -> [String] {

@@ -1724,7 +1724,7 @@ import AppleScreenTime
                     object: nil,
                     queue: .main
                 ) { [weak self] _ in
-                    self?.contextMonitor.sampleNow()
+                    self?.contextMonitor.sampleOnApplicationActivation()
                 }
             )
 

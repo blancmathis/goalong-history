@@ -892,6 +892,42 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("semantic").path))
     }
 
+    /// T-064 lot4 n°10: one app activation = one AX sample. The app delegate no longer samples a second
+    /// time while the event monitor already samples on `application_activation`.
+    @MainActor func testApplicationActivationSamplesOnceWhileTheEventMonitorRuns() throws {
+        let store = try temporaryStore(), root = store.directory.deletingLastPathComponent()
+        let config = ConfigManager()
+        let permissions = PermissionManager(statusProbe: { PermissionStatus(accessibility: false, inputMonitoring: false,
+            accessibilityPreflight: false, accessibilityFunctionalProbe: false, inputMonitoringDirectlyGranted: false,
+            inputMonitoringProvidedByAccessibility: false) })
+        let events = root.appendingPathComponent("events")
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let jsonl = try JSONLStore(retentionDays: 0, eventsDirectory: events, prepareApplicationStorage: false)
+        let integrity = IntegrityStateStore(fileURL: root.appendingPathComponent("integrity.json"), prepareStorage: {})
+        let sealer = MinuteSealer(stateStore: integrity, identity: BlockingFixtureIdentity(), initialDate: date(),
+                                 sealDirectory: root.appendingPathComponent("seals"), prepareStorage: {}, sealAppender: { _, _ in })
+        let recorder = EventRecorder(store: jsonl, integrityJournal: IntegrityJournal(stateStore: integrity), minuteSealer: sealer)
+        let state = CaptureState(isGloballyPaused: { false }); state.setManualPaused(true)
+        var samples = 0
+        let provider = ContextProvider(configManager: config, permissions: permissions, blockingProbe: { [self] in samples += 1; return target(date()) })
+        let monitor = ContextMonitor(provider: provider, recorder: recorder, state: state, configManager: config, permissions: permissions,
+            captureHealth: CaptureHealthStore(permissions: permissions, fileURL: root.appendingPathComponent("health.json")),
+            semanticContextStore: SemanticContextStore(semanticDirectory: root.appendingPathComponent("semantic")),
+            memoryStore: LocalActivityMemoryStore(rootDirectory: root))
+        XCTAssertTrue(monitor.applicationActivationNeedsSample, "Stopped monitor: the app delegate still samples")
+        monitor.setBlockingObservationEnabled(true)
+        let before = samples
+        // What one Cmd-Tab delivers: the event monitor's observer, then the app delegate's.
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        monitor.sampleOnApplicationActivation()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        print("[T-064 n°10] lectures AX par changement d'app (hors rafale 0,18 s) : avant=2 après=\(samples - before)")
+        XCTAssertFalse(monitor.applicationActivationNeedsSample)
+        XCTAssertEqual(samples - before, 1)
+        monitor.setBlockingObservationEnabled(false)
+        XCTAssertTrue(monitor.applicationActivationNeedsSample)
+    }
+
     @MainActor func testRebootBackwardRestoresExactRemainingDuration() {
         let previous = date(), list = BlockList(name: "Quota", sites: [BlockSiteRule(pattern: "youtube.com")])
         let doc = BlockingDocument(lists: [list], sessions: [BlockSession(listIDs: [list.id], start: previous,

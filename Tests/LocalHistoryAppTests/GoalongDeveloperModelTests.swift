@@ -158,10 +158,30 @@ final class GoalongDeveloperModelTests: XCTestCase {
     }
     func testExclusionPathsAreCappedAtEightAndSkipMissingFolders() {
         let roots = (0..<5).map { "/r\($0)" }
-        let all = GoalongDeveloperFileMonitor.exclusionPaths(roots: roots, exists: { _ in true })
+        let all = GoalongDeveloperFileMonitor.exclusionPaths(roots: roots, exists: { _ in true }, nested: { _ in [] })
         XCTAssertEqual(all.count, 8); XCTAssertTrue(all.allSatisfy { $0.hasPrefix("/") })
-        XCTAssertEqual(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { $0 == "/a/.build" }), ["/a/.build"])
-        XCTAssertTrue(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { _ in false }).isEmpty)
+        XCTAssertEqual(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { $0 == "/a/.build" }, nested: { _ in [] }), ["/a/.build"])
+        XCTAssertTrue(GoalongDeveloperFileMonitor.exclusionPaths(roots: ["/a"], exists: { _ in false }, nested: { _ in [] }).isEmpty)
+    }
+    /// T-064 lot4 n°8: a `.build` inside a nested worktree or package is excluded at the FSEvents level.
+    func testNestedBuildFoldersAreExcludedNewestFirst() throws {
+        let root = try fixture().appendingPathComponent("repo")
+        let fm = FileManager.default
+        for folder in [".build", ".claude/worktrees/w1/.build", "packages/p/node_modules", "packages/p/node_modules/x/.build",
+                       ".git/objects", "Sources/deep/a/b/c/.build"] {
+            try fm.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: root.appendingPathComponent("packages/p/node_modules").path)
+        let nested = GoalongDeveloperFileMonitor.nestedHeavyFolders(under: root.path)
+        XCTAssertEqual(nested, [root.appendingPathComponent(".claude/worktrees/w1/.build").path,
+                                root.appendingPathComponent("packages/p/node_modules").path])
+        let excluded = GoalongDeveloperFileMonitor.exclusionPaths(roots: [root.path])
+        print("[T-064 n°8] dossiers lourds exclus de FSEvents : avant=2 après=\(excluded.count)")
+        XCTAssertEqual(excluded, [root.appendingPathComponent(".build").path, root.appendingPathComponent(".git").path] + nested)
+        var listings = 0
+        _ = GoalongDeveloperFileMonitor.nestedHeavyFolders(under: "/r", list: { _ in listings += 1; return (0..<50).map { "d\($0)" } },
+                                                           isDirectory: { _ in true }, modified: { _ in .distantPast })
+        XCTAssertLessThanOrEqual(listings, 400, "Discovery stays bounded on huge trees")
     }
     func testMonitorIgnoresItsOwnDataAndWritesOnlyChangedCounts() throws {
         // The data folder sits inside the followed repository, like a dotfiles repo at ~.
