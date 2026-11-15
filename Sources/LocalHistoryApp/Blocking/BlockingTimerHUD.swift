@@ -22,10 +22,12 @@ import SwiftUI
         let now = clock(), snapshot = input()
         guard let value = snapshot.flatMap({ BlockingTimerSelection.select($0, at: now) }) else { hide(); return }
         if let shown, value.urgency > shown.urgency { pulse += 1 }
+        let changed = value != shown
         shown = value
         let view = BlockingTimerCapsule(timer: value, pulse: pulse)
         let panel = self.panel ?? makePanel(view)
-        host?.rootView = AnyView(view.goalongMotion())
+        // T-064 lot 12: same timer, same view: no rebuild (a pulse always comes with a changed timer).
+        if changed { host?.rootView = AnyView(view.goalongMotion()) }
         let size = host?.fittingSize ?? .zero
         let frame = Self.frame(size: size, on: Self.screen(for: snapshot?.target))
         if panel.frame != frame { panel.setFrame(frame, display: true) }

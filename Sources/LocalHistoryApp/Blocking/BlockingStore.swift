@@ -90,15 +90,50 @@ struct BlockingStore {
     }
 
     /// nil when the file does not exist.
+    /// What `verify` compares before decoding: same file, same size, no write since (ctime cannot be set back by touch).
+    struct FileStamp: Equatable {
+        var device: Int32, inode: UInt64, size: Int64
+        var modified: [Int], changed: [Int]
+        init(_ info: stat) {
+            device = info.st_dev; inode = info.st_ino; size = info.st_size
+            modified = [info.st_mtimespec.tv_sec, info.st_mtimespec.tv_nsec]
+            changed = [info.st_ctimespec.tv_sec, info.st_ctimespec.tv_nsec]
+        }
+    }
+
+    /// The periodic check of a running Goalong (T-064 lot 12): the same checks as `load`, but the file is decoded
+    /// only when its stamp moved since `known`. Nil = no file (as `load` reads it: an empty document).
+    func verify(since known: FileStamp?) throws -> FileStamp? {
+        guard let directoryFD = try openDirectory(create: false) else { return nil }
+        defer { close(directoryFD) }
+        let fd = openat(directoryFD, Self.current, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        if fd < 0, errno == ENOENT { return nil }
+        guard fd >= 0 else { throw Failure.unreadable }
+        defer { close(fd) }
+        let info = try safeInfo(fd)
+        let stamp = FileStamp(info)
+        if stamp != known { _ = try decode(fd) }
+        return stamp
+    }
+
+    private func safeInfo(_ fd: Int32) throws -> stat {
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              info.st_uid == getuid(), info.st_nlink == 1, info.st_size <= 8 * 1024 * 1024,
+              info.st_mode & 0o077 == 0 else { throw Failure.unsafePath }
+        return info
+    }
+
     private func readDocument(_ name: String, in directoryFD: Int32) throws -> BlockingDocument? {
         let fd = openat(directoryFD, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         if fd < 0, errno == ENOENT { return nil }
         guard fd >= 0 else { throw Failure.unreadable }
         defer { close(fd) }
-        var info = stat()
-        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
-              info.st_uid == getuid(), info.st_nlink == 1, info.st_size <= 8 * 1024 * 1024,
-              info.st_mode & 0o077 == 0 else { throw Failure.unsafePath }
+        _ = try safeInfo(fd)
+        return try decode(fd)
+    }
+
+    private func decode(_ fd: Int32) throws -> BlockingDocument {
         var data = Data(), buffer = [UInt8](repeating: 0, count: 16384)
         while true {
             let count = read(fd, &buffer, buffer.count)

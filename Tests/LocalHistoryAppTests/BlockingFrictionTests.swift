@@ -28,6 +28,15 @@ final class BlockingFrictionTests: XCTestCase {
         c.renounceFriction(); XCTAssertEqual(c.frictionUsage?.renounced?[list.id], 1); XCTAssertEqual(backend.renounces, 1)
         XCTAssertEqual(c.frictionUsage?.continued?[list.id], 1)
     }
+    /// T-064 lot 12: « Continuer » pressed before the trusted delay (wall clock moved) re-presents the panel, never silent.
+    @MainActor func testEarlyContinueShowsThePanelAgain() {
+        let now = Date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "example.org")], action: .slowDown, slowDownSeconds: 3, continueMinutes: 1)
+        let backend = FrictionBackend(), c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        c.observe(target(now)); let shown = backend.slowDowns; XCTAssertGreaterThan(shown, 0)
+        c.continueFriction(); XCTAssertNotNil(c.friction); XCTAssertEqual(backend.continues, 0)
+        XCTAssertEqual(backend.slowDowns, shown + 1, "the early press refreshes the panel")
+    }
     @MainActor func testHardBlockAlwaysWinsAndPrivateWindowFollowsSlowDown() {
         let now = Date(); let slow = BlockList(name: "Slow", sites: [.init(pattern: "example.org")], action: .slowDown)
         let hard = BlockList(name: "Hard", sites: [.init(pattern: "example.org")])
@@ -185,7 +194,8 @@ private final class FrictionBackend: BlockingEnforcementBackend {
     var veil: BlockingVeilPresentation?; var veilBreak: (() -> Void)?
     func blockSite(_ t: BlockingObservation, presentation: BlockingVeilPresentation, onBreak: @escaping () -> Void) { blocks += 1; veil = presentation; veilBreak = onBreak }
     func clearSite() {}; func updateFreeze(_ f: BlockFreeze?) {}; func returnToShield() { shields += 1 }; func shutdown() {}
-    func slowDown(_ t: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {}
+    var slowDowns = 0
+    func slowDown(_ t: BlockingObservation, presentation: BlockingFrictionPresentation, onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) { slowDowns += 1 }
     func clearSlowDown() {}; func renounceSlowDown(_ t: BlockingObservation) { renounces += 1 }; func continueSlowDown(_ t: BlockingObservation) { continues += 1 }
 }
 #endif

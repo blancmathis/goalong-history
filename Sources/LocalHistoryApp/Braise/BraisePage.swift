@@ -418,9 +418,10 @@ struct RedScreenRangeDraft: Identifiable, Equatable {
     }
 
     private func protectedNote(_ window: RedScreenWindow) -> some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
+        // The controller's clock, as the brightness note and the protection itself (T-064 lot 12): not the wall clock.
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
             VStack(alignment: .leading, spacing: 8) {
-                Text("Plage protégée jusqu’à \(GoalongUIFormat.time(window.end)), encore \(BlockingFormat.remaining(window.end.timeIntervalSince(context.date)))")
+                Text("Plage protégée jusqu’à \(GoalongUIFormat.time(window.end)), encore \(BlockingFormat.remaining(window.end.timeIntervalSince(controller.now)))")
                     .font(.system(size: 13, weight: .semibold)).monospacedDigit()
                 BlockingLockExplainer(lock: window.lock)
                 if window.lock != .locked {

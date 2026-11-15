@@ -566,11 +566,16 @@ enum SettingsPane: Hashable {
         }
     }
 
-    private static func relative(_ date: Date) -> String {
+    /// One formatter for every body pass (T-064 lot 12); views read it on the main actor only.
+    @MainActor private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "fr_FR")
         formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: GoalongToday.now)
+        return formatter
+    }()
+
+    @MainActor private static func relative(_ date: Date) -> String {
+        relativeFormatter.localizedString(for: date, relativeTo: GoalongToday.now)
     }
 }
 #endif

@@ -121,6 +121,19 @@ final class BlockingTimerTests: XCTestCase {
         XCTAssertNil(BlockingTimerSelection.select(value, at: now))
     }
 
+    /// T-064 lot 12: the same window sampled every second does not wake the capsule each time.
+    @MainActor func testSameTargetSamplesDoNotNotifyTheTimerEachSecond() {
+        var clock = now
+        let list = BlockList(name: "Échecs", sites: [.init(pattern: "chess.com")])
+        let c = BlockingController(document: .init(lists: [list]), clock: { clock }, backend: TimerBackend(), continuous: { clock.timeIntervalSince1970 })
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        var changes = 0; c.onTimerInputChanged = { changes += 1 }
+        var other = target(clock); other.url = "example.org/a"
+        for step in 0..<12 { clock = now.addingTimeInterval(Double(step) * 0.75); other.at = clock; c.observe(other) }
+        XCTAssertLessThanOrEqual(changes, 4, "first sample and the throttled refreshes only")
+        c.observe(target(clock)); XCTAssertGreaterThan(changes, 0)
+    }
+
     /// The veil falls within 2 s of the capsule reaching 0:00, with the real controller and samples.
     @MainActor func testVeilFallsWhenTheCapsuleReachesZero() throws {
         var clock = now
