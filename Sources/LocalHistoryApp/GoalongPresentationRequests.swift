@@ -11,6 +11,8 @@ struct GoalongWebsitePresentation: Identifiable {
 struct GoalongAnalysisPresentation: Identifiable {
     let id = UUID()
     let tab: Int
+    /// True only when opened from « Autoriser les analyses »: saving then grants the ChatGPT consent.
+    var grantsConsent = false
 }
 enum GoalongUIFormat {
     /// The interface is French-only; never follow an English system region for its text.

@@ -34,7 +34,7 @@ import LocalHistoryCore
             // until the update. Withdrawing the consent or stopping the automatic analysis stays possible.
             GoalongSettingsGroup(title: "Quand analyser") {
                 Toggle("Autoriser les analyses", isOn: Binding(get: { selection.allowsAnalysis(consented: consents.isEnabled(.chatGPTAnalysis), policy: exclusions.policy) }, set: { value in
-                    if value { open(0) }
+                    if value { open(0, grantsConsent: true) }
                     else {
                         runtime.stop()
                         if !consents.set(.chatGPTAnalysis, enabled: false, surface: .settings) {
@@ -74,7 +74,8 @@ import LocalHistoryCore
         }
         .onAppearWhenShown { selection = .load(); runtime.configure(deviceID: deviceStore.knownDeviceID ?? "") }
         .sheet(item: $presentation) { request in
-            GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab) { selection = $0 }.id(request.id)
+            GoalongAnalysisSelectionSheet(model: model, selection: selection, initialTab: request.tab,
+                                          grantsConsent: request.grantsConsent) { selection = $0 }.id(request.id)
                 .goalongControls()
         }
         .alert("Réglage non modifié", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -111,6 +112,6 @@ import LocalHistoryCore
         let count = selection.replacements?.filter { !$0.search.isEmpty }.count ?? 0
         return count == 0 ? "Aucun remplacement" : count == 1 ? "1 remplacement" : "\(count) remplacements"
     }
-    private func open(_ tab: Int) { presentation = .init(tab: tab) }
+    private func open(_ tab: Int, grantsConsent: Bool = false) { presentation = .init(tab: tab, grantsConsent: grantsConsent) }
 }
 #endif

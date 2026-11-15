@@ -13,9 +13,10 @@ import AgentActivity
     /// The conversation folders shown in tab 0 (R14b review: read only through this observation).
     @ObservedObject var agents: AgentActivityRuntime
 
-    init(model: DashboardViewModel, selection: GoalongAnalysisSelection, initialTab: Int = 0,
+    init(model: DashboardViewModel, selection: GoalongAnalysisSelection, initialTab: Int = 0, grantsConsent: Bool = false,
          onSave: @escaping (GoalongAnalysisSelection) -> Void) {
         self.model = model
+        self.grantsConsent = grantsConsent
         _selection = State(initialValue: selection)
         self.initialTab = initialTab
         _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
@@ -26,6 +27,9 @@ import AgentActivity
     }
     @State var selection: GoalongAnalysisSelection
     var initialTab = 0
+    /// T-064 (H3b P1): only the « Autoriser les analyses » path grants the ChatGPT consent. Opened from
+    /// « Données », « Personnaliser le bilan » or « Voir les données qui partiront », saving keeps a « non ».
+    let grantsConsent: Bool
     let onSave: (GoalongAnalysisSelection) -> Void
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
     @ObservedObject private var exclusions = GoalongExclusionStore.shared
@@ -93,7 +97,7 @@ import AgentActivity
                         .accessibilityIdentifier("analysis-configure-sources")
                 } else {
                     if tab != 3 { Button("Vérifier l’aperçu") { tab = 3; preparePreview() }.buttonStyle(LHSecondaryButtonStyle()).disabled(catalogLoading || installedApps.loading || !selection.hasSources) }
-                    Button("Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
+                    Button(grantsConsent ? "Enregistrer et autoriser" : "Enregistrer mes choix") { save() }.buttonStyle(LHPrimaryButtonStyle()).disabled(!selection.hasSources || previewBusy || catalogLoading || installedApps.loading)
                         .accessibilityIdentifier("analysis-save-selection")
                 }
             }
@@ -121,7 +125,16 @@ import AgentActivity
         if catalogLoading || installedApps.loading { return "Lecture des applications et des appareils…" }
         if needsSourceSetup { return "Configurez une source pour pouvoir enregistrer." }
         if !selection.hasSources { return "Activez au moins une source pour enregistrer." }
-        return "Aucun envoi en configurant ces choix."
+        return Self.readyFooterNote(grantsConsent: grantsConsent)
+    }
+    static func readyFooterNote(grantsConsent: Bool) -> String {
+        grantsConsent ? "Enregistrer autorise les analyses ChatGPT. Aucun envoi maintenant."
+            : "Aucun envoi en configurant ces choix."
+    }
+    /// Writes the consent only on the granting path. Elsewhere a « non » stays « non ».
+    static func applyConsent(grantsConsent: Bool, store: GoalongCapabilityConsentStore) -> Bool {
+        guard grantsConsent else { return true }
+        return store.set(.chatGPTAnalysis, enabled: true, surface: .settings)
     }
     /// No source can be chosen until one is set up in Réglages › Enregistrement.
     private var needsSourceSetup: Bool { !selection.hasSources && unconfiguredSources > 0 }
@@ -447,7 +460,7 @@ import AgentActivity
             let wasAutomatic = ChatGPTRecapRuntime.shared.automaticRecapsEnabled
             try next.save()
             runtimeStop()
-            guard consents.set(.chatGPTAnalysis, enabled: true, surface: .settings) else { throw PrivacyScopeInput.invalid("L’autorisation n’a pas été enregistrée.") }
+            guard Self.applyConsent(grantsConsent: grantsConsent, store: consents) else { throw PrivacyScopeInput.invalid("L’autorisation n’a pas été enregistrée.") }
             // A consent transition can start the runtime through AppDelegate. Cancel
             // that initial catch-up before restoring only future scheduled analyses.
             ChatGPTRecapRuntime.shared.stop()

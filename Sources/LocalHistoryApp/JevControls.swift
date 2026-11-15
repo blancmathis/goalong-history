@@ -25,7 +25,7 @@ import LocalHistoryCore
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Chaque envoi est limité à 1 600 octets. Jev se suspend si le service signale un usage trop élevé.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
-            if let tokens = monitor.lastInputTokens {
+            if monitor.lastRequestBytes > 0 {
                 Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
                     .font(.caption.monospacedDigit())
             }

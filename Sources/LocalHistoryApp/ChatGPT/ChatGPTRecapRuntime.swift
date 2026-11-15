@@ -1086,6 +1086,15 @@ import AppleScreenTime
             }
         }
 
+        /// True when no consent changed and the global pause was not switched on (nor toggled) since the context
+        /// was read. Any change means the already built context cannot leave the Mac.
+        static func sendAuthorityUnchanged(consents captured: GoalongConsentDocument, pauseRevision: String,
+                                           current: GoalongConsentDocument,
+                                           pauseRoot: URL = GoalongGlobalPause.defaultRoot) -> Bool {
+            guard captured == current else { return false }
+            return (try? GoalongGlobalPause.revalidate(pauseRevision, in: pauseRoot)) != nil
+        }
+
         private func generateRecap(for day: Date, automatic: Bool) {
             guard !GoalongGlobalPause.isPaused() else {
                 if !automatic { alert = ChatGPTRecapAlert(title: "Pause globale", message: "Reprenez Goalong avant de lancer une analyse.") }
@@ -1143,8 +1152,12 @@ import AppleScreenTime
 
             let normalizedDay = Calendar.current.startOfDay(for: day)
             let runID = UUID()
-            let includeScreenTime = GoalongCapabilityConsentStore.shared.isEnabled(.appleScreenTime)
-            let includeAgentActivity = GoalongCapabilityConsentStore.shared.isEnabled(.aiConversations)
+            // T-064 (H3b P1): the per-source consents and the global pause are read once, before the context is
+            // built, and compared again just before the send (same model as GoalongDeveloperRecap).
+            let consentSnapshot = GoalongCapabilityConsentStore.shared.snapshot
+            guard let pauseRevision = try? GoalongGlobalPause.admit() else { return }
+            let includeScreenTime = consentSnapshot.isEnabled(.appleScreenTime)
+            let includeAgentActivity = consentSnapshot.isEnabled(.aiConversations)
             let workDefinition = JevWorkContextStore.savedContext().map(GoalongWorkDefinition.init)
             activateRun(runID, automatic: automatic)
             isGenerating = true
@@ -1211,7 +1224,9 @@ import AppleScreenTime
                     )
                     guard self.analysisConsentProvider(), self.isRunActive(runID),
                           self.analysisSelectionProvider() == selection,
-                          GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacy.revision else {
+                          GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacy.revision,
+                          Self.sendAuthorityUnchanged(consents: consentSnapshot, pauseRevision: pauseRevision,
+                                                      current: GoalongCapabilityConsentStore.shared.snapshot) else {
                         throw CodexAppServerError.generationFailed("Les autorisations ont changé. Aucune analyse n’a été envoyée.")
                     }
                     let assessment = try session.generateRecap(

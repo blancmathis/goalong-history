@@ -66,6 +66,14 @@ struct JevRecentCheck: Identifiable {
         GoalongDefaults.standard.bool(forKey: Self.excerptKey)
             && GoalongDefaults.standard.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey)
     }
+    /// T-064 (H3b P3): switching the local « Texte affiché » off withdraws the excerpt choice. Turning it back on
+    /// never resumes excerpts to TypeSafe without a new confirmation.
+    @discardableResult static func withdrawExcerptWithoutVisibleText(_ defaults: UserDefaults) -> Bool {
+        guard defaults.bool(forKey: excerptKey),
+              !defaults.bool(forKey: ActivityAnalysisPreferences.richContextEnabledKey) else { return false }
+        defaults.set(false, forKey: excerptKey)
+        return true
+    }
     /// One name for an unreadable break.json, in the monitor error and in the pause controls.
     static let unreadableBreakNotice = "Minuterie illisible : Jev suspendu, historique inchangé."
     /// `scopePreferences` and `legacySettings` are read once, by the migration (point 4).
@@ -120,6 +128,7 @@ struct JevRecentCheck: Identifiable {
     func start() {
         guard !started else { return }; started = true
         migrateSurveillance()
+        Self.withdrawExcerptWithoutVisibleText(GoalongDefaults.standard)
         let center = NotificationCenter.default
         // These notifications are posted on the main actor. End/disable cancels synchronously.
         for name in [Notification.Name.goalongFocusSessionDidChange, .jevSurveillanceDidChange] {
@@ -141,6 +150,7 @@ struct JevRecentCheck: Identifiable {
         })
         observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
+                Self.withdrawExcerptWithoutVisibleText(GoalongDefaults.standard)
                 guard let self, self.settingsSignature != self.signature else { return }
                 self.reconfigure()
             }

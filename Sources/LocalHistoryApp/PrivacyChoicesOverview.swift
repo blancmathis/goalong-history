@@ -108,6 +108,8 @@ import LocalHistoryCore
         }
         .onAppearWhenShown { refreshRetention(); analysisSelection = .load(); pause = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in pause = .load() }
+        // T-064 (H3b P2): a selection saved while this view stays shown must update « L’analyse ChatGPT… ».
+        .onReceive(NotificationCenter.default.publisher(for: .goalongAnalysisSelectionDidChange)) { _ in analysisSelection = .load() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongRetentionPolicyDidChange)) { _ in refreshRetention() }
         .sheet(isPresented: $showingSharing) { GoalongWebsiteSharingSheet().goalongControls() }
         .sheet(isPresented: $showingRetention, onDismiss: refreshRetention) {
