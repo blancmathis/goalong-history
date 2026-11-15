@@ -9,7 +9,7 @@ import LocalHistoryCore
 final class GoalongCallPresenceMonitor {
     static let shared = GoalongCallPresenceMonitor(root: AppPaths.applicationSupportDirectory)
     private let root: URL
-    private let queue = DispatchQueue(label: "ai.goalong.call-presence", qos: .utility)
+    private let queue: DispatchQueue
     private var enabled = false
     private var config = RecorderConfig.default
     private var active: [String: GoalongCallInterval] = [:]
@@ -24,7 +24,10 @@ final class GoalongCallPresenceMonitor {
     private var recovered = false
     private var refreshScheduled = false
     private var pendingRebuild = false
-    init(root: URL) { self.root = root }
+    init(root: URL, queue: DispatchQueue = DispatchQueue(label: "ai.goalong.call-presence", qos: .utility)) {
+        self.root = root
+        self.queue = queue
+    }
 
     /// Called from the main thread: asynchronous, so a busy CoreAudio queue never stalls the UI.
     /// The serial queue keeps it ordered before any later `stop()`.
@@ -40,7 +43,14 @@ final class GoalongCallPresenceMonitor {
             refresh()
         }
     }
-    func stop() { queue.sync { closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; statusDay = nil } }
+    /// Never blocks the caller (T-064: 0.6.64 froze on this queue while CoreAudio was busy).
+    /// `completion` runs on `completionQueue` once the open call is saved and the listeners are gone.
+    func stop(completionQueue: DispatchQueue = .main, completion: @escaping () -> Void = {}) {
+        queue.async { [self] in
+            closeActive(at: Date()); removeListeners(); enabled = false; sourceStatus = .disabled; statusDay = nil
+            completionQueue.async(execute: completion)
+        }
+    }
     /// At quit, the open call is saved if the queue answers within `timeout`; the app never
     /// hangs on quit (0.6.64 hung there forever, blocking its own update).
     func stopForTermination(timeout: TimeInterval = 1) {

@@ -34,10 +34,10 @@ final class GoalongDeveloperRuntime {
     func status() -> GoalongDeveloperLaneStatus { monitor.snapshotStatus() }
     private func refresh(initial: Bool = false, projectsChanged: Bool = false) {
         let enabled = consents.isEnabled(.developerActivity) && !GoalongGlobalPause.isPaused(in: root)
-        if !enabled { monitor.stop(discardOffline: true) }
+        // T-064: called on main by notifications; the flush, cursor write and stream setup run on the monitor queue.
+        if !enabled { monitor.stopInBackground(discardOffline: true) }
         else if initial || projectsChanged || !previouslyEnabled {
-            monitor.stop()
-            monitor.start(replayHistory: initial || projectsChanged)
+            monitor.restartInBackground(replayHistory: initial || projectsChanged)
         }
         previouslyEnabled = enabled
     }

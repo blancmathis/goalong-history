@@ -289,6 +289,27 @@
             XCTAssertEqual(seal.minuteFields.map(\.name), IntegrityDomains.minuteFieldOrder)
         }
 
+        /// T-064: lock/sleep flush never waits on main behind a busy writer.
+        func testBackgroundFlushReturnsWhileWriterIsBusy() throws {
+            let fixture = try makeFixture()
+            let timestamp = Date(timeIntervalSince1970: 1_787_480_000)
+            let gate = OneShotPersistenceGate()
+            let components = try makeRecorder(fixture: fixture, initialDate: timestamp,
+                                              beforePersist: gate.blockFirstNonGapEvent)
+            defer { gate.release() }
+            XCTAssertTrue(components.recorder.record(kind: .heartbeat, timestamp: timestamp))
+            XCTAssertEqual(gate.started.wait(timeout: .now() + 2), .success)
+
+            let flushed = DispatchSemaphore(value: 0)
+            let startedAt = Date()
+            components.recorder.flushInBackground { flushed.signal() }
+            XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.25)
+            XCTAssertEqual(flushed.wait(timeout: .now() + 0.2), .timedOut)
+            gate.release()
+            XCTAssertEqual(flushed.wait(timeout: .now() + 3), .success)
+            XCTAssertEqual(components.recorder.persistenceSnapshot.pendingEventCount, 0)
+        }
+
         func testMainThreadSaturationIsNonBlockingAndPersistsOneOrderedGap() throws {
             let fixture = try makeFixture()
             let timestamp = Date(timeIntervalSince1970: 1_787_480_000)

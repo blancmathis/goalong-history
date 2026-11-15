@@ -763,6 +763,13 @@
             XCTAssertFalse(windowController.contains("NSApplication.didBecomeActiveNotification"))
             XCTAssertTrue(hidden.contains("refreshScheduler.deactivate()"))
             XCTAssertTrue(hidden.contains("snapshotStore.discard(day: selectedDay)"))
+            // T-064: a key loss keeps the reader caches; only a real hide drops them.
+            let discard = try XCTUnwrap(hidden.range(of: "reader.discardTransientCaches()"))
+            let guardKeyLoss = try XCTUnwrap(hidden.range(of: "guard discardContents else { return }"))
+            XCTAssertLessThan(guardKeyLoss.lowerBound, discard.lowerBound)
+            let becomeKey = try XCTUnwrap(windowController.slice(
+                from: "        func windowDidBecomeKey(", through: "        func windowDidResignKey("))
+            XCTAssertTrue(becomeKey.contains("if wasVisible { viewModel.refreshEverything() }"))
         }
 
         func testComputerHistoryPageScrollsLazily() throws {

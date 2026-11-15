@@ -8,6 +8,7 @@ import LocalHistoryCore
 final class GoalongDeveloperFileMonitor {
     private let store: GoalongDeveloperStore
     private let queue = DispatchQueue(label: "goalong.developer-files", qos: .utility)
+    private static let queueKey = DispatchSpecificKey<ObjectIdentifier>()
     private var stream: FSEventStreamRef?
     private var timer: DispatchSourceTimer?
     private var projects: [GoalongDeveloperProject] = []
@@ -29,6 +30,11 @@ final class GoalongDeveloperFileMonitor {
     private let readDay: (GoalongDeveloperStore, Date) -> GoalongFileModificationsDay
     init(root: URL, readDay: @escaping (GoalongDeveloperStore, Date) -> GoalongFileModificationsDay = { $0.read(day: $1) }) {
         store = GoalongDeveloperStore(root: root); self.readDay = readDay
+        queue.setSpecific(key: Self.queueKey, value: ObjectIdentifier(queue))
+    }
+    /// T-064: runs on the monitor queue; inline when already there (a deinit on the queue must not sync on itself).
+    private func onQueue(_ work: () -> Void) {
+        if DispatchQueue.getSpecific(key: Self.queueKey) == ObjectIdentifier(queue) { work() } else { queue.sync(execute: work) }
     }
     static let ignoredNames: Set<String> = [".git", ".build", "node_modules", "DerivedData", "dist", "build", "cache", "caches", ".cache", ".DS_Store"]
     /// FSEvents accepts at most 8 exclusion paths. Prefer folders that exist; `permits` still filters the rest.
@@ -52,9 +58,21 @@ final class GoalongDeveloperFileMonitor {
             return forms
         })).sorted()
     }
-    deinit { stop() }
+    deinit { onQueue { stopOnQueue(discardOffline: false) } }
     func start(replayHistory: Bool = true) {
-        queue.sync {
+        onQueue { startOnQueue(replayHistory: replayHistory) }
+    }
+    /// T-064: the runtime restarts the stream from the main thread without waiting for a flush or a day-file read.
+    func restartInBackground(replayHistory: Bool) {
+        queue.async { [weak self] in
+            self?.stopOnQueue(discardOffline: false); self?.startOnQueue(replayHistory: replayHistory)
+        }
+    }
+    func stopInBackground(discardOffline: Bool) {
+        queue.async { [weak self] in self?.stopOnQueue(discardOffline: discardOffline) }
+    }
+    private func startOnQueue(replayHistory: Bool) {
+        do {  // scope kept from the former queue.sync body
             guard stream == nil, !GoalongGlobalPause.isPaused(in: store.root) else { return }
             do {
                 projects = try store.configuration().projects
@@ -88,7 +106,10 @@ final class GoalongDeveloperFileMonitor {
         }
     }
     func stop(discardOffline: Bool = false) {
-        queue.sync {
+        onQueue { stopOnQueue(discardOffline: discardOffline) }
+    }
+    private func stopOnQueue(discardOffline: Bool) {
+        do {
             timer?.cancel(); timer = nil
             if let stream { FSEventStreamStop(stream); FSEventStreamInvalidate(stream); FSEventStreamRelease(stream) }
             stream = nil
