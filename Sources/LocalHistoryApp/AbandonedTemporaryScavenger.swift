@@ -568,3 +568,36 @@
         }
     }
 #endif
+
+#if os(macOS)
+    import Foundation
+
+    extension AbandonedTemporaryScavenger {
+        /// T-064 lot 10: the launch pass walks the whole data folder, so it runs on a utility queue, after the
+        /// guards. No guard and no reader needs it: it only removes owned temporary files untouched for 24 h,
+        /// revalidated just before unlink, so a writer's fresh temporary file is never a candidate.
+        static func scavengeAtStartup(
+            rootDirectory: URL,
+            now: Date = Date(),
+            queue: DispatchQueue = .global(qos: .utility),
+            completion: @escaping (Report) -> Void = { _ in }
+        ) {
+            let codexMemoryDirectory = ComputerHistoryStore.retentionDirectories(rootDirectory: rootDirectory).last
+            queue.async {
+                let report = GoalongStartupSignpost.measure("scavengeTemporaryFiles") {
+                    AbandonedTemporaryScavenger(
+                        rootDirectory: rootDirectory, codexMemoryDirectory: codexMemoryDirectory
+                    ).scavenge(now: now)
+                }
+                if report.deletedFiles > 0 {
+                    Diagnostics.write(
+                        "Recovered abandoned temporary files: "
+                            + "count=\(report.deletedFiles) bytes=\(report.deletedBytes)"
+                    )
+                }
+                for diagnostic in report.diagnostics { Diagnostics.write(diagnostic) }
+                completion(report)
+            }
+        }
+    }
+#endif
