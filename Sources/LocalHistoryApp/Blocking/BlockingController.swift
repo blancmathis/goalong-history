@@ -1108,7 +1108,7 @@ import LocalHistoryQueryCLI
             return proof == .passed ? .granted(end: clock(), extra: true) : .needsExtraPassword
         }
         return PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
-                                   proof: proof, now: clock(), calendar: calendar).0
+                                   proof: proof, now: clock(), calendar: calendar, dayEnd: usageDayBounds(at: clock()).end).0
     }
 
     /// The password lets one break more pass once the period's pauses are used: never under « Verrouillé » or a freeze.
@@ -1226,8 +1226,9 @@ import LocalHistoryQueryCLI
         let now = clock()
         // The gate is checked before the budget is touched; a wrong password is counted as for a stop.
         var proof = PauseProof.none
+        let dayEnd = usageDayBounds(at: now).end
         let ask = PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
-                                      proof: .none, now: now, calendar: calendar).0
+                                      proof: .none, now: now, calendar: calendar, dayEnd: dayEnd).0
         switch ask {
         case .needsGate(.typing):
             guard let typed, typed == typingChallenge(for: policy.id) else { return refusePassword("Le texte ne correspond pas.") }
@@ -1240,7 +1241,7 @@ import LocalHistoryQueryCLI
         default: break
         }
         let (decision, usage) = PauseEngine.request(policy, usage: document.pauses?[policy.id], lock: lock, hasPassword: hasPassword,
-                                                     proof: proof, now: now, calendar: calendar)
+                                                     proof: proof, now: now, calendar: calendar, dayEnd: dayEnd)
         document.pauses = document.pauses ?? [:]
         document.pauses?[policy.id] = usage
         challenges[policy.id] = nil
@@ -1619,6 +1620,8 @@ import LocalHistoryQueryCLI
             var moved = pool
             if let end = pool.end, jump < 0 || end > oldWall { moved.end = end.addingTimeInterval(jump); moved.start = pool.start?.addingTimeInterval(jump) }
             if let wait = pool.waitStartedAt { moved.waitStartedAt = wait.addingTimeInterval(jump) }
+            // The period keeps its real length too: a jump forward must not end it early (T-064).
+            if let periodEnd = pool.periodEnd { moved.periodEnd = periodEnd.addingTimeInterval(jump) }
             document.pauses?[id] = moved
         }
     }

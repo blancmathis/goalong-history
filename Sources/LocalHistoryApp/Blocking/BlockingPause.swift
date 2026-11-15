@@ -34,13 +34,15 @@ struct PausePolicy: Codable, Hashable, Identifiable {
             case .password: return "Mot de passe"
             }
         }
-        /// Order for « Durcir seulement ». A wait is stronger when longer.
-        var strength: (Int, Int) {
-            switch self {
-            case .none: return (0, 0)
-            case .wait(let minutes): return (1, minutes)
-            case .typing: return (2, 0)
-            case .password: return (3, 0)
+        /// « Durcir seulement »: `next` asks at least as much as `self`. « Rien » is the weakest and the password
+        /// the strongest; a wait only grows. « Attendre » and « Recopier » do not compare (a day of wait against a
+        /// few seconds of typing): one never replaces the other (T-064).
+        func hardens(to next: Gate) -> Bool {
+            switch (self, next) {
+            case (_, .password), (.none, _): return true
+            case (.wait(let current), .wait(let longer)): return longer >= current
+            case (.typing, .typing): return true
+            default: return false
             }
         }
     }
@@ -79,6 +81,10 @@ struct PausePolicy: Codable, Hashable, Identifiable {
 struct PauseUsage: Codable, Hashable {
     /// `PauseEngine.periodKey`.
     var period: String
+    /// End of that period, in the zone and the clock frame it opened in (T-064). The period holds until then, so a
+    /// zone change or a clock set back never hands back a used budget. Nil in a file of an older version: the key
+    /// alone decides, as before; older versions ignore it.
+    var periodEnd: Date?
     /// Budget used by finished pauses.
     var usedSeconds: Double = 0
     var count = 0
@@ -134,14 +140,20 @@ enum PauseEngine {
     }
 
     /// The usage in the current period: a new period starts from zero, a finished pause is counted.
+    /// The stored period holds until its own end (`periodEnd`), like the usage day across a zone change
+    /// (`usageDayCarry`): a zone change (Paris → Kiritimati → Paris) or a clock set back before a reboot keeps it.
     static func current(_ usage: PauseUsage?, policy: PausePolicy, now: Date, calendar: Calendar) -> PauseUsage {
         let key = periodKey(policy.period, at: now, calendar: calendar)
-        guard var usage, usage.period == key else {
+        let end = bounds(policy.period, at: now, calendar: calendar).end
+        let held = usage.map { $0.period.hasPrefix(policy.period.rawValue + ":") && $0.periodEnd.map { now < $0 } == true } ?? false
+        guard var usage, usage.period == key || held else {
             // A pause running across the reset keeps its end; it no longer counts in the new period.
-            var fresh = PauseUsage(period: key)
+            var fresh = PauseUsage(period: key, periodEnd: end)
             if let start = usage?.start, let end = usage?.end, end > now { fresh.start = start; fresh.end = end; fresh.extra = true }
             return fresh
         }
+        // The same key seen from another zone: the period only gets longer.
+        if usage.period == key { usage.periodEnd = max(usage.periodEnd ?? end, end) }
         if let start = usage.start, let end = usage.end, end <= now {
             if !usage.extra { usage.usedSeconds += max(0, end.timeIntervalSince(start)) }
             usage.start = nil; usage.end = nil; usage.extra = false
@@ -172,12 +184,16 @@ enum PauseEngine {
 
     /// A pause asked now. `lock` is the strongest applied lock among the blocks the pool covers.
     /// Returns the answer and the usage to store (the wait start, or the new pause).
+    /// `dayEnd`: the end of the caller's usage day (held across a zone change), when it has one.
     static func request(_ policy: PausePolicy, usage stored: PauseUsage?, lock: BlockLock, hasPassword: Bool,
-                        proof: PauseProof, now: Date, calendar: Calendar) -> (PauseDecision, PauseUsage) {
+                        proof: PauseProof, now: Date, calendar: Calendar, dayEnd: Date? = nil) -> (PauseDecision, PauseUsage) {
         var usage = current(stored, policy: policy, now: now, calendar: calendar)
         if runningEnd(usage, now: now) != nil { return (.refused("Une pause est déjà en cours."), usage) }
-        // Never a pause without an end: at the latest the next local midnight (point 6).
-        let midnight = bounds(.day, at: now, calendar: calendar).end
+        // Never a pause without an end: at the latest the next local midnight (point 6), and never past the usage
+        // day or the day period held across a zone change (T-064).
+        var midnight = bounds(.day, at: now, calendar: calendar).end
+        if let dayEnd, dayEnd > now { midnight = min(midnight, dayEnd) }
+        if policy.period == .day, let held = usage.periodEnd, held > now { midnight = min(midnight, held) }
         let left = secondsLeft(policy, usage: usage, now: now)
         let countLeft = policy.maxPauses.map { usage.count < $0 } ?? true
         if left >= 1, countLeft {
@@ -243,7 +259,7 @@ enum PauseEngine {
         if next.period != current.period { return refusal }
         if (next.maxPauseMinutes ?? .max) > (current.maxPauseMinutes ?? .max) { return refusal }
         if (next.maxPauses ?? .max) > (current.maxPauses ?? .max) { return refusal }
-        if next.gate.strength < current.gate.strength { return refusal }
+        if !current.gate.hardens(to: next.gate) { return refusal }
         if (next.extraPerPeriod ?? .max) > (current.extraPerPeriod ?? .max) { return refusal }
         return nil
     }
