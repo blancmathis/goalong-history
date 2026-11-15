@@ -106,6 +106,19 @@ final class BlockingEngineTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: file, withDestinationURL: URL(fileURLWithPath: "/etc/passwd"))
         XCTAssertThrowsError(try store.load()); XCTAssertThrowsError(try store.save(BlockingDocument()))
     }
+    /// T-064 lot 12: the periodic check decodes only a moved file, and still sees a damaged one.
+    func testStoreVerifySkipsAnUnchangedFileAndCatchesAChangedOne() throws {
+        let store = try temporaryStore()
+        XCTAssertNil(try store.verify(since: nil))
+        try store.save(BlockingDocument(lists: [BlockList(name: "Personnel")]))
+        let stamp = try XCTUnwrap(try store.verify(since: nil))
+        XCTAssertEqual(try store.verify(since: stamp), stamp)
+        let file = store.directory.appendingPathComponent("blocking.json")
+        let handle = try FileHandle(forWritingTo: file); try handle.write(contentsOf: Data("x".utf8)); try handle.close()
+        XCTAssertThrowsError(try store.verify(since: stamp), "a write in place moves the stamp: the file is decoded")
+        try store.save(BlockingDocument())
+        XCTAssertNotEqual(try store.verify(since: stamp), stamp)
+    }
     func testStoreRejectsLinkedDirectoryAndSpecialFile() throws {
         let store = try temporaryStore()
         try FileManager.default.createSymbolicLink(at: store.directory, withDestinationURL: store.directory.deletingLastPathComponent())
@@ -286,6 +299,19 @@ final class BlockingEngineTests: XCTestCase {
                 XCTAssertTrue(reason.hasPrefix(prefix), reason)
             }
         }
+    }
+    /// T-064 lot 12: per-process memories of a gone process are purged at refresh; the current target is kept.
+    @MainActor func testGoneProcessesArePurgedAtRefresh() {
+        var now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+        c.processExists = { _ in false }
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .free)
+        c.observe(target(now, url: nil)); XCTAssertEqual(c.trackedProcessCount, 1)
+        c.refresh(); XCTAssertEqual(c.trackedProcessCount, 1, "the current target is kept")
+        now = now.addingTimeInterval(1)
+        var other = target(now, url: "https://example.org/"); other.pid = 42999; c.observe(other)
+        c.refresh(); XCTAssertEqual(c.trackedProcessCount, 0)
     }
     @MainActor func testUnreadableAddressFailsClosedInPrivateAndNormalWindows() {
         for privateWindow in [true, false] {
@@ -734,6 +760,25 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertNotEqual(c.authorizeQuit(password: "fixture"), .ok); XCTAssertTrue(c.quitIsLocked)
         XCTAssertEqual(c.unlockWithPassword("fixture", blockID: id), .ok)
         XCTAssertEqual(c.activeBlocks.count, 2)
+    }
+
+    /// T-064 lot 12: the quit token ignores per-second values (quota, breaks) but not a widened protection.
+    @MainActor func testQuitAuthorizationSurvivesQuotaTicksButNotAStrongerBlock() throws {
+        var now = date(); let list = BlockList(name: "Sites", sites: [.init(pattern: "youtube.com")], quotaMinutesPerDay: 30)
+        let other = BlockList(name: "Autres", sites: [.init(pattern: "x.com")])
+        let credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        let c = BlockingController(document: .init(lists: [list, other], passwordLock: credential), clock: { now }, continuous: { now.timeIntervalSince1970 })
+        let id = try XCTUnwrap(c.startSession(listIDs: [list.id], until: now.addingTimeInterval(600), lock: .password))
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok)
+        let before = c.activeBlocks[0].quotaSecondsLeft[list.id]
+        for _ in 0..<5 { now = now.addingTimeInterval(1); c.observe(target(now)) }
+        c.refresh(); XCTAssertNotEqual(c.activeBlocks[0].quotaSecondsLeft[list.id], before, "precondition: the quota moved")
+        XCTAssertTrue(c.consumeQuitAuthorization(), "a quota tick must not void a valid password")
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok)
+        XCTAssertTrue(c.extendSession(id)); XCTAssertFalse(c.consumeQuitAuthorization(), "a lengthened block refuses")
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .ok)
+        _ = c.startSession(listIDs: [other.id], until: now.addingTimeInterval(600), lock: .password)
+        XCTAssertFalse(c.consumeQuitAuthorization(), "an added block refuses")
     }
 
     @MainActor func testPasswordProgramSkipProtectsOnlyThisOccurrence() throws {

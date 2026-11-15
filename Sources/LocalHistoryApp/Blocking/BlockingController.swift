@@ -72,6 +72,8 @@ import LocalHistoryQueryCLI
     private var lastSavedAt = Date.distantPast
     private var lastRefresh = Date.distantPast
     private var storeFailed = false
+    /// The blocking file as last checked by `refresh`; nil = not checked yet (the next check decodes it).
+    private var fileStamp: BlockingStore.FileStamp?
     /// Last end written for uninstall.sh; `.none` until the first refresh writes it.
     private var lockMarker: Date?? = .none
     /// Last end written to `guard-until` (spec K); a deleted file is rewritten while a severe block runs.
@@ -89,12 +91,28 @@ import LocalHistoryQueryCLI
     var onObservationRequirementChanged: ((Bool) -> Void)?
     /// Called after each refresh, sample or allowance: the timer capsule re-reads `timerInput`.
     var onTimerInputChanged: (() -> Void)?
+    /// Whether a pid still runs; per-process memories of gone processes are purged at `refresh`. Tests replace it.
+    var processExists: (Int32) -> Bool = { pid in pid > 0 && (kill(pid, 0) == 0 || errno == EPERM) }
+    /// Test read-out of the per-process memories (unreadable address, presented app attempt).
+    var trackedProcessCount: Int { Set(unreadableSince.keys).union(presentedAppAttempts.keys).count }
     /// True while the running Concentration session blocks this list, breaks included.
     var focusSessionUsesList: (UUID) -> Bool = { _ in false }
     /// A block owned by the running focus session's phase (its timer moves it, « + 15 min » does not).
     var isFocusBlock: (UUID) -> Bool = { _ in false }
     private var observing = false
-    private var quitAuthorization: (blocks: Set<BlockingActiveBlock>, expires: Date)?
+    private var quitAuthorization: (scope: QuitScope, expires: Date)?
+    /// What a quit password covers: the password blocks (identity, lists, end, lock) and the red-screen rule.
+    /// Quota, break and feedback values move every second and are left out (T-064 lot 12): a block added,
+    /// lengthened, widened or locked within the 30 s still changes the scope, so the quit stays refused.
+    private struct QuitScope: Equatable {
+        struct Block: Hashable { var id: UUID; var listIDs: Set<UUID>; var end: Date; var lock: BlockLock }
+        var blocks: Set<Block>
+        var redScreen: BlockLock?
+    }
+    private var quitScope: QuitScope {
+        QuitScope(blocks: Set(activeBlocks.filter { $0.lock == .password }.map { .init(id: $0.id, listIDs: Set($0.listIDs), end: $0.end, lock: $0.lock) }),
+                  redScreen: redScreenLock)
+    }
     var hasTimer: Bool { timer != nil }
     var snapshot: BlockingDocument { document }
     var needsObservation: Bool {
@@ -950,7 +968,7 @@ import LocalHistoryQueryCLI
         guard quitRequiresPassword else { return .ok }
         let result = verifyPassword(password)
         if result == .ok {
-            quitAuthorization = (Set(activeBlocks.filter { $0.lock == .password }), clock().addingTimeInterval(30))
+            quitAuthorization = (quitScope, clock().addingTimeInterval(30))
         }
         return result
     }
@@ -962,7 +980,7 @@ import LocalHistoryQueryCLI
         guard !quitIsLocked else { return false }
         guard quitRequiresPassword else { return true }
         guard let authorization = quitAuthorization, authorization.expires > clock() else { return false }
-        return authorization.blocks == Set(activeBlocks.filter { $0.lock == .password })
+        return authorization.scope == quitScope
     }
 
     func revokeQuitAuthorization() { quitAuthorization = nil }
@@ -1358,9 +1376,14 @@ import LocalHistoryQueryCLI
 
     func refresh(enforceLast: Bool = true) {
         if let store, !storeFailed {
-            do { _ = try store.load() } catch { restoreStore(store) }
+            // Decoded only when the file moved since the last check (T-064 lot 12): not every 5 s with a long history.
+            do { fileStamp = try store.verify(since: fileStamp) } catch { fileStamp = nil; restoreStore(store) }
         }
         let locksBefore = (document.sessions, document.heldPrograms, document.freeze, document.lists)
+        // Per-process memories of processes gone since (T-064 lot 12): not kept until shutdown.
+        let current = lastObservation?.pid
+        unreadableSince = unreadableSince.filter { $0.key == current || processExists($0.key) }
+        presentedAppAttempts = presentedAppAttempts.filter { $0.key == current || processExists($0.key) }
         syncClock()
         let now = clock()
         lastRefresh = now
@@ -1669,6 +1692,7 @@ import LocalHistoryQueryCLI
 
     func observe(_ target: BlockingObservation) {
         var target = target; target.at = trusted(target.at)
+        let timerBefore = (Self.timerKey(lastObservation), document.usage)
         if target.isActivation, hasAppTriggers { refresh(enforceLast: false) }
         if target.isActivation { frictionActivation(target) }
         backend?.observeBrowser(target)
@@ -1696,7 +1720,13 @@ import LocalHistoryQueryCLI
         }
         lastObservation = target
         enforce(target)
-        onTimerInputChanged?()
+        // T-064 lot 12: the capsule counts down on its own timer; a sample wakes it only when the foreground
+        // target or the day's use moved (not ~1/s for the same window). `refresh` and edits still notify.
+        if (Self.timerKey(target), document.usage) != timerBefore { onTimerInputChanged?() }
+    }
+    /// A sample as the timer reads it: time and idle time left out.
+    private static func timerKey(_ target: BlockingObservation?) -> BlockingObservation? {
+        target.map { var value = $0; value.at = .distantPast; value.idleSeconds = 0; return value }
     }
 
     private func enforce(_ target: BlockingObservation) {
@@ -1847,7 +1877,10 @@ import LocalHistoryQueryCLI
         backend?.renounceSlowDown(target); clearFriction()
     }
     func continueFriction() {
-        guard let value = friction, let target = frictionTarget, clock() >= value.readyAt, let list = list(value.listID) else { return }
+        guard let value = friction, let target = frictionTarget, let list = list(value.listID) else { return }
+        // The view waits on the wall clock; a wall clock change can open « Continuer » early. Show the panel again
+        // with `readyAt` in the current wall frame: the bar and the button follow the trusted clock (T-064 lot 12).
+        guard clock() >= value.readyAt else { showFriction(target, list: list); return }
         refresh(enforceLast: false)
         guard freeze == nil, activeBlocks.contains(where: { $0.listIDs.contains(list.id) }),
             !lists.contains(where: { candidate in candidate.effectiveAction == .block && activeBlocks.contains { $0.listIDs.contains(candidate.id) }

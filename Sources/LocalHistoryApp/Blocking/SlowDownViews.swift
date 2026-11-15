@@ -12,6 +12,9 @@ import LocalHistoryCore
     }
     private var panel: Panel?
     private var key: String?
+    /// The wall `readyAt` the view was built with: a wall clock change moves it (the controller decides with its
+    /// trusted clock), and the view is rebuilt so its bar and « Continuer » follow the controller (T-064 lot 12).
+    private var readyAt: Date?
 
     func show(_ target: BlockingObservation, presentation: BlockingFrictionPresentation,
               onRenounce: @escaping () -> Void, onContinue: @escaping () -> Void) {
@@ -30,7 +33,9 @@ import LocalHistoryCore
             return made
         }()
         value.hasShadow = !target.isBrowser
-        if key != presentation.key {
+        let moved = readyAt.map { abs($0.timeIntervalSince(presentation.readyAt)) >= 1 } ?? true
+        let rebuild = key != presentation.key || moved
+        if rebuild {
             let item: BlockingItem = target.isBrowser ? .site(presentation.name)
                 : .app(BlockAppRule(bundleIdentifier: target.bundleIdentifier, name: presentation.name))
             let root: AnyView = target.isBrowser
@@ -39,14 +44,17 @@ import LocalHistoryCore
             let host = NSHostingView(rootView: root.goalongControls())
             host.sizingOptions = []
             value.contentView = host
-            key = presentation.key
+            key = presentation.key; readyAt = presentation.readyAt
         }
-        value.setFrame(frame, display: true)
-        value.orderFrontRegardless()
+        // Called on every sample (~1/s) while « Ralentir » shows: redraw and reorder only when something moved,
+        // or when the panel is hidden or covered (T-064 lot 12). A new or covered panel still comes in front at once.
+        let reframe = rebuild || value.frame != frame
+        if reframe { value.setFrame(frame, display: true) }
+        if reframe || !value.isVisible || !value.occlusionState.contains(.visible) { value.orderFrontRegardless() }
         panel = value
     }
 
-    func close() { panel?.orderOut(nil); panel?.close(); panel = nil; key = nil }
+    func close() { panel?.orderOut(nil); panel?.close(); panel = nil; key = nil; readyAt = nil }
 }
 
 /// The wait drawn as a bar: it fills in ink from left to right, without a handle (it is not a slider),
@@ -62,7 +70,7 @@ struct SlowDownCountdown: View {
         if let now {
             labelled(at: now)
         } else {
-            TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 20, paused: ready)) { context in
+            TimelineView(.animation(minimumInterval: reduceMotion ? 1 : Self.step, paused: ready)) { context in
                 labelled(at: GoalongToday.timeline(context.date))
             }
             .taskWhenShown {
@@ -91,6 +99,7 @@ struct SlowDownCountdown: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(LHTheme.text.opacity(0.16)).frame(height: 8)
                 Capsule().fill(LHTheme.text).frame(width: max(8, x), height: 8)
+                    .animation(reduceMotion || now != nil ? nil : .linear(duration: Self.step), value: x)
             }
             .frame(height: 8)
         }
@@ -98,6 +107,9 @@ struct SlowDownCountdown: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(progress >= 1 ? "Attente terminée" : "Attente : encore \(FrenchCount.count(seconds(at: date), "seconde", "secondes"))")
     }
+
+    /// 4 body passes a second; the bar glides between them (T-064 lot 12: was 20 passes a second).
+    static let step = 0.25
 
     func seconds(at date: Date) -> Int { max(0, Int(ceil(presentation.readyAt.timeIntervalSince(date)))) }
 }
