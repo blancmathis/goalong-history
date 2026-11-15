@@ -208,6 +208,8 @@ import AppleScreenTime
             }
 
             runtimeStarted = true
+            // T-064: no off-main system-wide AX request while a Goalong panel holds the keyboard focus.
+            AXSelfProcessGuard.installKeyWindowTracking()
             // A guard token always belongs to the process that wrote it (spec K).
             GoalongGuardFiles.standard.clearTokens()
             installTerminationSignalHandler()
@@ -216,6 +218,8 @@ import AppleScreenTime
             // The journal lives under the data root: create it first, or a fresh install's first writes fail
             // and mark every report incomplete. A failure here is reported again by the prepare below.
             _ = try? AppPaths.prepare()
+            // T-064: Jev starts only in a real runtime, after the data root exists (never before the Dev data guard).
+            JevMonitor.shared.start()
             SupportDiagnostics.shared.start(version: buildIdentity.displayVersion, build: buildIdentity.buildNumber)
             NSApplication.shared.setActivationPolicy(.accessory)
             // Goalong Dev: no daily send unless make dev SERVER=on.
@@ -1004,15 +1008,17 @@ import AppleScreenTime
             let suspension = barrier.suspend()
             Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
             clearingCallPresence = true
-            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
-            barrier.notifyWhenDrained(suspension) { [self] in
-                deleteDetailsAfterDerivedWritersDrain(
-                    since: cutoff,
-                    suspension: suspension,
-                    completion: completion
-                )
+            // The open call is saved before the deletion starts, without holding the main thread (T-064).
+            GoalongCallPresenceMonitor.shared.stop { [self] in
+                barrier.notifyWhenDrained(suspension) { [self] in
+                    deleteDetailsAfterDerivedWritersDrain(
+                        since: cutoff,
+                        suspension: suspension,
+                        completion: completion
+                    )
+                }
             }
         }
 
@@ -1024,10 +1030,10 @@ import AppleScreenTime
             let suspension = barrier.suspend()
             Task { @MainActor in GoalongActivitySummaryBackfill.shared.cancel() }
             clearingCallPresence = true
-            GoalongCallPresenceMonitor.shared.stop()
             ActivityAnalysisRuntime.shared.prepareForHistoryClear()
             ChatGPTRecapRuntime.shared.prepareForHistoryClear()
-            barrier.notifyWhenDrained(suspension) { [self] in
+            // The open call is saved before the deletion starts, without holding the main thread (T-064).
+            GoalongCallPresenceMonitor.shared.stop { [self] in barrier.notifyWhenDrained(suspension) { [self] in
                 TargetedHistoryDeletionCommitter(
                     rawStore: store,
                     semanticStore: semanticContextStore,
@@ -1060,7 +1066,7 @@ import AppleScreenTime
                         completion: completion
                     )
                 }
-            }
+            } }
         }
 
         /// The device ID known at this launch: the resolved one, else the last persisted one.
@@ -1709,7 +1715,7 @@ import AppleScreenTime
                         self.recorder.record(kind: unlocked ? .sessionUnlocked : .sessionLocked,
                             message: unlocked ? "Screen unlocked" : "Screen locked")
                         self.contextMonitor.invalidatePresence()
-                        self.recorder.flush()
+                        self.recorder.flushInBackground()
                         if unlocked {
                             self.contextMonitor.resetAndSample()
                             self.checkPermissionsAndStartTap(forceRefresh: true)
@@ -1738,7 +1744,7 @@ import AppleScreenTime
                     self.recorder.record(kind: .sessionLocked, message: "macOS user session became inactive")
                     self.captureState.setUserSessionActive(false)
                     self.contextMonitor.invalidatePresence()
-                    self.recorder.flush()
+                    self.recorder.flushInBackground()
                     self.menuBarController.updateStatus()
                 }
             )
@@ -1768,7 +1774,7 @@ import AppleScreenTime
                     self.recorder.record(kind: .systemSleep, message: "Mac is going to sleep")
                     self.captureState.setSystemAwake(false)
                     self.contextMonitor.invalidatePresence()
-                    self.recorder.flush()
+                    self.recorder.flushInBackground()
                     self.flushCurrentScreenTimeDay()
                 }
             )
@@ -1799,7 +1805,7 @@ import AppleScreenTime
                     if self.captureState.setDisplaysAwake(false) {
                         self.recorder.record(kind: .systemSleep, message: "Displays went to sleep")
                         self.contextMonitor.invalidatePresence()
-                        self.recorder.flush()
+                        self.recorder.flushInBackground()
                     }
                 }
             )

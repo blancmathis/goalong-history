@@ -763,6 +763,7 @@
         private var stderrData = Data()
         private let closeLock = NSLock()
         private var closed = false
+        private var ioDepth = 0
         private var globalPauseObserver: NSObjectProtocol?
 
         init(
@@ -1447,6 +1448,9 @@
             )
         }
 
+        /// Any thread (the global-pause observer has no queue). The pipes are closed only when no
+        /// request is reading or writing them: a descriptor closed under a running `poll`/`read` can
+        /// be reused by another file meanwhile (T-064). The process gets SIGTERM, then SIGKILL.
         func close() {
             closeLock.lock()
             guard !closed else {
@@ -1454,15 +1458,35 @@
                 return
             }
             closed = true
+            let closeNow = ioDepth == 0
             closeLock.unlock()
 
+            if closeNow { closePipes() }
+            CodexProcessTerminator.terminate(process)
+        }
+
+        /// Pipe I/O of one request. After `close()`, the last I/O to leave closes the pipes.
+        private func withPipeIO<T>(_ body: () throws -> T) throws -> T {
+            closeLock.lock()
+            let alreadyClosed = closed
+            if !alreadyClosed { ioDepth += 1 }
+            closeLock.unlock()
+            if alreadyClosed { throw CodexAppServerError.processExited(stderrText()) }
+            defer {
+                closeLock.lock()
+                ioDepth -= 1
+                let closeNow = closed && ioDepth == 0
+                closeLock.unlock()
+                if closeNow { closePipes() }
+            }
+            return try body()
+        }
+
+        private func closePipes() {
             errorPipe.fileHandleForReading.readabilityHandler = nil
             try? inputPipe.fileHandleForWriting.close()
             try? outputPipe.fileHandleForReading.close()
             try? errorPipe.fileHandleForReading.close()
-            if process.isRunning {
-                process.terminate()
-            }
         }
 
         private func request(
@@ -1521,13 +1545,15 @@
             operation: String
         ) throws {
             let data = try CodexAppServerWireEncoder.encode(object, limits: limits)
-            try CodexAppServerTimedWriter.write(
-                data,
-                to: inputPipe.fileHandleForWriting.fileDescriptor,
-                deadline: deadline,
-                operation: operation,
-                errorDetail: { [weak self] in self?.stderrText() ?? "" }
-            )
+            try withPipeIO {
+                try CodexAppServerTimedWriter.write(
+                    data,
+                    to: inputPipe.fileHandleForWriting.fileDescriptor,
+                    deadline: deadline,
+                    operation: operation,
+                    errorDetail: { [weak self] in self?.stderrText() ?? "" }
+                )
+            }
         }
 
         private func nextDeferredOrMessage(
@@ -1543,6 +1569,10 @@
         }
 
         private func nextMessage(deadline: Date, operation: String) throws -> [String: Any] {
+            try withPipeIO { try readNextMessage(deadline: deadline, operation: operation) }
+        }
+
+        private func readNextMessage(deadline: Date, operation: String) throws -> [String: Any] {
             while true {
                 if let message = try stdoutDecoder.popMessage() {
                     return message
@@ -1759,4 +1789,20 @@
             Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         }
     }
+
+    /// SIGTERM, then SIGKILL if the process is still alive after `grace` (T-064): a stuck
+    /// `codex app-server` never keeps the ChatGPT session and the home lease after a pause.
+    enum CodexProcessTerminator {
+        static func terminate(_ process: Process, grace: TimeInterval = 2,
+                              queue: DispatchQueue = .global(qos: .utility)) {
+            guard process.isRunning else { return }
+            let pid = process.processIdentifier
+            process.terminate()
+            queue.asyncAfter(deadline: .now() + grace) {
+                // `process` is retained: its pid cannot be reaped and reused while it still runs.
+                if process.isRunning, process.processIdentifier == pid { kill(pid, SIGKILL) }
+            }
+        }
+    }
+
 #endif

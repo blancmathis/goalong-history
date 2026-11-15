@@ -568,6 +568,8 @@
         private(set) var stopDiscardedInputCount = 0
         private var observationGap = EventTapObservationGapAccumulator()
         private var observationGapWorkItem: DispatchWorkItem?
+        private var observationGapPendingSince: Date?
+        private var processNames = InputOriginProcessNameCache()
         private var interactionBoundaryGeneration: UInt64 = 0
 
         // Input callbacks already carry their event-time public context and cross
@@ -1077,16 +1079,22 @@
                 reason: reason
             )
             observationGapWorkItem?.cancel()
+            let now = Date()
+            let pendingSince = observationGapPendingSince ?? now
+            observationGapPendingSince = pendingSince
             let workItem = DispatchWorkItem { [weak self] in
                 self?.flushObservationGap()
             }
             observationGapWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
+            // T-064: a continuous loss burst still writes its marker within ~5 s.
+            let delay = EventTapObservationGapSchedule.delay(pendingSince: pendingSince, now: now)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
 
         private func flushObservationGap() {
             observationGapWorkItem?.cancel()
             observationGapWorkItem = nil
+            observationGapPendingSince = nil
             guard let gap = observationGap.take() else { return }
 
             recorder.record(
@@ -1906,9 +1914,13 @@
             let pid = input.sourceProcessIdentifier
             let uid = input.sourceUserIdentifier
             let stateID = input.sourceStateIdentifier
-            let running: NSRunningApplication?
+            let running: InputOriginProcessNameCache.Entry?
             if pid > 0, pid <= Int64(Int32.max) {
-                running = NSRunningApplication(processIdentifier: pid_t(pid))
+                // T-064: one NSRunningApplication lookup per process and 10 s, not one per event.
+                running = processNames.entry(for: pid_t(pid), now: Date()) { pid in
+                    let app = NSRunningApplication(processIdentifier: pid)
+                    return app.map { .init(localizedName: $0.localizedName, bundleIdentifier: $0.bundleIdentifier) }
+                }
             } else {
                 running = nil
             }
@@ -1940,6 +1952,45 @@
             if incoming.assessment == .softwareAttributed { return incoming }
             if current.assessment == .unknown { return incoming }
             return current
+        }
+    }
+
+    /// T-064: delays the observation-gap marker by 0.5 s after the last loss, never past 5 s after the first.
+    enum EventTapObservationGapSchedule {
+        static let quietDelay: TimeInterval = 0.5
+        static let maximumDelay: TimeInterval = 5
+
+        static func delay(pendingSince: Date, now: Date) -> TimeInterval {
+            let remaining = pendingSince.addingTimeInterval(maximumDelay).timeIntervalSince(now)
+            return max(0, min(quietDelay, remaining))
+        }
+    }
+
+    /// T-064: small TTL cache of the source process name and bundle id (PID reuse is bounded by the TTL).
+    struct InputOriginProcessNameCache {
+        struct Entry: Equatable {
+            let localizedName: String?
+            let bundleIdentifier: String?
+        }
+
+        static let timeToLive: TimeInterval = 10
+        static let capacity = 16
+        private var entries: [pid_t: (entry: Entry?, expires: Date)] = [:]
+        private(set) var lookupCount = 0
+
+        mutating func entry(for pid: pid_t, now: Date, lookup: (pid_t) -> Entry?) -> Entry? {
+            if let cached = entries[pid], cached.expires > now { return cached.entry }
+            if entries.count >= Self.capacity {
+                entries = entries.filter { $0.value.expires > now }
+                if entries.count >= Self.capacity,
+                   let oldest = entries.min(by: { $0.value.expires < $1.value.expires })?.key {
+                    entries.removeValue(forKey: oldest)
+                }
+            }
+            lookupCount += 1
+            let entry = lookup(pid)
+            entries[pid] = (entry, now.addingTimeInterval(Self.timeToLive))
+            return entry
         }
     }
 

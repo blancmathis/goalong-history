@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import ApplicationServices
 import Foundation
 import XCTest
@@ -93,6 +94,26 @@ final class AXSelfProcessGuardTests: XCTestCase {
         }
         XCTAssertEqual(errors, [.cannotComplete, .success])
         XCTAssertEqual(hitTests, 1)
+    }
+
+    /// T-064: a key non-activating Goalong panel owns the system-wide focus although another app is frontmost.
+    func testSystemWideFocusTargetIsGoalongWhileItsPanelIsKey() {
+        XCTAssertEqual(AXSelfProcessGuard.focusTarget(frontmost: 50_103, ownsKeyWindow: true, ownPID: ownPID), ownPID)
+        XCTAssertEqual(AXSelfProcessGuard.focusTarget(frontmost: 50_103, ownsKeyWindow: false, ownPID: ownPID), 50_103)
+
+        let center = NotificationCenter()
+        let observers = AXSelfProcessGuard.observeKeyWindow(center: center)
+        defer { observers.forEach(center.removeObserver); AXSelfProcessGuard.setOwnsKeyWindow(false) }
+        center.post(name: NSWindow.didBecomeKeyNotification, object: nil)
+        XCTAssertTrue(AXSelfProcessGuard.ownsKeyWindow)
+        XCTAssertEqual(AXSelfProcessGuard.liveSystemWideTarget(nil), ownPID)
+
+        let client = scriptedClient { _ in }
+        client.systemWideTarget = AXSelfProcessGuard.liveSystemWideTarget
+        let refused = offMain { client.refusesOwnProcess(AXUIElementCreateSystemWide()) }
+        XCTAssertTrue(refused)
+        center.post(name: NSWindow.didResignKeyNotification, object: nil)
+        XCTAssertFalse(AXSelfProcessGuard.ownsKeyWindow)
     }
 
     func testObserverOwnerNeverAttachesToGoalongItself() {

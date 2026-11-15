@@ -384,13 +384,15 @@
                     withIDs: selection.semanticSnapshotIDs,
                     on: selection.semanticDays
                 ) { [self] semanticResult in
+                  // T-064: the semantic store answers on main; derived files are rewritten off main.
+                  DispatchQueue.global(qos: .userInitiated).async { [self] in
                     let semanticCount: Int
                     let derived: DerivedHistoryDeletionResult
                     do {
                         semanticCount = try semanticResult.get()
                         derived = try derivedPlan.execute()
                     } catch {
-                        completion(.failure(error))
+                        DispatchQueue.main.async { completion(.failure(error)) }
                         return
                     }
                     deleteRawEvents(
@@ -411,6 +413,7 @@
                             }
                         )
                     }
+                  }
                 }
             }
         }

@@ -272,8 +272,10 @@
         }
 
         func windowDidBecomeKey(_ notification: Notification) {
+            let wasVisible = viewModel.dashboardDataIsVisible
             updateDashboardVisibility()
-            viewModel.refreshEverything()
+            // Becoming visible already forced one full read (T-064: no second pass on every return).
+            if wasVisible { viewModel.refreshEverything() }
             SoftwareUpdateManager.shared.refreshAvailableUpdate()
         }
 

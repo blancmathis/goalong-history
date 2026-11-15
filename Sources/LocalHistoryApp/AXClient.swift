@@ -106,7 +106,47 @@ final class AXClient {
 enum AXSelfProcessGuard {
     static func liveSystemWideTarget(_ point: (Float, Float)?) -> pid_t? {
         if let point { return topmostWindowOwner(at: CGPoint(x: CGFloat(point.0), y: CGFloat(point.1))) }
-        return NSWorkspace.shared.frontmostApplication?.processIdentifier
+        return focusTarget(frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                           ownsKeyWindow: ownsKeyWindow, ownPID: getpid())
+    }
+
+    /// A non-activating Goalong panel (menu bar, prompt) can hold the keyboard focus while
+    /// another app stays frontmost: the system-wide focus then reaches Goalong's AppKit (T-064).
+    static func focusTarget(frontmost: pid_t?, ownsKeyWindow: Bool, ownPID: pid_t) -> pid_t? {
+        ownsKeyWindow ? ownPID : frontmost
+    }
+
+    private static let keyWindowLock = NSLock()
+    private static var keyWindowOwned = false
+    private static var keyWindowObservers: [NSObjectProtocol] = []
+
+    /// True while one of Goalong's windows or panels is key. Published by the main thread.
+    static var ownsKeyWindow: Bool {
+        keyWindowLock.lock(); defer { keyWindowLock.unlock() }
+        return keyWindowOwned
+    }
+
+    static func setOwnsKeyWindow(_ owned: Bool) {
+        keyWindowLock.lock(); keyWindowOwned = owned; keyWindowLock.unlock()
+    }
+
+    /// Main only, once at launch. Key-window notifications are in-process: only Goalong's windows post them.
+    @MainActor static func installKeyWindowTracking(center: NotificationCenter = .default) {
+        guard keyWindowObservers.isEmpty else { return }
+        setOwnsKeyWindow(NSApp?.keyWindow != nil)
+        keyWindowObservers = observeKeyWindow(center: center)
+    }
+
+    static func observeKeyWindow(center: NotificationCenter) -> [NSObjectProtocol] {
+        [
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: nil) { _ in
+                setOwnsKeyWindow(true)
+            },
+            center.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: nil) { _ in
+                // Resign precedes the next window's become: a key handoff inside Goalong ends true.
+                setOwnsKeyWindow(false)
+            },
+        ]
     }
 
     /// Owner of the frontmost visible window under a global (top-left origin) point.

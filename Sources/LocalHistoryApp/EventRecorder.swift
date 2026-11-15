@@ -336,6 +336,15 @@
             }
         }
 
+        /// Sleep, lock and session observers run on main: the flush and fsync queue behind
+        /// the writer FIFO without holding the main thread (T-064). Same order, same durability.
+        func flushInBackground(completion: (() -> Void)? = nil) {
+            writerQueue.async { [self] in
+                flush()
+                completion?()
+            }
+        }
+
         func flushAndWait() throws {
             try onWriterQueue {
                 try self.store.flushAndWait()

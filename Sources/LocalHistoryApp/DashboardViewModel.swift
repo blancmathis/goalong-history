@@ -168,6 +168,7 @@ import AppleScreenTime
         private var isRefreshing: Bool { snapshotStore.isRefreshing }
         private var historyDeletionGeneration: Int { snapshotStore.historyDeletionGeneration }
         private var dashboardIsVisible: Bool { runtimeStore.dashboardIsVisible }
+        var dashboardDataIsVisible: Bool { dashboardIsVisible }
         private var dashboardStatusIsVisible: Bool { runtimeStore.dashboardStatusIsVisible }
         // R14b: no view reads these three (searched by name in Sources and Tests): they do not publish.
         var selectedSessionID: String?
@@ -682,6 +683,9 @@ import AppleScreenTime
             snapshotStore.setRefreshing(false)
             if discardContents { discardVisibleSnapshot() }
             agentActivityRuntime.dashboardDidBecomeHidden()
+            // T-064: losing the keyboard (⌘-Tab, menu bar panel) keeps the decoded day: the
+            // return reads only what changed. A real hide or close drops it.
+            guard discardContents else { return }
             let reader = dataReader
             dataQueue.async {
                 reader.discardTransientCaches()
