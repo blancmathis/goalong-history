@@ -38,7 +38,11 @@
 
     final class AgentActivityRuntime: ObservableObject {
         @Published private(set) var configuration: AgentActivityConfiguration
-        @Published private(set) var overview: AgentActivityOverview
+        @Published private(set) var overview: AgentActivityOverview {
+            didSet { initialDerivedStatePending = false }
+        }
+        /// Main thread only. True until the background launch load publishes, or anything newer sets the overview.
+        private var initialDerivedStatePending = false
         @Published private(set) var tokenUsageSnapshot: AgentDailyTokenUsage?
         @Published private(set) var tokenUsageAnalyzedAt: Date?
         @Published private(set) var integrationStatuses: [AgentIntegrationStatus]
@@ -118,6 +122,7 @@
             },
             channel: GoalongBuildChannel = .current,
             pauseRoot: URL = GoalongGlobalPause.defaultRoot,
+            loadsDerivedStateInBackground: Bool = false,
             onCaptured: @escaping ([AgentCaptureRecord]) -> Void
         ) throws {
             self.rootDirectory = rootDirectory
@@ -144,11 +149,35 @@
             selectedDay = initialDay
             selectedDayKey = GoalongCalendarDay(initialDay)
             scanSelectedDay = initialDay
-            overview = store.overview(for: initialDay)
             integrationStatuses = AgentIntegrationKind.allCases.map(installer.status)
-            storageBytes = store.storageBytes()
-            indexIsValid = store.indexIsValid(maximumEntries: initialConfiguration.maximumIndexEntries)
+            if loadsDerivedStateInBackground {
+                // T-064 lot 10: at launch the overview, the folder size and the index check (disk walks) leave
+                // main. Empty day and a valid index until then, so no false « index invalide » warning shows.
+                overview = AgentActivityOverview(day: initialDay)
+                indexIsValid = true
+                initialDerivedStatePending = true
+            } else {
+                overview = store.overview(for: initialDay)
+                storageBytes = store.storageBytes()
+                indexIsValid = store.indexIsValid(maximumEntries: initialConfiguration.maximumIndexEntries)
+            }
             workQueue.setSpecific(key: workQueueSpecificKey, value: 1)
+            if loadsDerivedStateInBackground {
+                // Queued on workQueue before any scan, so a scan's newer publication always lands after this one.
+                let store = store, maximumEntries = initialConfiguration.maximumIndexEntries
+                workQueue.async { [weak self] in
+                    let loaded = GoalongStartupSignpost.measure("agentActivityDerivedState") {
+                        (store.overview(for: initialDay), store.storageBytes(),
+                         store.indexIsValid(maximumEntries: maximumEntries))
+                    }
+                    DispatchQueue.main.async {
+                        guard let self, self.initialDerivedStatePending, self.selectedDay == initialDay else { return }
+                        self.overview = loaded.0
+                        self.storageBytes = loaded.1
+                        self.indexIsValid = loaded.2
+                    }
+                }
+            }
             timeZoneObserver = NotificationCenter.default.addObserver(
                 forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
             ) { [weak self] _ in

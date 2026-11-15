@@ -179,6 +179,7 @@ enum SupportSourceAllowlist {
         "GoalongSheetDismissal.swift",
         "GoalongSignature.swift",
         "GoalongSiteAnalysisSheet.swift",
+        "GoalongStartupSignpost.swift",
         "GoalongStorageSettings.swift",
         "GoalongSwitchTiming.swift",
         "GoalongSystemLaneBuilders.swift",

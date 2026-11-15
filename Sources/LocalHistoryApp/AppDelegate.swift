@@ -184,6 +184,9 @@ import AppleScreenTime
         }
 
         @MainActor private func startApplication() {
+            // T-064 lot 10: one interval per startup step (category « startup »), for measuring a real launch.
+            let startupSignpost = GoalongStartupSignpost.signposter.beginInterval("startApplication")
+            defer { GoalongStartupSignpost.signposter.endInterval("startApplication", startupSignpost) }
             guard !anotherInstanceIsRunning() else {
                 // Single-instance rule: this copy never opens the stores. Bring the running one forward.
                 NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
@@ -212,7 +215,7 @@ import AppleScreenTime
             GoalongGuardFiles.standard.clearTokens()
             installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
-            LegacyInstallationMigrator.run()
+            GoalongStartupSignpost.measure("legacyInstallationMigrator") { LegacyInstallationMigrator.run() }
             // The journal lives under the data root: create it first, or a fresh install's first writes fail
             // and mark every report incomplete. A failure here is reported again by the prepare below.
             _ = try? AppPaths.prepare()
@@ -220,31 +223,20 @@ import AppleScreenTime
             NSApplication.shared.setActivationPolicy(.accessory)
             // Goalong Dev: no daily send unless make dev SERVER=on.
             if GoalongBuildChannel.current.allowsServerTraffic { GoalongWebsiteAutoSender.shared.start() }
-            SoftwareUpdateManager.shared.start()
+            GoalongStartupSignpost.measure("softwareUpdateStart") { SoftwareUpdateManager.shared.start() }
             // Checked every 15 minutes; calls the agent only with the background consent, 2 times a day at most.
             GoalongWorkAgent.shared.startBackgroundSchedule()
 
             do {
                 try AppPaths.prepare()
-                GoalongLegacyDayFiles.migrate(root: AppPaths.applicationSupportDirectory)
+                // Stays here, on main: retention, the dashboard and the call/developer/note writers compare
+                // Gregorian day keys, so the renames must land before any of them starts (T-045 H7). After the
+                // first launch it only lists three folders. The temporary-file scavenger moved off main (lot 10).
+                GoalongStartupSignpost.measure("legacyDayFiles") {
+                    GoalongLegacyDayFiles.migrate(root: AppPaths.applicationSupportDirectory)
+                }
                 GoalongActivitySummaryBackfill.shared.start()
-                let retentionDirectories = ComputerHistoryStore.retentionDirectories(
-                    rootDirectory: AppPaths.applicationSupportDirectory
-                )
-                let scavengingReport = AbandonedTemporaryScavenger(
-                    rootDirectory: AppPaths.applicationSupportDirectory,
-                    codexMemoryDirectory: retentionDirectories.last
-                ).scavenge()
-                if scavengingReport.deletedFiles > 0 {
-                    Diagnostics.write(
-                        "Recovered abandoned temporary files: "
-                            + "count=\(scavengingReport.deletedFiles) "
-                            + "bytes=\(scavengingReport.deletedBytes)"
-                    )
-                }
-                for diagnostic in scavengingReport.diagnostics {
-                    Diagnostics.write(diagnostic)
-                }
+                let storesSignpost = GoalongStartupSignpost.signposter.beginInterval("openStores")
                 configManager = ConfigManager()
                 capabilityConsents = GoalongCapabilityConsentStore.shared
                 if !configManager.isFailClosed { developerActivityRuntime = GoalongDeveloperRuntime() }
@@ -260,9 +252,12 @@ import AppleScreenTime
                     GoalongGlobalPause.isPaused() || launchConfig.isFailClosed
                 })
                 store = try JSONLStore(retentionDays: configManager.config.retentionDays)
+                GoalongStartupSignpost.signposter.endInterval("openStores", storesSignpost)
                 integrityStateStore = IntegrityStateStore()
                 // An unreadable keychain key never stops the app: it records without sealing.
-                deviceIdentityStartup = DeviceIdentityStartup.resolve()
+                deviceIdentityStartup = GoalongStartupSignpost.measure("deviceIdentityKeychain") {
+                    DeviceIdentityStartup.resolve()
+                }
                 if let status = deviceIdentityStartup.unavailableStatus {
                     if let error = deviceIdentityStartup.unavailableError {
                         SupportDiagnostics.shared.failure(error, component: .app)
@@ -313,12 +308,16 @@ import AppleScreenTime
                     ?? URL(
                         fileURLWithPath: CommandLine.arguments.first
                             ?? "/Applications/Goalong History.app/Contents/MacOS/Goalong History")
+                let agentsSignpost = GoalongStartupSignpost.signposter.beginInterval("agentActivityRuntimeInit")
                 agentActivityRuntime = try AgentActivityRuntime(
                     rootDirectory: AppPaths.agentActivityDirectory,
                     executableURL: executableURL,
                     performInitialDiscovery: capabilityConsents.isEnabled(.aiConversations) && !localRecordingHalted,
+                    loadsDerivedStateInBackground: true,
                     onCaptured: { _ in }
                 )
+                GoalongStartupSignpost.signposter.endInterval("agentActivityRuntimeInit", agentsSignpost)
+                let dashboardSignpost = GoalongStartupSignpost.signposter.beginInterval("dashboardAndMenuBar")
 
                 dashboardViewModel = DashboardViewModel(
                     state: captureState,
@@ -396,6 +395,7 @@ import AppleScreenTime
                     onRetryKeychain: { [weak self] in self?.retryDeviceIdentity() },
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
+                GoalongStartupSignpost.signposter.endInterval("dashboardAndMenuBar", dashboardSignpost)
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .app)
                 presentFatalError(error)
@@ -407,6 +407,7 @@ import AppleScreenTime
             }
             SupportDiagnosticsRuntime.shared.start { [weak self] in self?.supportSnapshot() ?? [:] }
             applyDailyRetentionCleanupIfNeeded()
+            let guardsSignpost = GoalongStartupSignpost.signposter.beginInterval("blockingBraiseMenuBar")
             MainActor.assumeIsolated {
                 BlockingRuntime.shared.onOpen = { [weak self] in self?.dashboardWindowController.show(section: .blocking) }
                 BlockingRuntime.shared.start(monitor: contextMonitor)
@@ -478,8 +479,11 @@ import AppleScreenTime
                     (self?.menuBarController.statusItemFrame() ?? .zero, NSScreen.screens.map(MenuBarItemVisibility.Screen.init))
                 }
             }
+            GoalongStartupSignpost.signposter.endInterval("blockingBraiseMenuBar", guardsSignpost)
             eventTapMonitor.concentrationInputSink = { date, count in MainActor.assumeIsolated { ConcentrationRuntime.shared.noteInput(at: date, count: count) } }
-            applyCapabilityConsents(recordTransition: false)
+            GoalongStartupSignpost.measure("applyCapabilityConsents") { applyCapabilityConsents(recordTransition: false) }
+            // After the guards and the consents: the scavenger walks the whole data folder (lot 10).
+            AbandonedTemporaryScavenger.scavengeAtStartup(rootDirectory: AppPaths.applicationSupportDirectory)
             BackgroundContinuityController.shared.start(hasEnabledSources: hasEnabledBackgroundSources)
             ChatGPTRecapRuntime.shared.configure(deviceID: knownDeviceID ?? "")
             installCapabilityConsentObserver()
