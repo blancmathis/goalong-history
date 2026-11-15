@@ -605,6 +605,9 @@
         private var stopCompletions: [() -> Void] = []
         private var stopAfterInput: (() -> Void)?
         private var inputsDrainedForTesting: (() -> Void)?
+        /// Host Secure Input state. Production reads the system; tests inject a fixed value so the
+        /// Mac's real Secure Input (a password field open elsewhere) never decides a test.
+        private let secureInputEnabled: () -> Bool
         private let interactionIdentifier: () -> String
 
         private var typingCount = 0
@@ -671,7 +674,8 @@
             configManager: ConfigManager,
             captureHealth: CaptureHealthStore,
             unexpectedRestartGate: EventTapRestartGate = EventTapRestartGate(),
-            interactionIdentifier: @escaping () -> String = { UUID().uuidString }
+            interactionIdentifier: @escaping () -> String = { UUID().uuidString },
+            secureInputEnabled: @escaping () -> Bool = { IsSecureEventInputEnabled() }
         ) {
             self.recorder = recorder
             self.contextMonitor = contextMonitor
@@ -681,6 +685,7 @@
             self.captureHealth = captureHealth
             self.unexpectedRestartGate = unexpectedRestartGate
             self.interactionIdentifier = interactionIdentifier
+            self.secureInputEnabled = secureInputEnabled
         }
 
         @discardableResult
@@ -900,7 +905,7 @@
                 targetProcessIdentifier: event.getIntegerValueField(.eventTargetUnixProcessID),
                 observedContext: contextMonitor.latestSnapshot,
                 capturingWasEnabled: state.isCapturing,
-                secureInputWasEnabled: IsSecureEventInputEnabled()
+                secureInputWasEnabled: secureInputEnabled()
             )
 
             // Re-enable the tap synchronously, but defer health persistence and logs.
@@ -1135,7 +1140,7 @@
                 cancelOpenInteractionsForBoundary()
                 return
             }
-            if input.secureInputWasEnabled || IsSecureEventInputEnabled() {
+            if input.secureInputWasEnabled || secureInputEnabled() {
                 suspended = true
                 contextMonitor.sampleNow { [weak self] context in
                     self?.suppressForSecureInput(using: context)
@@ -1208,7 +1213,7 @@
 
         private func inputStillValid(_ input: EventTapPendingInput, boundary: UInt64) -> Bool {
             guard isRunning, state.isCapturing, interactionBoundaryGeneration == boundary,
-                  !IsSecureEventInputEnabled(),
+                  !secureInputEnabled(),
                   input.targetIsRepresented(frontmostProcessIdentifier: contextProvider.frontmostProcessIdentifier()),
                   Self.ingressAgeIsAcceptable(observedAt: input.lastObservedAt) else {
                 privacyInputDropCount += input.occurrences

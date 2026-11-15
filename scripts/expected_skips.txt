@@ -17,7 +17,7 @@ AmbianceTests.AmbianceTests/testMappedPCM16MatchesOriginalDecodedSampler  # othe
 LocalHistoryAppTests.ActivityAnalysisRuntimeIncrementalTests/testOptInRealActivityDayLoaderHandlesCompactIntegrityReadOnly  # GOALONG_TEST_REAL_ACTIVITY_ROOT + GOALONG_TEST_REAL_ACTIVITY_DAY
 LocalHistoryAppTests.AgentActivityDiscoveryConsentTests/testCaseDistinctTombstoneDoesNotSuppressAnotherSource  # other: The fixture volume is case-insensitive
 LocalHistoryAppTests.AmbiancePageRenderingTests/testRenderAmbiancePage  # other: Opt-in native rendering with fixed data only
-LocalHistoryAppTests.BlockingActivationRegressionTests/testNativePanelSwitchStartsAndStopsBlocking  # other: Opt-in native blocking activation with an in-memory list
+LocalHistoryAppTests.BlockingActivationRegressionTests/testNativePanelStopsAFreeRunningRule  # other: Opt-in native blocking activation with an in-memory list
 LocalHistoryAppTests.BlockingPageRenderingTests/testRenderBlockingSurfaces  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.BlockingRuntimeCostTests/testSampleCost  # other: Opt-in measurement on this Mac
 LocalHistoryAppTests.BlockingTimerTests/testRenderCapsules  # other: Opt-in native rendering with fixed data only

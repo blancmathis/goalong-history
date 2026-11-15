@@ -54,14 +54,16 @@ final class AXAsyncWorkflowTests: XCTestCase {
             accessibilityAvailable: true, blockingAXTrusted: true, sessionAvailable: true, idleSeconds: 1,
             privacy: privacy, pauseRevision: try? GoalongGlobalPause.admit(in: root))
     }
-    private func monitor(_ rig: Rig, provider: ContextProvider) -> EventTapMonitor {
+    /// `secureInput` stands in for the Mac's Secure Input: the real one (a password field open in another app)
+    /// must never decide a test (T-064 lot 7).
+    private func monitor(_ rig: Rig, provider: ContextProvider, secureInput: Bool = false) -> EventTapMonitor {
         let context = ContextMonitor(provider: provider, recorder: rig.recorder, state: rig.state, configManager: rig.config,
             permissions: rig.permissions, captureHealth: rig.health, semanticContextStore: rig.semantic, memoryStore: rig.memory,
             hostGate: .testOpen)
         var ordinal = 0
         return EventTapMonitor(recorder: rig.recorder, contextMonitor: context, contextProvider: provider,
             state: rig.state, configManager: rig.config, captureHealth: rig.health,
-            interactionIdentifier: { ordinal += 1; return "interaction-\(ordinal)" })
+            interactionIdentifier: { ordinal += 1; return "interaction-\(ordinal)" }, secureInputEnabled: { secureInput })
     }
     private func stream(_ rig: Rig, date: Date) throws -> Data {
         try rig.recorder.flushAndWait()
@@ -267,11 +269,11 @@ final class AXAsyncWorkflowTests: XCTestCase {
         XCTAssertFalse(controller.siteActionStillRequired(target), "The old decision cannot close a tab after its rules expired")
     }
 
-    private func replayPointer(_ points: [(EventTapPendingInput.Kind, Double, Int)]) throws -> [HistoryEvent] {
+    private func replayPointer(_ points: [(EventTapPendingInput.Kind, Double, Int)], secureInput: Bool = false) throws -> [HistoryEvent] {
         richConsent(false)
         let date = Date().addingTimeInterval(-0.2), parameters = input(), tree = ScriptedAXTree(), rig = try rig(at: date)
         let snapshot = try XCTUnwrap(AXAccess.withClient(tree.client) { ContextAXReader().capture(parameters: parameters).snapshot })
-        let tap = monitor(rig, provider: ContextProvider(client: tree.client, parameters: { parameters }))
+        let tap = monitor(rig, provider: ContextProvider(client: tree.client, parameters: { parameters }), secureInput: secureInput)
         let inputs = points.enumerated().map { index, point in
             EventTapPendingInput(kind: point.0, observedAt: date.addingTimeInterval(Double(index) / 100),
                 locationX: point.1, locationY: 20, clickCount: point.2, targetProcessIdentifier: 42, observedContext: snapshot)
@@ -306,6 +308,13 @@ final class AXAsyncWorkflowTests: XCTestCase {
     func testH19FourPointsIsTheDragThreshold() throws {
         XCTAssertNil(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 103, 1), (.leftMouseUp, 103, 1)]).first?.metadata?["pointer_gesture"])
         XCTAssertEqual(try replayPointer([(.leftMouseDown, 100, 1), (.leftMouseDragged, 104, 1), (.leftMouseUp, 104, 1)]).first?.metadata?["pointer_gesture"], "drag")
+    }
+
+    /// The reducer reads Secure Input through the injected gate, never the Mac's own state.
+    func testInjectedSecureInputSuppressesThePointerAndOnlyItDoes() throws {
+        let points: [(EventTapPendingInput.Kind, Double, Int)] = [(.leftMouseDown, 100, 1), (.leftMouseUp, 100, 1)]
+        XCTAssertEqual(try replayPointer(points, secureInput: true).map(\.kind), [.secureInputSuppressed])
+        XCTAssertEqual(try replayPointer(points, secureInput: false).map(\.kind), [.mouseClick])
     }
 
     func testH19RealDragIsStillADrag() throws {
