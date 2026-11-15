@@ -986,6 +986,7 @@ import AppleScreenTime
             Bool
         ) throws -> ActivityAnalysisCycleResult
         typealias RevisionProvider = (Date, Int) -> ActivityAnalysisSourceProbe
+        static let defaultWaitTimeout: TimeInterval = 300
 
         private struct RequestKey: Equatable {
             let dayKey: String
@@ -1033,8 +1034,12 @@ import AppleScreenTime
         private let invalidateOperation: () throws -> Void
         private var activeFlight: Flight?
         private var exclusiveOperationActive = false
+        /// Longest wait for another flight / exclusive operation. Past it the caller gets
+        /// `.busy` (and runs nothing), so a stuck leader never freezes every other caller.
+        private let waitTimeout: TimeInterval
 
         private init(coordinator: ActivityAnalysisCycleCoordinator) {
+            waitTimeout = Self.defaultWaitTimeout
             revisionProvider = { coordinator.probe(day: $0, tokenBudget: $1) }
             operation = { day, tokenBudget, forceVerification, includeActivityMemory in
                 try coordinator.process(
@@ -1054,8 +1059,10 @@ import AppleScreenTime
             revisionProvider: @escaping RevisionProvider,
             operation: @escaping Operation,
             retainCacheEntries: @escaping ([Date]) -> Void = { _ in },
-            invalidateRevisionCache: @escaping () throws -> Void = {}
+            invalidateRevisionCache: @escaping () throws -> Void = {},
+            waitTimeout: TimeInterval = ActivityAnalysisCycleService.defaultWaitTimeout
         ) {
+            self.waitTimeout = waitTimeout
             self.revisionProvider = revisionProvider
             self.operation = operation
             retainOperation = retainCacheEntries
@@ -1106,11 +1113,15 @@ import AppleScreenTime
             )
             var ownedFlight: Flight?
             let currentThreadID = pthread_mach_thread_np(pthread_self())
+            let deadline = Date().addingTimeInterval(waitTimeout)
 
             condition.lock()
             while ownedFlight == nil {
                 while exclusiveOperationActive {
-                    condition.wait()
+                    guard condition.wait(until: deadline) else {
+                        condition.unlock()
+                        throw ActivityAnalysisCycleError.busy
+                    }
                 }
                 if let flight = activeFlight {
                     if flight.leaderThreadID == currentThreadID {
@@ -1121,13 +1132,19 @@ import AppleScreenTime
                         flight.joinedRequestCount += 1
                         condition.broadcast()
                         while flight.result == nil {
-                            condition.wait()
+                            guard condition.wait(until: deadline) else {
+                                condition.unlock()
+                                throw ActivityAnalysisCycleError.busy
+                            }
                         }
                         let result = flight.result!
                         condition.unlock()
                         return try result.get()
                     }
-                    condition.wait()
+                    guard condition.wait(until: deadline) else {
+                        condition.unlock()
+                        throw ActivityAnalysisCycleError.busy
+                    }
                     continue
                 }
                 let flight = Flight(key: key, leaderThreadID: currentThreadID)
@@ -1153,8 +1170,10 @@ import AppleScreenTime
             return try result.get()
         }
 
+        /// Pruning is optional: when the service stays busy past the timeout, it is skipped
+        /// and the next cycle prunes again.
         func retainCacheEntries(for days: [Date]) {
-            withExclusiveOperation {
+            try? withExclusiveOperation {
                 retainOperation(days)
             }
         }
@@ -1177,10 +1196,14 @@ import AppleScreenTime
             return true
         }
 
-        private func withExclusiveOperation<T>(_ body: () throws -> T) rethrows -> T {
+        private func withExclusiveOperation<T>(_ body: () throws -> T) throws -> T {
+            let deadline = Date().addingTimeInterval(waitTimeout)
             condition.lock()
             while exclusiveOperationActive || activeFlight != nil {
-                condition.wait()
+                guard condition.wait(until: deadline) else {
+                    condition.unlock()
+                    throw ActivityAnalysisCycleError.busy
+                }
             }
             exclusiveOperationActive = true
             condition.unlock()
@@ -1280,6 +1303,8 @@ import AppleScreenTime
         case sourceChangedDuringRead
         case oversizedJSONLine(path: String, maximumBytes: Int)
         case reentrantCycle
+        /// Another analysis held the source past the wait limit; nothing ran, nothing was duplicated.
+        case busy
         /// The day holds more evidence than one pass may keep in memory. The source is
         /// fine; the last derived views stay, and they stop where the day last fitted.
         case retainedEvidenceBudgetExceeded(rows: Int, bytes: Int64)
@@ -1294,6 +1319,8 @@ import AppleScreenTime
                 return "Refused an oversized JSONL row in \(path) (maximum \(maximumBytes) bytes)"
             case .reentrantCycle:
                 return "Refused a reentrant activity-analysis cycle on the same source root"
+            case .busy:
+                return "Another activity-analysis cycle held the source past the wait limit; nothing was run"
             case .retainedEvidenceBudgetExceeded(let rows, let bytes):
                 return "Derived analysis kept the last-known-good views because the "
                     + "retained-evidence budget was exceeded "
@@ -1312,6 +1339,8 @@ import AppleScreenTime
                 return "Ligne trop volumineuse refusée dans \(path) (maximum \(maximumBytes) octets)."
             case .reentrantCycle:
                 return "Analyse déjà en cours sur cette source : nouvelle lecture refusée."
+            case .busy:
+                return "Une analyse est déjà en cours sur cette source depuis trop longtemps. Réessayez dans un instant."
             case .retainedEvidenceBudgetExceeded(let rows, let bytes):
                 return "La journée dépasse la mémoire prévue pour l’analyse (\(GoalongUIFormat.number(rows)) lignes ou \(GoalongUIFormat.number(bytes)) octets estimés). Les dernières vues valides sont conservées."
             }

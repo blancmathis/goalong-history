@@ -128,6 +128,16 @@ struct GoalongTextTransformer {
         expression = patterns.isEmpty ? nil : try NSRegularExpression(pattern: patterns.joined(separator: "|"))
         replacements = sorted.map(\.replacement)
     }
+    /// Transforms a value that may be far longer than what will be sent, then keeps `limit` characters.
+    /// An oversized input is cut first (to a bound the matcher accepts), so a huge field is truncated, not lost.
+    /// The cut drops a margin larger than any search text (512 bytes, up to 3× once percent-encoded) before
+    /// matching: a sensitive name straddling the cut can never leave an unmatched prefix behind.
+    func applyTruncating(_ value: String, keeping limit: Int) throws -> String {
+        let bound = max(120_000, limit * 4), margin = 2_048
+        let source: String
+        if value.count > bound { source = String(value.prefix(bound - margin)) } else { source = value }
+        return try apply(source, maximumCharacters: 170_000)
+    }
     func apply(_ value: String, maximumCharacters: Int = 175_000) throws -> String {
         guard value.count <= 350_000 else { throw Self.invalid("Le texte à filtrer dépasse la limite locale.") }
         let normalized = value.precomposedStringWithCanonicalMapping

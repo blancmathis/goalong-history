@@ -62,7 +62,7 @@ extension ChatGPTRecapContextBuilder {
         // Transform before truncation: a sensitive name crossing a field limit must
         // not be transmitted as an unmatched prefix. Each value is transformed once.
         func text(_ value: String, limit: Int = 16_000) throws -> String {
-            let transformed = try transformer.apply(value, maximumCharacters: 170_000)
+            let transformed = try transformer.applyTruncating(value, keeping: limit)
             return String((ActivitySemanticTextSanitizer.redact(transformed) ?? "").prefix(limit))
         }
         let browsers = Set(RecorderConfig.default.browserBundleIdentifiers.map { $0.lowercased() })
