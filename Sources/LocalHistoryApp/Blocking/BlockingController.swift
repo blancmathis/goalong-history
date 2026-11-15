@@ -1360,6 +1360,16 @@ import LocalHistoryQueryCLI
         if let store, !storeFailed {
             do { _ = try store.load() } catch { restoreStore(store) }
         }
+        // T-064: the copy did not answer at launch; the first time it does, protected rules weakened in the files come back.
+        if let store, !storeFailed, let verified = store.verifyCopy(document, now: clock()) {
+            document = verified.document
+            do {
+                try store.save(document); lastGood = document; lastSavedAt = clock()
+                if verified.restored > 0 { error = ProtectedFloor.restoredText }
+                else if error == ProtectedFloor.unavailableText { error = nil }
+            } catch BlockingStore.Failure.floorUnavailable { error = ProtectedFloor.unsavedText }
+            catch { failStore() }
+        }
         let locksBefore = (document.sessions, document.heldPrograms, document.freeze, document.lists)
         syncClock()
         let now = clock()

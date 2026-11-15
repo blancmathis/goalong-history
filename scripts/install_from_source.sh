@@ -532,6 +532,12 @@ refuse_install_during_severe_block() {
   fi
   until="$(goalong_marker_until "$blocking/guard-until")"
   if (( until == 0 )); then
+    # T-064: with guard-continuity (T-059 lot 5) the guard reopens Goalong after the installer's SIGTERM, in the
+    # middle of the replacement. --unregister-guard writes a continuity-only override (never a severe one) and
+    # removes the file, then the guard is booted out; the new app arms continuity again at launch.
+    if [[ -e "$blocking/guard-continuity" || -L "$blocking/guard-continuity" ]]; then
+      release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"
+    fi
     if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
       echo "A locked block is active or scheduled: Goalong History reopens at the end of this installation and resumes it."
     fi

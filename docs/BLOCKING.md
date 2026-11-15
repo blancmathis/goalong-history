@@ -452,8 +452,11 @@ in-memory `BlockingController` skeleton. The engine work completes it without ch
 1. Force quit / SIGKILL / process suspension or crash removes all panels and enforcement; deleting
    the app by hand and an unapproved/disabled login item prevent recovery. `uninstall.sh` refuses
    while a lock is active (override `GOALONG_UNINSTALL_DURING_LOCK=1`). Permission/updater relaunches and
-   system-directed termination also leave a recovery gap. Another user, recovery/safe mode or
-   another OS is outside the process boundary.
+   system-directed termination also leave a recovery gap. The blocking guard and the app resume each
+   other from a SIGSTOP, but a guard suspended first, then the app killed, is woken by nobody: launchd
+   sees a live guard and Goalong stays closed until the next session (T-064). A third watcher of the
+   same user (agent, helper) could be suspended the same way, so none is added. Another user,
+   recovery/safe mode or another OS is outside the process boundary.
 2. The member owns the preferences and store. Disabling the module in defaults while Goalong is
    stopped, deleting the store directory or both generations, replacing them with valid JSON,
    restoring an older copy, changing app bundle IDs or moving/replacing the app defeats this level.

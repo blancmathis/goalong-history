@@ -116,14 +116,54 @@ final class GuardDecisionTests: XCTestCase {
         arming.apply(.invalid, wall: wall.addingTimeInterval(365 * 86_400), continuous: 70, appAlive: false)
         XCTAssertEqual(arming.remaining(continuous: 70), 580)
         arming.apply(.absent, wall: wall, continuous: 80, appAlive: true)
-        XCTAssertFalse(arming.isArmed(continuous: 80), "the live app ends the block")
-        arming.apply(.invalid, wall: wall, continuous: 90, appAlive: false)
-        XCTAssertFalse(arming.isArmed(continuous: 90), "fail open without memory")
+        XCTAssertTrue(arming.isArmed(continuous: 80), "T-064: the live app's lowering waits for its confirmation")
+        let confirmed = 80 + GuardArming.disarmConfirmation
+        arming.apply(.absent, wall: wall, continuous: confirmed, appAlive: true)
+        XCTAssertFalse(arming.isArmed(continuous: confirmed), "the live app ends the block")
+        arming.apply(.invalid, wall: wall, continuous: confirmed + 10, appAlive: false)
+        XCTAssertFalse(arming.isArmed(continuous: confirmed + 10), "fail open without memory")
         XCTAssertFalse({ var fresh = GuardArming(); fresh.apply(.date(wall), wall: wall, continuous: 1, appAlive: false); return fresh.isArmed(continuous: 1) }())
     }
 }
 
 extension GuardDecisionTests {
+    /// T-064 (A-blocage P0): `guard-until` removed or lowered while the healthy app runs, then the app killed before
+    /// the confirmation: the guard stays armed and relaunches. The app's own rewrite cancels the pending lowering.
+    func testALoweringIsBelievedOnlyAfterTheLiveAppConfirmsIt() {
+        let wall = Date(timeIntervalSince1970: 1_000_000)
+        let end = wall.addingTimeInterval(3600)
+        var arming = GuardArming()
+        arming.apply(.date(end), wall: wall, continuous: 100, appAlive: true)
+        arming.apply(.absent, wall: wall, continuous: 101, appAlive: true)
+        XCTAssertTrue(arming.isArmed(continuous: 101))
+        XCTAssertEqual(arming.disarmConfirmationRemaining(continuous: 101), GuardArming.disarmConfirmation)
+        // The app is killed 0.1 s later: the guard reads the marker again with no live app.
+        arming.apply(.absent, wall: wall, continuous: 101.1, appAlive: false)
+        XCTAssertNil(arming.pendingDisarmSince, "a death drops the pending lowering")
+        var input = GuardInput()
+        input.armed = arming.isArmed(continuous: 101.1)
+        input.death = .init(pid: 42, at: wall.timeIntervalSince1970 + 1.1)
+        input.now = wall.timeIntervalSince1970 + 1.1
+        XCTAssertEqual(GuardDecision.decide(input), .relaunch(after: 0), "killed inside the confirmation: reopened")
+        // A relaunched, healthy app must confirm again from scratch.
+        arming.apply(.absent, wall: wall, continuous: 110, appAlive: true)
+        arming.apply(.absent, wall: wall, continuous: 110 + GuardArming.disarmConfirmation - 1, appAlive: true)
+        XCTAssertTrue(arming.isArmed(continuous: 110 + GuardArming.disarmConfirmation - 1))
+        // The app rewrites its marker (block still on): the pending lowering is dropped.
+        arming.apply(.date(end), wall: wall, continuous: 140, appAlive: true)
+        XCTAssertNil(arming.pendingDisarmSince)
+        // A lower end from the live app: believed only once confirmed.
+        let lower = wall.addingTimeInterval(600)
+        arming.apply(.date(lower), wall: wall, continuous: 150, appAlive: true)
+        XCTAssertEqual(arming.markerDate, end)
+        arming.apply(.date(lower), wall: wall, continuous: 150 + GuardArming.disarmConfirmation, appAlive: true)
+        XCTAssertEqual(arming.markerDate, lower)
+        XCTAssertEqual(arming.remaining(continuous: 150 + GuardArming.disarmConfirmation), 600, "read against the same wall")
+        // Once the window is over, removing the marker is believed at once (nothing to keep armed).
+        arming.apply(.absent, wall: wall, continuous: 10_000, appAlive: true)
+        XCTAssertNil(arming.endContinuous)
+    }
+
     /// K1-kill-03: an unchanged marker keeps its end whatever the wall clock does, even from the live app.
     func testAWallClockJumpDoesNotMoveAnUnchangedMarker() {
         let wall = Date(timeIntervalSince1970: 1_000_000)
@@ -138,7 +178,7 @@ extension GuardDecisionTests {
         // The app rewrites the end after the jump: a new value is read against the new wall clock.
         arming.apply(.date(end.addingTimeInterval(86_400)), wall: wall.addingTimeInterval(86_400), continuous: 130, appAlive: true)
         XCTAssertEqual(arming.remaining(continuous: 130), 7200)
-        arming.apply(.absent, wall: wall, continuous: 140, appAlive: true)
+        arming.apply(.absent, wall: wall, continuous: 140, appAlive: true, confirmation: 0)
         XCTAssertNil(arming.markerDate)
     }
 

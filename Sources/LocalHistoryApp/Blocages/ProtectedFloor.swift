@@ -81,7 +81,7 @@ struct ProtectedFloor {
     let backing: ProtectedFloorBacking
     /// The copy this run last read or wrote, per key: `.some(nil)` = known absent; no entry = not known.
     private let memo = Memo()
-    private final class Memo { let lock = NSLock(); var known: [String: Data?] = [:] }
+    private final class Memo { let lock = NSLock(); var known: [String: Data?] = [:]; var unverified: Set<String> = [] }
 
     init(backing: ProtectedFloorBacking) { self.backing = backing }
 
@@ -127,6 +127,16 @@ struct ProtectedFloor {
         let data = value.flatMap { try? encoder.encode($0) }
         guard backing.write(key, data) else { return false }
         remember(key, data); return true
+    }
+
+    /// T-064: the files were taken as they are because the copy did not answer at launch. Until the copy has been read
+    /// and the document checked against it, the copy is never rewritten: a file weakened while Goalong was closed must
+    /// not become the new reference (the copy would « launder » it).
+    func setUnverified(_ key: String, _ value: Bool) {
+        memo.lock.lock(); if value { memo.unverified.insert(key) } else { memo.unverified.remove(key) }; memo.lock.unlock()
+    }
+    func isUnverified(_ key: String) -> Bool {
+        memo.lock.lock(); defer { memo.lock.unlock() }; return memo.unverified.contains(key)
     }
 
     private func remember(_ key: String, _ data: Data?) {

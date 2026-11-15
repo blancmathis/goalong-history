@@ -242,6 +242,17 @@ guard_check 3 GOALONG_INSTALL_DURING_LOCK=
 [[ ! -e "$TEST_ROOT/guard-ran" ]]
 guard_check 0 GOALONG_INSTALL_DURING_LOCK=1
 [[ "$(cat "$TEST_ROOT/guard-ran")" == "--unregister-guard 1" ]]
+# T-064: no severe block but guard-continuity (T-059 lot 5): the guard is released before the SIGTERM,
+# without the override variable, so it cannot reopen the old app mid-replacement. Without the file: untouched.
+blocking_dir="$guard_home/Library/Application Support/LocalHistory/Blocking"
+/bin/rm -f "$blocking_dir/guard-until" "$blocking_dir/locked-until" "$TEST_ROOT/guard-ran"
+guard_check 0 GOALONG_INSTALL_DURING_LOCK=
+[[ ! -e "$TEST_ROOT/guard-ran" ]] || { echo "The guard was released without guard-continuity." >&2; exit 1; }
+: > "$blocking_dir/guard-continuity"
+guard_check 0 GOALONG_INSTALL_DURING_LOCK=
+[[ "$(cat "$TEST_ROOT/guard-ran" 2>/dev/null)" == "--unregister-guard " ]] || {
+  echo "guard-continuity did not release the guard before the replacement." >&2; exit 1; }
+/bin/rm -f "$blocking_dir/guard-continuity" "$TEST_ROOT/guard-ran"
 /usr/bin/grep -qF 'refuse_install_during_severe_block' "$SCRIPT_DIR/install_from_source.sh"
 /usr/bin/grep -qF 'A locked block is active or scheduled' "$SCRIPT_DIR/install_from_source.sh"
 /usr/bin/grep -qF 'no installed Goalong History was found' "$SCRIPT_DIR/install_from_source.sh"
