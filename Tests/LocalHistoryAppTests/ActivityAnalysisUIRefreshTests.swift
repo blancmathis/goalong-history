@@ -65,6 +65,48 @@
             XCTAssertEqual(observedPasses, [1, 1])
         }
 
+        func testWaitingCallersGiveUpWithBusyInsteadOfBlockingForever() throws {
+            let started = DispatchSemaphore(value: 0)
+            let release = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            var runs = 0
+            let service = ActivityAnalysisCycleService(
+                revisionProvider: { day, _ in .absent },
+                operation: { _, _, _, _ in
+                    lock.lock(); runs += 1; lock.unlock()
+                    started.signal()
+                    _ = release.wait(timeout: .now() + 10)
+                    return Self.cycleResult(sourceReadPasses: 1)
+                },
+                waitTimeout: 0.3
+            )
+            let leaderDone = expectation(description: "leader")
+            DispatchQueue.global().async {
+                _ = try? service.process(day: Date(timeIntervalSince1970: 1_777_000_000),
+                    tokenBudget: 1_600, forceVerification: false, includeActivityMemory: false)
+                leaderDone.fulfill()
+            }
+            XCTAssertEqual(started.wait(timeout: .now() + 5), .success)
+            func isBusy(_ body: () throws -> Void) -> Bool {
+                do { try body() } catch let error as ActivityAnalysisCycleError {
+                    if case .busy = error { return true }
+                } catch {}
+                return false
+            }
+            let began = Date()
+            // Different request (other budget) waits for the flight, then gives up.
+            XCTAssertTrue(isBusy { _ = try service.process(day: Date(timeIntervalSince1970: 1_777_000_000),
+                tokenBudget: 800, forceVerification: false, includeActivityMemory: false) })
+            XCTAssertTrue(isBusy { try service.invalidateRevisionCache() })
+            XCTAssertLessThan(Date().timeIntervalSince(began), 5)
+            release.signal()
+            wait(for: [leaderDone], timeout: 5)
+            lock.lock(); defer { lock.unlock() }
+            XCTAssertEqual(runs, 1, "no second execution")
+            // Free again afterwards.
+            XCTAssertNoThrow(try service.invalidateRevisionCache())
+        }
+
         func testCycleServiceRejectsSameRootReentrancyWithoutDeadlock() {
             var service: ActivityAnalysisCycleService!
             service = ActivityAnalysisCycleService(

@@ -50,13 +50,22 @@
         private let directory: URL
         /// Deletes one keychain item. Tests inject a stub: they never touch the real keychain.
         private let deleteKeyItem: (CFDictionary) -> OSStatus
+        /// Reads / adds one keychain item. Tests inject fakes: they never touch the real keychain.
+        private let copyKeyItem: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus
+        private let addKeyItem: (CFDictionary) -> OSStatus
 
         init(
             directory: URL,
-            deleteKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemDelete($0) }
+            deleteKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemDelete($0) },
+            copyKeyItem: @escaping (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = {
+                SecItemCopyMatching($0, $1)
+            },
+            addKeyItem: @escaping (CFDictionary) -> OSStatus = { SecItemAdd($0, nil) }
         ) {
             self.directory = directory
             self.deleteKeyItem = deleteKeyItem
+            self.copyKeyItem = copyKeyItem
+            self.addKeyItem = addKeyItem
         }
 
         func storeGeneratedResponse(
@@ -73,7 +82,23 @@
                 )
             }
             try ChatGPTSecureStorage.prepareDirectory(directory)
-            let keyData = try loadOrCreateKey(executionID: executionID)
+            let (keyData, createdKey) = try loadOrCreateKey(executionID: executionID)
+            do {
+                return try writeCapsule(plaintext, keyData: keyData, executionID: executionID, createdAt: createdAt)
+            } catch {
+                // A key made for this call must not outlive a capsule that was never written:
+                // the purge only walks `.capsule` files and would never see it.
+                if createdKey { _ = deleteKey(executionID: executionID) }
+                throw error
+            }
+        }
+
+        private func writeCapsule(
+            _ plaintext: Data,
+            keyData: Data,
+            executionID: String,
+            createdAt: Date
+        ) throws -> URL {
             let key = SymmetricKey(data: keyData)
             let digest = GoalongProofDigest.sha256(plaintext)
             let aad = Data(
@@ -135,8 +160,19 @@
         /// A keychain failure never keeps the capsule file on disk: the file is removed
         /// anyway, then the keychain error is thrown so the caller reports an incomplete erase.
         func destroy(executionID: String) throws {
+            let keychainError = deleteKey(executionID: executionID)
+            // No capsule directory means no capsule file: nothing left to remove.
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try ChatGPTSecureStorage.removeRegularFileIfPresent(
+                    at: capsuleURL(executionID: executionID)
+                )
+            }
+            if let keychainError { throw keychainError }
+        }
+
+        /// Removes the key from both keychains. Returns the failure, or nil when the key is gone or absent.
+        private func deleteKey(executionID: String) -> AnalysisEvidenceCapsuleError? {
             var removedOrAbsent = false
-            var keychainError: AnalysisEvidenceCapsuleError?
             for dataProtection in [true, false] {
                 var query = keyQuery(executionID: executionID)
                 if dataProtection { query[kSecUseDataProtectionKeychain as String] = true }
@@ -147,17 +183,9 @@
                     removedOrAbsent = true
                     continue
                 }
-                keychainError = .keychainFailure(status)
-                break
+                return .keychainFailure(status)
             }
-            if keychainError == nil, !removedOrAbsent { keychainError = .keychainFailure(errSecItemNotFound) }
-            // No capsule directory means no capsule file: nothing left to remove.
-            if FileManager.default.fileExists(atPath: directory.path) {
-                try ChatGPTSecureStorage.removeRegularFileIfPresent(
-                    at: capsuleURL(executionID: executionID)
-                )
-            }
-            if let keychainError { throw keychainError }
+            return removedOrAbsent ? nil : .keychainFailure(errSecItemNotFound)
         }
 
         @discardableResult
@@ -189,8 +217,16 @@
             directory.appendingPathComponent("\(executionID.lowercased()).capsule", isDirectory: false)
         }
 
-        private func loadOrCreateKey(executionID: String) throws -> Data {
-            if let existing = try? loadKey(executionID: executionID) { return existing }
+        /// Creates a key only when none exists (errSecItemNotFound). Any other keychain error
+        /// (locked, interaction not allowed…) fails without writing a replacement key.
+        private func loadOrCreateKey(executionID: String) throws -> (key: Data, created: Bool) {
+            do {
+                return (try loadKey(executionID: executionID), false)
+            } catch AnalysisEvidenceCapsuleError.keychainFailure(let status)
+                where status == errSecItemNotFound || status == errSecMissingEntitlement
+            {
+                // Absent: fall through and create it.
+            }
             var bytes = Data(count: 32)
             let status = bytes.withUnsafeMutableBytes {
                 SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!)
@@ -203,10 +239,10 @@
                 attributes[kSecValueData as String] = bytes
                 attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
                 if dataProtection { attributes[kSecUseDataProtectionKeychain as String] = true }
-                let addStatus = SecItemAdd(attributes as CFDictionary, nil)
-                if addStatus == errSecSuccess { return bytes }
+                let addStatus = addKeyItem(attributes as CFDictionary)
+                if addStatus == errSecSuccess { return (bytes, true) }
                 if addStatus == errSecDuplicateItem {
-                    return try loadKey(executionID: executionID)
+                    return (try loadKey(executionID: executionID), false)
                 }
                 if dataProtection, addStatus == errSecMissingEntitlement { continue }
                 throw AnalysisEvidenceCapsuleError.keychainFailure(addStatus)
@@ -222,7 +258,7 @@
                 query[kSecMatchLimit as String] = kSecMatchLimitOne
                 if dataProtection { query[kSecUseDataProtectionKeychain as String] = true }
                 var result: CFTypeRef?
-                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                let status = copyKeyItem(query as CFDictionary, &result)
                 if status == errSecSuccess, let data = result as? Data, data.count == 32 {
                     return data
                 }

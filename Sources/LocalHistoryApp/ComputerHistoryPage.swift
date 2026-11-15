@@ -138,6 +138,9 @@
                 .reentrantCycle:
                 // « Détails techniques » shows the real cause; errorMessage carries the French sentence.
                 return .inaccessible(cycleError.errorDescription ?? cycleError.frenchDescription)
+            case .busy:
+                // Another pass holds the source: not a source fault, only not verified this time.
+                return .unverified
             case .retainedEvidenceBudgetExceeded:
                 return .available
             }
