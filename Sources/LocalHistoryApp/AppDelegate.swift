@@ -923,7 +923,7 @@ import AppleScreenTime
                 continuityPreferences.manuallyPaused = true
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
-                _ = minuteSealer.stopAndSeal()
+                minuteSealer.stopAndSealInBackground()
             }
             configureCallPresence()
             menuBarController.updateStatus()
@@ -1529,7 +1529,7 @@ import AppleScreenTime
                 captureState.setManualPaused(true)
                 captureHealthStore.setPaused(true)
                 if wasActive {
-                    _ = minuteSealer.stopAndSeal()
+                    minuteSealer.stopAndSealInBackground()
                 }
                 if recordTransition && wasActive {
                     recorder.record(

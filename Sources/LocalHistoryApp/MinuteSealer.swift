@@ -96,6 +96,8 @@
         private var reportedBufferLimit = false
         private var lastErrorDescription: String?
         private var durabilityBarrier: (() throws -> Void)?
+        /// True between `start()` and `stopAndSeal`: the timer will wake after the boundary.
+        private var captureRunning = false
 
         private let ingressLock = NSLock()
         private var ingressSlots = [PendingRoot?](
@@ -174,6 +176,7 @@
 
         func start() {
             queue.async { [weak self] in
+                self?.captureRunning = true
                 guard let self, self.timer == nil else { return }
                 let timer = DispatchSource.makeTimerSource(queue: self.queue)
                 self.timer = timer
@@ -197,6 +200,7 @@
             onQueue {
                 timer?.cancel()
                 timer = nil
+                captureRunning = false
                 // The stop is known even if the seal fails below: later roots and
                 // gaps must not inherit the pre-stop "captured" state.
                 observedCoverageState = Self.stoppedCoverageState
@@ -228,7 +232,18 @@
             }
         }
 
+        /// T-064 lot 8 (point 5): the interface stops capture with this variant. The stop
+        /// time is taken now; signing and full syncs run on the sealer queue, never on
+        /// the main thread. Work queued later (a resume's `start()`) still runs after it.
+        func stopAndSealInBackground(now: Date = Date()) {
+            queue.async { [weak self] in
+                _ = self?.stopAndSeal(now: now)
+            }
+        }
+
         private static let stoppedCoverageState = "manualPause"
+        /// Signed coverage label of the first seal after the wall clock moved back.
+        static let clockAdjustedCoverageState = "clockAdjusted"
 
         func receive(_ event: HistoryEvent) {
             guard let root = event.integrity?.eventRoot else { return }
@@ -293,6 +308,25 @@
             onQueue { sealElapsedMinutes(now: now) }
         }
 
+        func receiveForTesting(_ event: HistoryEvent, now: Date) {
+            guard let root = event.integrity?.eventRoot else { return }
+            onQueue {
+                receive(
+                    PendingRoot(
+                        root: root,
+                        timestamp: event.timestamp,
+                        coverageSignal: Self.coverageSignal(from: event)
+                    ),
+                    now: now
+                )
+            }
+        }
+
+        /// Marks capture as running without the real timer (tests drive wakes by hand).
+        func markCaptureRunningForTesting() {
+            onQueue { captureRunning = true }
+        }
+
         func waitUntilIdleForTesting() {
             onQueue {}
         }
@@ -326,6 +360,7 @@
 
         private func receive(_ pending: PendingRoot, now: Date) {
             let eventMinute = Self.floorToMinute(pending.timestamp)
+            rebaseAfterClockRollbackIfNeeded(now: now)
 
             if eventMinute < nextMinuteStart {
                 // Debounced typing/scroll may arrive just after the boundary wake with
@@ -350,7 +385,14 @@
                 else {
                     return
                 }
-                if failedMinuteStart == nil {
+                // T-064 lot 8 (point 4): after a stop sealed the still-open minute, a
+                // resume in that same minute sends every root here. They are grouped in
+                // the minute's bucket and sealed once at the next wake (the timer fires
+                // just after the boundary), not one signed, fully synced seal per event.
+                // Without a running capture (stopped, no resume yet) nothing would wake
+                // to seal it, so the root is sealed at once as before.
+                let deferToNextWake = captureRunning && eventMinute >= Self.floorToMinute(now)
+                if failedMinuteStart == nil, !deferToNextWake {
                     let bucket = buckets[eventMinute]!
                     if seal(bucket: bucket, minuteStart: eventMinute, now: now) {
                         removeBucket(forKey: eventMinute)
@@ -463,6 +505,7 @@
             sealLimit: Int = MinuteSealer.maximumSealsPerWake
         ) -> Bool {
             guard !signingSuspended else { return false }
+            rebaseAfterClockRollbackIfNeeded(now: now)
             guard retryFailedMinuteIfEligible(now: now, ignoreBackoff: false) else {
                 return false
             }
@@ -517,6 +560,37 @@
                 sealCount += 1
             }
             return true
+        }
+
+        /// T-064 lot 8 (point 3): when the wall clock moves back by more than the late-root
+        /// window (manual change, large NTP step on wake), roots of the "new" past minutes
+        /// would all fall before `nextMinuteStart` and be dropped until the clock caught up.
+        /// Pending buckets are sealed first (each keeps its own minute), then the chronology
+        /// restarts at the current minute and its first seal carries `clockAdjusted`. Seal
+        /// times may then overlap earlier seals; the anchor chain stays strictly sequential.
+        private func rebaseAfterClockRollbackIfNeeded(now: Date) {
+            let nowMinute = Self.floorToMinute(now)
+            guard nowMinute < nextMinuteStart.addingTimeInterval(-60), !signingSuspended else {
+                return
+            }
+            guard failedMinuteStart == nil else { return }
+            for minute in buckets.keys.sorted() {
+                guard let bucket = buckets[minute] else { continue }
+                guard seal(bucket: bucket, minuteStart: minute, now: now) else {
+                    failedMinuteStart = minute
+                    return
+                }
+                removeBucket(forKey: minute)
+                if let endingCoverageState = bucket.endingCoverageState {
+                    sealedCoverageState = endingCoverageState
+                }
+            }
+            Diagnostics.write(
+                "Wall clock moved back \(Int(nextMinuteStart.timeIntervalSince(nowMinute) / 60)) min; minute sealing restarts at the current minute"
+            )
+            nextMinuteStart = nowMinute
+            sealedCoverageState = Self.clockAdjustedCoverageState
+            scheduleNextWakeup()
         }
 
         private func sealQueuedSupplementalMinutes(
@@ -862,9 +936,11 @@
                 let readCount = pread(descriptor, &finalByte, 1, information.st_size - 1)
                 guard readCount == 1 else { throw posixError(path: url.path) }
                 if finalByte != 0x0A {
-                    data.insert(0x0A, at: 0)
-                    Diagnostics.write(
-                        "Preserved an incomplete minute-seal tail as its own malformed row before appending the next seal"
+                    try settleUnterminatedTail(
+                        descriptor: descriptor,
+                        fileSize: Int64(information.st_size),
+                        path: url.path,
+                        data: &data
                     )
                 }
             }
@@ -913,6 +989,64 @@
                 }
                 durabilityObserver?(.parentDirectorySynchronized)
             }
+        }
+
+        /// T-064 lot 8 (point 1): a crash or ENOSPC during an append can leave a row
+        /// without its newline. A complete JSON value is a durable row and only gets its
+        /// newline. Anything else is a torn write whose sequence was never committed
+        /// (`durabilityUncertain` suspends signing before reuse): it is cut off, like the
+        /// event journal's torn-tail recovery, so readers never meet a malformed row.
+        private static func settleUnterminatedTail(
+            descriptor: Int32,
+            fileSize: Int64,
+            path: String,
+            data: inout Data
+        ) throws {
+            let window = min(fileSize, Int64(maximumEncodedSealRowBytes + 1))
+            var tail = Data(count: Int(window))
+            var totalRead = 0
+            try tail.withUnsafeMutableBytes { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                while totalRead < Int(window) {
+                    let result = pread(
+                        descriptor,
+                        baseAddress.advanced(by: totalRead),
+                        Int(window) - totalRead,
+                        off_t(fileSize - window) + off_t(totalRead)
+                    )
+                    if result > 0 {
+                        totalRead += result
+                        continue
+                    }
+                    if result < 0, errno == EINTR { continue }
+                    throw posixError(path: path, code: result == 0 ? EIO : errno)
+                }
+            }
+            let rowStartInWindow = tail.lastIndex(of: 0x0A).map { tail.index(after: $0) }
+            guard rowStartInWindow != nil || window == fileSize else {
+                // No row boundary within one maximal row: not a seal tail we can judge.
+                data.insert(0x0A, at: 0)
+                Diagnostics.write(
+                    "Kept an oversized unterminated minute-seal tail as its own row before appending the next seal"
+                )
+                return
+            }
+            let rowStart = rowStartInWindow ?? tail.startIndex
+            let partialRow = tail[rowStart...]
+            if (try? JSONSerialization.jsonObject(with: Data(partialRow))) != nil {
+                data.insert(0x0A, at: 0)
+                Diagnostics.write(
+                    "Terminated a complete minute-seal row that lacked its newline before appending the next seal"
+                )
+                return
+            }
+            let keptBytes = fileSize - Int64(partialRow.count)
+            while ftruncate(descriptor, off_t(keptBytes)) != 0 {
+                guard errno == EINTR else { throw posixError(path: path) }
+            }
+            Diagnostics.write(
+                "Removed a torn \(partialRow.count)-byte minute-seal tail before appending the next seal"
+            )
         }
 
         private static func latestPersistedSeal(in directory: URL) throws -> LocalMinuteSeal? {

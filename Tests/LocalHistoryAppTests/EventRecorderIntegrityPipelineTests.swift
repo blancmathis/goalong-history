@@ -654,7 +654,9 @@
             XCTAssertNil(sealer.runtimeSnapshot.lastErrorDescription)
         }
 
-        func testDefaultSealAppendIsNoFollowAndSeparatesAnIncompleteTail() throws {
+        /// T-064 lot 8 (point 1): a torn tail is cut off before the next seal, so the
+        /// day's seal file never holds a malformed row that would block its share.
+        func testDefaultSealAppendIsNoFollowAndRemovesATornTail() throws {
             let fixture = try makeFixture()
             let minute = Date(timeIntervalSince1970: 120)
             let sealFile = fixture.seals.appendingPathComponent(
@@ -681,15 +683,41 @@
                 separator: 0x0A,
                 omittingEmptySubsequences: true
             )
-            XCTAssertEqual(rows.count, 2)
-            XCTAssertThrowsError(
-                try sealDecoder().decode(LocalMinuteSeal.self, from: Data(rows[0]))
-            )
+            XCTAssertEqual(rows.count, 1)
             XCTAssertEqual(
-                try sealDecoder().decode(LocalMinuteSeal.self, from: Data(rows[1])).anchorSequence,
+                try sealDecoder().decode(LocalMinuteSeal.self, from: Data(rows[0])).anchorSequence,
                 1
             )
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 2)
+        }
+
+        func testSealAppendCutsOnlyTheTornRowAndKeepsACompleteUnterminatedRow() throws {
+            let fixture = try makeFixture()
+            let sealFile = fixture.seals.appendingPathComponent("append.seals.jsonl")
+            let first = fixtureSeal(sequence: 1, anchorHash: "anchor-1")
+            let second = fixtureSeal(sequence: 2, anchorHash: "anchor-2")
+            let third = fixtureSeal(sequence: 3, anchorHash: "anchor-3")
+            var firstRow = try sealLine(first)
+            firstRow.append(Data("{\"anchor_sequence\":2,\"min".utf8))
+            try firstRow.write(to: sealFile)
+
+            try MinuteSealer.appendJSONLine(second, to: sealFile)
+            var rows = try Data(contentsOf: sealFile).split(separator: 0x0A)
+            XCTAssertEqual(
+                try rows.map { try sealDecoder().decode(LocalMinuteSeal.self, from: Data($0)).anchorSequence },
+                [1, 2]
+            )
+
+            // A complete row whose newline was lost is a durable seal: it is kept.
+            var bytes = try Data(contentsOf: sealFile)
+            bytes.removeLast()
+            try bytes.write(to: sealFile)
+            try MinuteSealer.appendJSONLine(third, to: sealFile)
+            rows = try Data(contentsOf: sealFile).split(separator: 0x0A)
+            XCTAssertEqual(
+                try rows.map { try sealDecoder().decode(LocalMinuteSeal.self, from: Data($0)).anchorSequence },
+                [1, 2, 3]
+            )
         }
 
         func testCreatedSealFileSynchronizesFileThenParentBeforeCheckpoint() throws {
@@ -1306,6 +1334,104 @@
             XCTAssertEqual(gap.minuteEnd, resumeMinute)
             let gapCoverage = try XCTUnwrap(gap.minuteFields.first { $0.name == "coverage" })
             XCTAssertEqual(gapCoverage.opening.fields["states"], "manualPause")
+        }
+
+        /// T-064 lot 8 (point 4): a resume in the minute a stop already sealed groups that
+        /// minute's roots into one seal at the next wake, not one seal per event.
+        func testResumeInTheStopMinuteGroupsRootsIntoOneSeal() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let minute = Date(timeIntervalSince1970: 120)
+            var persistedSeals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(state: state, fixture: fixture, initialDate: minute) { seal, _ in
+                persistedSeals.append(seal)
+            }
+            XCTAssertTrue(sealer.stopAndSeal(now: minute.addingTimeInterval(10)))
+            XCTAssertEqual(persistedSeals.count, 1)
+            sealer.markCaptureRunningForTesting()
+            for offset in [12.0, 20, 35, 50, 59] {
+                sealer.receiveForTesting(
+                    fixtureEvent(timestamp: minute.addingTimeInterval(offset), root: "root-\(Int(offset))"),
+                    now: minute.addingTimeInterval(offset + 0.2)
+                )
+            }
+            XCTAssertEqual(persistedSeals.count, 1, "no seal per event inside the open minute")
+
+            XCTAssertTrue(sealer.sealElapsedMinutesForTesting(now: minute.addingTimeInterval(61.1)))
+            XCTAssertEqual(persistedSeals.count, 2)
+            XCTAssertEqual(persistedSeals[1].minuteStart, minute)
+            XCTAssertEqual(persistedSeals[1].eventRoots.count, 5)
+            XCTAssertEqual(persistedSeals.map(\.anchorSequence), [1, 2])
+            XCTAssertEqual(sealer.runtimeSnapshot.unbufferedRootCount, 0)
+            XCTAssertEqual(sealer.runtimeSnapshot.pendingRootCount, 0)
+        }
+
+        func testRootAfterAStopWithoutResumeIsStillSealedAtOnce() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let minute = Date(timeIntervalSince1970: 120)
+            var persistedSeals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(state: state, fixture: fixture, initialDate: minute) { seal, _ in
+                persistedSeals.append(seal)
+            }
+            XCTAssertTrue(sealer.stopAndSeal(now: minute.addingTimeInterval(10)))
+            sealer.receiveForTesting(
+                fixtureEvent(timestamp: minute.addingTimeInterval(11), root: "pause-root", kind: .recordingPaused),
+                now: minute.addingTimeInterval(11)
+            )
+            XCTAssertEqual(persistedSeals.count, 2)
+            XCTAssertEqual(persistedSeals[1].eventRoots, ["pause-root"])
+        }
+
+        /// T-064 lot 8 (point 3): after the wall clock moves back by several minutes,
+        /// new roots are sealed (labelled `clockAdjusted`) instead of being dropped.
+        func testClockRollbackRebasesTheChronologyAndLabelsTheSeal() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let start = Date(timeIntervalSince1970: 600)
+            var persistedSeals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(state: state, fixture: fixture, initialDate: start) { seal, _ in
+                persistedSeals.append(seal)
+            }
+            sealer.receiveForTesting(
+                fixtureEvent(timestamp: start.addingTimeInterval(5), root: "before"),
+                now: start.addingTimeInterval(5)
+            )
+            // Clock set back 8 minutes while minute 600 still holds a root.
+            let rolledBack = Date(timeIntervalSince1970: 120)
+            sealer.receiveForTesting(
+                fixtureEvent(timestamp: rolledBack.addingTimeInterval(5), root: "after"),
+                now: rolledBack.addingTimeInterval(5)
+            )
+            XCTAssertEqual(persistedSeals.map(\.eventRoots), [["before"]])
+            XCTAssertTrue(sealer.sealElapsedMinutesForTesting(now: rolledBack.addingTimeInterval(61.1)))
+
+            XCTAssertEqual(persistedSeals.map(\.eventRoots), [["before"], ["after"]])
+            XCTAssertEqual(persistedSeals.map(\.anchorSequence), [1, 2])
+            XCTAssertEqual(persistedSeals[1].previousAnchorHash, persistedSeals[0].anchorHash)
+            XCTAssertEqual(persistedSeals[1].minuteStart, rolledBack)
+            let coverage = try XCTUnwrap(persistedSeals[1].minuteFields.first { $0.name == "coverage" })
+            XCTAssertTrue(
+                coverage.opening.fields["states"]?.contains(MinuteSealer.clockAdjustedCoverageState) == true
+            )
+            XCTAssertEqual(sealer.runtimeSnapshot.unbufferedRootCount, 0)
+        }
+
+        /// T-064 lot 8 (point 5): the interface's stop returns at once and seals on the queue.
+        func testBackgroundStopSealsOnTheSealerQueue() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            let minute = Date(timeIntervalSince1970: 120)
+            var persistedSeals: [LocalMinuteSeal] = []
+            var sealedOnMain = false
+            let sealer = makeSealer(state: state, fixture: fixture, initialDate: minute) { seal, _ in
+                sealedOnMain = sealedOnMain || Thread.isMainThread
+                persistedSeals.append(seal)
+            }
+            sealer.stopAndSealInBackground(now: minute.addingTimeInterval(10))
+            sealer.waitUntilIdleForTesting()
+            XCTAssertEqual(persistedSeals.map(\.minuteStart), [minute])
+            XCTAssertFalse(sealedOnMain)
         }
 
         func testConsentOffStopBeforeThePauseEventStillLabelsTheGapPaused() throws {

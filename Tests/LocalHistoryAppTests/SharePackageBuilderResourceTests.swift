@@ -199,6 +199,65 @@
             XCTAssertTrue(builder.readDiagnostics.usedFullScan)
         }
 
+        /// T-064 lot 8 (point 1): older builds kept a torn seal append as its own row
+        /// before the next seal. The day stays readable, and the chain still decides.
+        func testOneTornSealRowIsSkippedButTheChainStillDecides() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            try writeLines(
+                [event(root: "root-1", application: "Codex", category: "work")],
+                to: fixture.events
+            )
+            try writeLines([chainedSeal(sequence: 1, day: fixture.day)], to: fixture.seals)
+            try appendRaw(Data("{\"anchorSequence\":2,\"minu\n".utf8), to: fixture.seals)
+            try appendLine(chainedSeal(sequence: 2, day: fixture.day), to: fixture.seals)
+            let builder = fixture.builder()
+
+            let bounds = try builder.anchorBounds(for: fixture.day)
+            XCTAssertEqual(bounds.firstSequence, 1)
+            XCTAssertEqual(bounds.lastSequence, 2)
+            XCTAssertEqual(try builder.minuteRows(for: fixture.day).count, 2)
+
+            // A torn row standing in for a missing seal still breaks the chain.
+            try writeLines(
+                [chainedSeal(sequence: 1, day: fixture.day)],
+                to: fixture.seals,
+                atomically: true
+            )
+            try appendRaw(Data("{\"anchorSeq\n".utf8), to: fixture.seals)
+            try appendLine(chainedSeal(sequence: 3, day: fixture.day), to: fixture.seals)
+            XCTAssertThrowsError(try fixture.builder().anchorBounds(for: fixture.day)) { error in
+                guard case .sourceIncomplete(let detail)? = error as? ShareBuildError else {
+                    return XCTFail("Expected a chain error, got \(error)")
+                }
+                XCTAssertTrue(detail.contains("seal chain breaks"), detail)
+            }
+        }
+
+        func testSecondTornRowOrAnUndecodableJSONSealStillFailsClosed() throws {
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            try writeLines([chainedSeal(sequence: 1, day: fixture.day)], to: fixture.seals)
+            try appendRaw(Data("{\"torn-1\n{\"torn-2\n".utf8), to: fixture.seals)
+            try appendLine(chainedSeal(sequence: 2, day: fixture.day), to: fixture.seals)
+            XCTAssertThrowsError(try fixture.builder().anchorBounds(for: fixture.day))
+
+            // Complete JSON that is not a seal is an altered row, never a torn write.
+            try writeLines(
+                [chainedSeal(sequence: 1, day: fixture.day)],
+                to: fixture.seals,
+                atomically: true
+            )
+            try appendRaw(Data("{\"anchorSequence\":2}\n".utf8), to: fixture.seals)
+            try appendLine(chainedSeal(sequence: 2, day: fixture.day), to: fixture.seals)
+            XCTAssertThrowsError(try fixture.builder().anchorBounds(for: fixture.day)) { error in
+                guard case .sourceIncomplete(let detail)? = error as? ShareBuildError else {
+                    return XCTFail("Expected a source error, got \(error)")
+                }
+                XCTAssertTrue(detail.contains("invalid JSONL row"), detail)
+            }
+        }
+
         func testConcurrentAppendDuringReadUsesStableCompletePrefix() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -733,6 +792,25 @@
                 eventRoots: [root],
                 minuteRoot: "minute-\(sequence)",
                 previousAnchorHash: "previous-\(sequence)",
+                anchorHash: "anchor-\(sequence)",
+                deviceID: "fixture-device",
+                publicKeyBase64: "fixture-key",
+                trustTier: "fixture",
+                signatureBase64: "fixture-signature",
+                signatureAlgorithm: "fixture"
+            )
+        }
+
+        private func chainedSeal(sequence: UInt64, day: Date) -> LocalMinuteSeal {
+            let start = day.addingTimeInterval(TimeInterval(sequence * 60))
+            return LocalMinuteSeal(
+                anchorSequence: sequence,
+                minuteStart: start,
+                minuteEnd: start.addingTimeInterval(60),
+                minuteFields: [],
+                eventRoots: [],
+                minuteRoot: "minute-\(sequence)",
+                previousAnchorHash: "anchor-\(sequence - 1)",
                 anchorHash: "anchor-\(sequence)",
                 deviceID: "fixture-device",
                 publicKeyBase64: "fixture-key",

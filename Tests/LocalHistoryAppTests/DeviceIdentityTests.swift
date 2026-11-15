@@ -40,6 +40,41 @@
             XCTAssertNil(try DeviceIdentity.resolveFirst([{ throw DeviceIdentityError.cannotLoadKey(errSecMissingEntitlement) } as () throws -> String]))
         }
 
+        /// T-064 lot 8 (point 6): a locked keychain is retried, never a reason to drop a tier.
+        func testLockedKeychainCreationIsRetriedInsteadOfFallingThrough() {
+            var calls = 0
+            let tiers: [() throws -> String] = [
+                { calls += 1; throw DeviceIdentityError.cannotCreateKey(errSecInteractionNotAllowed) },
+                { XCTFail("Must not fall through"); return "lower" },
+            ]
+            XCTAssertThrowsError(try DeviceIdentity.resolveFirst(tiers, attempts: 3, pause: { _ in }))
+            XCTAssertEqual(calls, 3)
+        }
+
+        func testLocalSoftwareKeyIsCreatedPrivateAndNeverReplaced() throws {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("local-key-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let keyFile = directory.appendingPathComponent("signing.key")
+
+            let created = try DeviceIdentity.loadOrCreateLocalSoftwareKey(at: keyFile, prepareStorage: {})
+            let mode = try XCTUnwrap(
+                FileManager.default.attributesOfItem(atPath: keyFile.path)[.posixPermissions] as? NSNumber)
+            XCTAssertEqual(mode.intValue & 0o777, 0o600)
+            let reloaded = try DeviceIdentity.loadOrCreateLocalSoftwareKey(at: keyFile, prepareStorage: {})
+            XCTAssertEqual(
+                SecKeyCopyExternalRepresentation(created, nil) as Data?,
+                SecKeyCopyExternalRepresentation(reloaded, nil) as Data?)
+            XCTAssertEqual(
+                try FileManager.default.contentsOfDirectory(atPath: directory.path), ["signing.key"])
+
+            let unreadable = Data("not a key".utf8)
+            try unreadable.write(to: keyFile)
+            XCTAssertThrowsError(try DeviceIdentity.loadOrCreateLocalSoftwareKey(at: keyFile, prepareStorage: {}))
+            XCTAssertEqual(try Data(contentsOf: keyFile), unreadable)
+        }
+
         func testDeviceIdentityChangeIsDetectedAgainstThePersistedValue() {
             XCTAssertFalse(DeviceIdentity.identityChanged(previous: nil, current: info("a", "secure_enclave")))
             XCTAssertFalse(DeviceIdentity.identityChanged(previous: "a|secure_enclave", current: info("a", "secure_enclave")))
