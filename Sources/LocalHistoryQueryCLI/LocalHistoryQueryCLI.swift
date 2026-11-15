@@ -1062,9 +1062,7 @@ public enum GoalongQueryCLI {
         case "health":
             let raw = arguments.popFirst() ?? "yesterday"
             guard arguments.values.isEmpty else { throw CLIError.usage("Use health [today|yesterday|YYYY-MM-DD].") }
-            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "yyyy-MM-dd"
-            FileHandle.standardOutput.write(try GoalongHealthArchive.read(day: formatter.string(from: day(raw)), root: root))
+            FileHandle.standardOutput.write(try GoalongHealthArchive.read(day: LocalDayKey.string(from: day(raw)), root: root))
 
         case "websites":
             let limit = try integer(arguments.removeOption("--limit") ?? "100")

@@ -198,8 +198,7 @@ public enum GoalongContextualRhythm {
         let r = measure(Rhythm(project: project, device: String(device.prefix(100)), timezone: Calendar.current.timeZone.identifier,
             window_ms: Int((last.timestamp.timeIntervalSince(first.timestamp)*1000).rounded()), observed_ms: 0, project_ms: 0,
             longest_project_ms: 0, brief_consultations: 0, brief_consultation_ms: 0, start: formatter.string(from: first.timestamp), episodes: episodes))
-        let date = DateFormatter(); date.dateFormat = "yyyy-MM-dd"; date.locale = Locale(identifier: "en_US_POSIX"); date.timeZone = .current
-        let request = Request(schema: "goalong.rhythm-analysis.v1", request_id: UUID().uuidString.lowercased(), date: date.string(from: day),
+                let request = Request(schema: "goalong.rhythm-analysis.v1", request_id: UUID().uuidString.lowercased(), date: LocalDayKey.string(from: day),
             intent: intent, rhythm: r, source_limitations: "Événements disponibles avant réduction à la minute. Intervalles sans observation inconnus. Extraits de contexte bornés et choisis, jamais une capture exhaustive ni une mesure d’attention.")
         _ = try request.encoded()
         return request

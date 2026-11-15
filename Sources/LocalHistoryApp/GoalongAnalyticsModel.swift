@@ -286,7 +286,7 @@ actor GoalongAnalyticsReader {
         var cards: [GoalongAnalyticsCard] = []
         var rejected = 0
         let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.calendar = LocalDayKey.gregorianCalendar(timeZone: calendar.timeZone); formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         for day in days.prefix(28) {
             try Task.checkCancellation()

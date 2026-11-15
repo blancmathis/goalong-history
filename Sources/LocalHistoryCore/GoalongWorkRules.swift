@@ -337,14 +337,11 @@ public struct GoalongWorkUsage: Codable, Equatable, Sendable {
 
     /// The seven days ending on `key` (yyyy-MM-dd).
     public func week(endingOn key: String, calendar: Calendar = .current) -> Day {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         guard let end = GoalongDayParser.date(key, timeZone: calendar.timeZone) else { return day(key) }
         var total = Day()
         for offset in 0..<7 {
             guard let date = calendar.date(byAdding: .day, value: -offset, to: end) else { continue }
-            let value = day(formatter.string(from: date))
+            let value = day(LocalDayKey.string(from: date, timeZone: calendar.timeZone))
             total.calls += value.calls; total.backgroundCalls += value.backgroundCalls
             total.tokens += value.tokens; total.estimatedCalls += value.estimatedCalls
             total.measuredCalls += value.measuredCalls; total.measuredTokens += value.measuredTokens

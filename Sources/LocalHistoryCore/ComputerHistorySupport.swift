@@ -93,6 +93,13 @@ enum ComputerHistorySupport {
         }
     }
 
+    /// A screen coordinate as text. A journal is outside data: NaN, infinity or 1e100 are valid JSON
+    /// numbers but trap in `Int(_:)`, so out-of-range values print as "?".
+    static func coordinateText(_ value: Double) -> String {
+        guard value.isFinite, let rounded = Int(exactly: value.rounded()) else { return "?" }
+        return String(rounded)
+    }
+
     static func actionLabel(for event: HistoryEvent) -> String {
         let target = [event.element?.title, event.element?.label, event.element?.identifier]
             .compactMap { ActivitySemanticTextSanitizer.clean($0, maximumLength: 220) }
@@ -116,7 +123,7 @@ enum ComputerHistorySupport {
             if let target { return "Clicked \(target) with the \(button) button\(suffix)" }
             if let pointer = event.pointer {
                 return
-                    "Clicked at \(Int(pointer.x.rounded())), \(Int(pointer.y.rounded())) with the \(button) button\(suffix)"
+                    "Clicked at \(coordinateText(pointer.x)), \(coordinateText(pointer.y)) with the \(button) button\(suffix)"
             }
             return "Clicked with the \(button) button\(suffix)"
 

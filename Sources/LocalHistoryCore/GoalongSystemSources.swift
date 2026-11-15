@@ -80,10 +80,27 @@ public enum GoalongSystemSourceFiles {
               after.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec else { throw CocoaError(.fileReadCorruptFile) }
         return data
     }
-    public static func write(_ data: Data, root: URL, folder: String, name: String, append: Bool = false, maximumBytes: Int) throws {
+    /// Runs `body` while holding an exclusive advisory lock on the folder: every `write` takes the same lock,
+    /// so a read-then-replace cycle (the legacy day-file merge) never loses a line appended in between.
+    /// Pass `lockHeld: true` to `write` from inside `body`.
+    public static func withFolderLock<T>(root: URL, folder: String, _ body: () throws -> T) throws -> T {
+        let dir = try directory(root: root, folder: folder, create: true); defer { close(dir) }
+        guard flockRetrying(dir) else { throw CocoaError(.fileWriteUnknown) }
+        defer { flock(dir, LOCK_UN) }
+        return try body()
+    }
+    private static func flockRetrying(_ fd: Int32) -> Bool {
+        while flock(fd, LOCK_EX) != 0 { if errno != EINTR { return false } }
+        return true
+    }
+    public static func write(_ data: Data, root: URL, folder: String, name: String, append: Bool = false, maximumBytes: Int, lockHeld: Bool = false) throws {
         try checked(name)
         guard data.count <= maximumBytes else { throw CocoaError(.fileWriteOutOfSpace) }
         let dir = try directory(root: root, folder: folder, create: true); defer { close(dir) }
+        if !lockHeld {
+            guard flockRetrying(dir) else { throw CocoaError(.fileWriteUnknown) }
+        }
+        defer { if !lockHeld { flock(dir, LOCK_UN) } }
         let leaf = append ? name : "source-\(UUID().uuidString)"
         let fd = openat(dir, leaf, O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK | (append ? O_RDWR | O_APPEND | O_CREAT : O_WRONLY | O_CREAT | O_EXCL), 0o600)
         guard fd >= 0 else { throw CocoaError(.fileWriteNoPermission) }

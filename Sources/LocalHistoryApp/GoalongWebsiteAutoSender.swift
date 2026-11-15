@@ -252,7 +252,7 @@ import AppleScreenTime
         let minutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         guard minutes >= (current.hour ?? 9) * 60 + (current.minute ?? 0) else { return }
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = calendar; formatter.timeZone = zone
+        formatter.calendar = LocalDayKey.gregorianCalendar(timeZone: zone); formatter.timeZone = zone
         // Oldest day not yet sent, at most 3 days back; with no history only yesterday. Never a day at or before the last attempt/success.
         let floor = [current.lastSuccess, current.lastAttempt].compactMap { $0 }.max()
         let offsets = floor == nil ? [-1] : [-3, -2, -1]
