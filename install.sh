@@ -708,7 +708,8 @@ headline "Installing"
 quit_running_goalong "$EXECUTABLE_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME" "$OBSOLETE_LOCAL_APP_NAME"
 replace_staged_bundle "$STAGED_APP"
 validate_release_bundle "$TARGET_APP"
-install_goalong_cli_link "$TARGET_APP"
+install_goalong_cli_link "$TARGET_APP" \
+  || warn "The goalong terminal command was not linked; Goalong itself is installed. Fix ~/.local/bin and run: \"$TARGET_APP/Contents/MacOS/goalong\""
 finalize_replacement
 for legacy_app in \
   "/Applications/$PREVIOUS_APP_NAME.app" \

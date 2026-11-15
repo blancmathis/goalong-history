@@ -211,6 +211,7 @@
                 var metrics = SemanticContextDeletionMetrics()
                 var firstError: Error?
                 do {
+                    self.removeStaleDeleteTemporaries()
                     let firstKey = AppPaths.localDayString(for: cutoff.addingTimeInterval(-86_400))
                     for file in try self.semanticFiles()
                     where String(file.lastPathComponent.prefix(10)) >= firstKey {
@@ -244,6 +245,7 @@
         func deleteAll(completion: @escaping (Result<Int, Error>) -> Void) {
             queue.async {
                 do {
+                    self.removeStaleDeleteTemporaries()
                     let files = try self.semanticFiles()
                     for file in files { try FileManager.default.removeItem(at: file) }
                     self.recentReferencesByIdentity.removeAll(keepingCapacity: false)
@@ -335,6 +337,20 @@
                             .unclassifiableTargetedDeletionRow(file)
                     }
                 }
+            }
+        }
+
+        /// A targeted deletion streams kept rows into `.<day>.semantic.jsonl.delete-<uuid>.tmp`. A kill
+        /// mid-rewrite leaves it; it holds captured text yet is hidden from `semanticFiles`, so
+        /// "Delete all" and date clears would miss it. Runs on `queue`, never beside a rewrite.
+        private func removeStaleDeleteTemporaries() {
+            let fileManager = FileManager.default
+            guard let names = try? fileManager.contentsOfDirectory(atPath: semanticDirectory.path) else { return }
+            for name in names where name.hasPrefix(".") && name.contains(".delete-") && name.hasSuffix(".tmp") {
+                let url = semanticDirectory.appendingPathComponent(name)
+                var status = stat()
+                guard lstat(url.path, &status) == 0, (status.st_mode & S_IFMT) == S_IFREG else { continue }
+                try? fileManager.removeItem(at: url)
             }
         }
 

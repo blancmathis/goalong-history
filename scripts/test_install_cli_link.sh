@@ -27,4 +27,11 @@ install_goalong_cli_link "$APP" "$BIN" 2>/dev/null
 [[ ! -L "$BIN/goalong" ]]
 [[ "$(<"$BIN/goalong")" == 'owned by user' ]]
 
+# An uncreatable bin directory fails the function (callers warn instead of aborting under set -e).
+/usr/bin/printf x > "$TEST_ROOT/notadir"
+if install_goalong_cli_link "$APP" "$TEST_ROOT/notadir/bin" 2>/dev/null; then
+  echo "FAIL: expected a failure for an uncreatable bin directory" >&2; exit 1
+fi
+( set -e; install_goalong_cli_link "$APP" "$TEST_ROOT/notadir/bin" 2>/dev/null || echo "warned" >/dev/null; echo survived ) | grep -q survived
+
 echo "Goalong CLI link tests passed: atomic link creation and unrelated-command preservation."

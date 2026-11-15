@@ -79,8 +79,17 @@ TRY_BUILD="$(localhistory_local_try_build_number "$BASE_BUILD")"
 echo "Local try $VERSION ($TRY_BUILD), above release $BASE_BUILD; the next release replaces it."
 
 started="$(date +%s)"
+# Only wipe an OUT this script made (marker) or the default folder; never a user's own folder.
+OUT_MARKER=".goalong-local-try-out"
+if [[ -e "$OUT" && "$OUT" != "$WORK/out" && ! -f "$OUT/$OUT_MARKER" ]]; then
+  if [[ ! -d "$OUT" || -n "$(ls -A "$OUT" 2>/dev/null)" ]]; then
+    echo "Refusing OUT=$OUT: it exists, is not empty and was not created by make local (no $OUT_MARKER). Use an empty or new folder." >&2
+    exit 2
+  fi
+fi
 rm -rf "$OUT"
 mkdir -p "$OUT" "$WORK/scratch"
+: >"$OUT/$OUT_MARKER"
 export LOCALHISTORY_LOCAL_TRY_BASE="$BASE_BUILD"
 if ! env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" \
     LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_BUILD_CONFIGURATION=release \

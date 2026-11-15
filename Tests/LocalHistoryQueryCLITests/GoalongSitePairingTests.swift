@@ -86,6 +86,19 @@ final class GoalongSitePairingTests: XCTestCase {
         XCTAssertFalse(GoalongSitePairing.discardManagedToken(path: "", directory: directory))
     }
 
+    func testOrphanManagedTokensAreRemovedAtLaunchExceptTheReferencedOne() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let referenced = try pairing().save(response: tokenResponse(), directory: directory)
+        let orphan = try pairing().save(response: tokenResponse(), directory: directory)
+        let other = directory.appendingPathComponent("notes.token")
+        try Data("x".utf8).write(to: other)
+        XCTAssertEqual(GoalongSitePairing.discardOrphanManagedTokens(keeping: [referenced.path, ""], directory: directory), 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: referenced.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
+    }
+
     func testReconnectingLeavesExactlyOneManagedTokenFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
