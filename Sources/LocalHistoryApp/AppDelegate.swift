@@ -213,6 +213,7 @@ import AppleScreenTime
             installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
             LegacyInstallationMigrator.run()
+            GoalongWebsitePairingCoordinator.removeOrphanTokens()
             // The journal lives under the data root: create it first, or a fresh install's first writes fail
             // and mark every report incomplete. A failure here is reported again by the prepare below.
             _ = try? AppPaths.prepare()

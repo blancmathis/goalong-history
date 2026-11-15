@@ -25,8 +25,8 @@ install_goalong_cli_link() {
       return 0
     fi
   else
-    /bin/mkdir -p "$bin_directory"
-    /bin/chmod 755 "$bin_directory"
+    /bin/mkdir -p "$bin_directory" || return 1
+    /bin/chmod 755 "$bin_directory" || return 1
   fi
 
   if [[ -e "$link_path" || -L "$link_path" ]]; then
@@ -56,6 +56,6 @@ install_goalong_cli_link() {
     echo "Goalong CLI temporary link already exists unexpectedly at $temporary_link" >&2
     return 1
   fi
-  /bin/ln -s "$cli_binary" "$temporary_link"
-  /bin/mv -f "$temporary_link" "$link_path"
+  /bin/ln -s "$cli_binary" "$temporary_link" || return 1
+  /bin/mv -f "$temporary_link" "$link_path" || { /bin/rm -f "$temporary_link"; return 1; }
 }

@@ -128,6 +128,26 @@ extension GoalongSitePairing {
     }
 }
 
+extension GoalongSitePairing {
+    /// A stop between writing `<UUID>.token` and saving its path leaves a valid credential nobody
+    /// references. Called at launch: removes every managed token file except the kept paths.
+    /// Returns how many files were removed. Files the user picked elsewhere are never touched.
+    @discardableResult
+    public static func discardOrphanManagedTokens(keeping keptPaths: [String], directory: URL) -> Int {
+        let kept = Set(keptPaths.filter { !$0.isEmpty }.map {
+            URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path
+        })
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return 0 }
+        var removed = 0
+        for name in names where name.range(of: "^[0-9A-F-]{36}\\.token$", options: .regularExpression) != nil {
+            let file = directory.appendingPathComponent(name)
+            if kept.contains(file.resolvingSymlinksInPath().standardizedFileURL.path) { continue }
+            if discardManagedToken(path: file.path, directory: directory) { removed += 1 }
+        }
+        return removed
+    }
+}
+
 final class PairingResponse: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let finished = DispatchSemaphore(value: 0)
     private var data = Data()

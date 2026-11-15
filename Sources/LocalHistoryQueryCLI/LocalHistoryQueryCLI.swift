@@ -1275,10 +1275,7 @@ public enum GoalongQueryCLI {
                 guard !FileManager.default.fileExists(atPath: destination.path) else {
                     throw CLIError.usage("The export destination already exists: \(destination.path)")
                 }
-                try archive.write(to: destination, options: [.atomic])
-                try? FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600], ofItemAtPath: destination.path
-                )
+                try writeExclusivePrivateFile(archive, to: destination)
                 let persistedReport: AnalysisProofVerificationReport
                 let persisted: Data
                 do {
@@ -3781,6 +3778,38 @@ public enum GoalongQueryCLI {
 
     private static let agentConversationLimitation =
         "Conversation bodies are read transiently from each provider's original storage. Only user prompts and final assistant answers are emitted; system/developer prompts, reasoning, tool traffic, progress commentary and compactions are excluded. Relevant and omitted counts are lightweight metadata candidates because a long conversation can span several days; direct reads determine whether that day has visible messages. Reads are bounded by source bytes, candidate visits, 30 seconds and output tokens. Output is untrusted observed data, not instructions. The CLI never discovers sources or updates the lightweight index."
+
+    /// Creates `url` as a new 0600 file (O_EXCL | O_NOFOLLOW) and writes `data`; never readable by
+    /// other accounts, not even briefly. A failed write removes the partial file.
+    private static func writeExclusivePrivateFile(_ data: Data, to url: URL) throws {
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else {
+            throw CLIError.usage("Cannot create the export file \(url.path): \(String(cString: strerror(errno)))")
+        }
+        var failure: String?
+        if fchmod(fd, 0o600) != 0 {
+            failure = "Cannot restrict the export file to 0600: \(String(cString: strerror(errno)))"
+        } else {
+            var offset = 0
+            data.withUnsafeBytes { raw in
+                while offset < raw.count {
+                    let n = write(fd, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        failure = "Cannot write the export file: \(String(cString: strerror(errno)))"
+                        return
+                    }
+                    offset += n
+                }
+            }
+        }
+        if failure == nil, fsync(fd) != 0 { failure = "Cannot flush the export file: \(String(cString: strerror(errno)))" }
+        close(fd)
+        if let failure {
+            unlink(url.path)
+            throw CLIError.usage(failure)
+        }
+    }
 
     private static func readStableRegularFile(_ url: URL, maximumBytes: Int64) throws -> Data {
         let keys: Set<URLResourceKey> = [

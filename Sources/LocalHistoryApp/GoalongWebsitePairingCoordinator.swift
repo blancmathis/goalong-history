@@ -10,6 +10,15 @@ final class GoalongWebsitePairingCoordinator {
     static var connectionsDirectory: URL {
         AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections", isDirectory: true)
     }
+    /// Launch cleanup: a managed token file that neither the pairing nor the daily sender references
+    /// (app stopped between writing the file and saving its path) is deleted.
+    static func removeOrphanTokens(defaults: UserDefaults = GoalongDefaults.standard) {
+        let kept = [defaults.string(forKey: "goalong.website.tokenFilePath") ?? "",
+                    GoalongWebsiteAutoSender.shared.savedConfiguration?.tokenPath ?? ""]
+        GoalongSitePairing.discardOrphanManagedTokens(
+            keeping: kept,
+            directory: AppPaths.applicationSupportDirectory.appendingPathComponent("website-connections", isDirectory: true))
+    }
     /// Deletes the credential file when pairing created it (never a file the user picked) and drops
     /// the account details bound to it. The access stays valid on the site until it is revoked there.
     /// Returns true only when the file was deleted.

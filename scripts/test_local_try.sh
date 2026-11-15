@@ -52,4 +52,10 @@ install_app 30000000.4266167.303799 0.6.90; rm -f "$T/manifest.json"
 run
 check "$status" 1 "offline with try"
 [[ "$out" == *"already a local try"* && "$out" != *"No published"* ]] || { echo "FAIL: offline message: $out" >&2; exit 1; }
+# OUT guard: a non-empty folder without the marker is refused and left intact.
+install_app 30000000.4266167.303702 0.6.90; manifest 30000000.4266167.303700 0.6.91
+mkdir -p "$T/mine"; echo keep >"$T/mine/file"
+run env GOALONG_LOCAL_OUT="$T/mine"
+check "$status" 2 "foreign OUT refused"
+[[ -f "$T/mine/file" && "$out" == *"Refusing OUT="* ]] || { echo "FAIL: foreign OUT touched: $out" >&2; exit 1; }
 echo "test_local_try: ok"

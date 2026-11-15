@@ -150,6 +150,17 @@ final class GoalongCLIProofCommandsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
     }
 
+    func testExportProofRefusesADanglingSymlinkDestination() throws {
+        let (root, _) = try prepareExportRoot()
+        let directory = try temporaryDirectory()
+        let target = directory.appendingPathComponent("elsewhere.goalong-proof")
+        let link = directory.appendingPathComponent("link.goalong-proof")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        XCTAssertThrowsError(
+            try output(["--root", root.path, "export-proof", Fixture.day, "--output", link.path]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
     func testExportProofRefusesBadDestinationsAndNeverOverwrites() throws {
         let (root, _) = try prepareExportRoot()
         let directory = try temporaryDirectory()

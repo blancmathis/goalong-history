@@ -735,7 +735,8 @@ main() {
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
   run_step "Validating the installed bundle" validate_app_bundle "$TARGET_APP"
-  run_step "Installing the goalong terminal command" install_goalong_cli_link "$TARGET_APP"
+  run_step "Installing the goalong terminal command" install_goalong_cli_link "$TARGET_APP" \
+    || echo "  ! The goalong terminal command was not linked (optional); Goalong itself is installed." >&2
 
   remove_verified_legacy_bundle "/Applications/$PREVIOUS_APP_NAME.app"
   remove_verified_legacy_bundle "$HOME/Applications/$PREVIOUS_APP_NAME.app"
