@@ -306,7 +306,13 @@ final class GammaController: BraiseGammaDriving {
     static func recover(from url: URL, screens: GammaDisplayDriving) {
         guard let data = try? BraiseStore.read(url, maximumBytes: 8 * 1024 * 1024),
               let tables = try? JSONDecoder().decode([GammaTable].self,from:data),
-              !tables.isEmpty, tables.count <= 32, tables.allSatisfy({ $0.isValid }) else { return }
+              !tables.isEmpty, tables.count <= 32, tables.allSatisfy({ $0.isValid }) else {
+            // Unreadable, cut or invalid (a crash mid-write): the system's colors come back, then the file goes
+            // (D2 P3, T-064). Without this the file was skipped at every launch.
+            screens.restoreSystemColors()
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         writeBack(tables, screens: screens)
         try? FileManager.default.removeItem(at:url)
     }

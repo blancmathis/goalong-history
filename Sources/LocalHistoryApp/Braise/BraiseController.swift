@@ -118,6 +118,11 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         recoveryNotice = notices.isEmpty ? nil : notices.joined(separator: " ")
         gamma.onError = { [weak self] message in
             guard let self, self.running else { return }
+            // The restore guardian was only slow to start (cold binary, loaded Mac): a protected range is never
+            // skipped for that. The red stays asked for, and the next try comes soon (D2 P2, T-064).
+            if message == GammaError.watchdog.localizedDescription, self.protectedWindow != nil {
+                self.errorMessage = message; self.scheduleGuardianRetry(); return
+            }
             // A technical fault always gives the colors back now, protected ranges included.
             self.preferences.mode = .off; self.preferences.pauseUntil = nil; self.active = false
             for window in self.windows { self.ranges.skips[window.rangeID] = window.end; self.ranges.holds[window.rangeID] = nil }
@@ -145,7 +150,7 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             observe(NSWorkspace.shared.notificationCenter, names: [NSWorkspace.didWakeNotification,
                 NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification])
             let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.evaluate(); self?.gamma.checkAfterSystemChange() }
+                MainActor.assumeIsolated { self?.guardianRetries = 0; self?.evaluate(); self?.gamma.checkAfterSystemChange() }
             }
             timer.tolerance = 4; RunLoop.main.add(timer, forMode: .common); maintenanceTimer = timer
         }
@@ -788,6 +793,18 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     /// One pass of the lock now (tests: the timer does not run without `runsTimers`).
     func enforceBrightnessNow() { enforcer.tick() }
 
+    /// Retry after a slow guardian start: 5 s apart, three tries, then the 30 s tour (which resets the count).
+    private var guardianRetries = 0
+    private var guardianRetryTimer: Timer?
+    private func scheduleGuardianRetry() {
+        guard runsTimers, guardianRetries < 3, guardianRetryTimer == nil else { return }
+        guardianRetries += 1
+        let timer = Timer(timeInterval: 5, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.guardianRetryTimer = nil; self?.evaluate() }
+        }
+        RunLoop.main.add(timer, forMode: .common); guardianRetryTimer = timer
+    }
+
     func evaluate() {
         guard running else { return }
         let now = clock()
@@ -805,8 +822,10 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         if brightnessProtection == nil, brightnessNotice != nil { brightnessNotice = nil }
         let target = BrightnessLockRules.target(manual: ranges.brightnessLock, windows: shown)
         if brightnessTarget != target { brightnessTarget = target }
-        active = manual || rangeIntensity != nil
-        appliedIntensity = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
+        let nowActive = manual || rangeIntensity != nil
+        if active != nowActive { active = nowActive }
+        let nowApplied = max(manual ? preferences.intensity : 0, rangeIntensity ?? 0)
+        if appliedIntensity != nowApplied { appliedIntensity = nowApplied }
         let screen = previewed(target: target)
         enforcer.update(target: screen.brightness, displays: brightnessDisplays.filter(\.controllable).map(\.id))
         if screen.brightness == nil, preview?.brightness == nil, let before = previewBrightnessBefore {
@@ -828,7 +847,8 @@ struct RedScreenRefusal: LocalizedError, Equatable {
             let timer = Timer(fire: nearest, interval: 0, repeats: false) { [weak self] _ in MainActor.assumeIsolated { self?.evaluate() } }
             timer.tolerance = 0.1; RunLoop.main.add(timer, forMode: .common); boundaryTimer = timer
         }
-        nextEvent = eventText(now: now, paused: paused, manual: manual)
+        let nowEvent = eventText(now: now, paused: paused, manual: manual)
+        if nextEvent != nowEvent { nextEvent = nowEvent }
         stateChanged?()
     }
 

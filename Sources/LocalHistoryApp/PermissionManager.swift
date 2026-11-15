@@ -144,6 +144,10 @@
         private let statusLock = NSCondition()
         private let statusProbe: StatusProbe
         private let liveProbe: Bool
+        /// Fast direct reads (no prompt, no other process) for the « Allow » buttons: the forced refresh from the main
+        /// thread only returns the cached snapshot marked `observationPending` (D2 P2, T-064). Nil under XCTest.
+        typealias DirectPreflight = () -> (accessibility: Bool, inputMonitoring: Bool)
+        private let directPreflight: DirectPreflight?
         private let probeQueue = DispatchQueue(label: "Goalong.PermissionAX", qos: .userInitiated)
         private let clock: () -> Date
         private var cachedStatus: PermissionStatus
@@ -164,11 +168,22 @@
         init(
             statusProbe: StatusProbe? = nil,
             probeOnBackground: Bool? = nil,
+            directPreflight: DirectPreflight? = nil,
             clock: @escaping () -> Date = Date.init
         ) {
             self.statusProbe = statusProbe ?? PermissionManager.liveStatus
             self.liveProbe = probeOnBackground ?? (statusProbe == nil)
             self.clock = clock
+            if let directPreflight {
+                self.directPreflight = directPreflight
+            } else if statusProbe == nil, !GoalongTestEnvironment.isXCTest {
+                self.directPreflight = {
+                    let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false] as CFDictionary
+                    return (AXIsProcessTrustedWithOptions(options), CGPreflightListenEventAccess())
+                }
+            } else {
+                self.directPreflight = nil
+            }
             let initial = liveProbe ? Self.pendingStatus : (statusProbe?() ?? Self.pendingStatus)
             cachedStatus = initial
             lastRefreshAt = clock()
@@ -345,16 +360,28 @@
                isExternalProbeTarget(pid: finder.processIdentifier, ownPID: currentPID),
                !candidates.contains(where: { $0.processIdentifier == finder.processIdentifier }) { candidates.append(finder) }
             var lastError: Int32?
-            for candidate in candidates.prefix(2) {
-                let app = AXAccess.application(candidate.processIdentifier)
-                AXAccess.setMessagingTimeout(app, 0.12)
-                var windows: CFTypeRef?
-                let error = AXAccess.copyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
-                if error == .apiDisabled || lastError != AXError.apiDisabled.rawValue { lastError = error.rawValue }
-                if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return (true, nil) }
+            func attempt() -> Bool {
+                for candidate in candidates.prefix(2) {
+                    let app = AXAccess.application(candidate.processIdentifier)
+                    AXAccess.setMessagingTimeout(app, 0.12)
+                    var windows: CFTypeRef?
+                    let error = AXAccess.copyAttributeValue(app, kAXWindowsAttribute as CFString, &windows)
+                    if error == .apiDisabled || lastError != AXError.apiDisabled.rawValue { lastError = error.rawValue }
+                    if error == .success, let windows, CFGetTypeID(windows) == CFArrayGetTypeID() { return true }
+                }
+                return false
+            }
+            if attempt() { return (true, nil) }
+            // « cannotComplete » alone (wake from sleep, loaded Mac) does not prove the permission is unusable:
+            // one more try after 1 s before the shown state changes (D2 P3, T-064). Runs on the probe queue.
+            if shouldRetryAfterCannotComplete(lastError), !Thread.isMainThread {
+                Thread.sleep(forTimeInterval: 1)
+                if attempt() { return (true, nil) }
             }
             return (false, lastError)
         }
+
+        static func shouldRetryAfterCannotComplete(_ error: Int32?) -> Bool { error == AXError.cannotComplete.rawValue }
 
         static func isExternalProbeTarget(pid: Int32, ownPID: Int32) -> Bool { pid > 1 && pid != ownPID }
 
@@ -376,12 +403,22 @@
         func requestInputMonitoring() -> Bool {
             // Input Monitoring preflight is reported independently from Accessibility.
             // A successful callback remains the authoritative runtime proof.
-            if refresh(force: true).inputMonitoringDirectlyGranted { return true }
+            if inputMonitoringGrantedNow() { return true }
             if GoalongTestEnvironment.isXCTest { return false }
             Self.systemReadCount += 1
             let requested = CGRequestListenEventAccess()
             _ = refresh(force: true)
             return requested
+        }
+
+        /// A real read when available; otherwise the forced refresh (never a pending snapshot taken for the truth).
+        private func inputMonitoringGrantedNow() -> Bool {
+            if let directPreflight { Self.systemReadCount += 1; return directPreflight().inputMonitoring }
+            return refresh(force: true).inputMonitoringDirectlyGranted
+        }
+        private func accessibilityPreflightNow() -> Bool {
+            if let directPreflight { Self.systemReadCount += 1; return directPreflight().accessibility }
+            return refresh(force: true).accessibilityPreflight
         }
 
         func requestAll() {
@@ -394,14 +431,14 @@
         }
 
         func openAccessibilitySettings() {
-            if !refresh(force: true).accessibilityPreflight {
+            if !accessibilityPreflightNow() {
                 _ = requestAccessibility()
             }
             openSettingsDirectly(for: .accessibility)
         }
 
         func openInputMonitoringSettings() {
-            if !refresh(force: true).inputMonitoringDirectlyGranted {
+            if !inputMonitoringGrantedNow() {
                 _ = requestInputMonitoring()
             }
             openSettingsDirectly(for: .inputMonitoring)

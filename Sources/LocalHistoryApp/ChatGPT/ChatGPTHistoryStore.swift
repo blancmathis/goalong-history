@@ -496,6 +496,8 @@
     final class ChatGPTHistoryStore {
         static let maximumSourceBytes: Int64 = 512 * 1_024 * 1_024
         static let maximumArchiveBytes: Int64 = 512 * 1_024 * 1_024
+        /// `importConversations` always refuses; the archive is therefore never read.
+        static let importsEnabled = false
         static let maximumMessages = 250_000
         static let maximumPreservedIdentifierBytes = 256
 
@@ -625,6 +627,9 @@
         }
 
         private func loadArchive() -> ChatGPTNormalizedArchive? {
+            // Imports are disabled: a leftover archive (up to 512 MB) is never read or decoded (B2 P3, T-064).
+            // The file stays on disk; deleting it is a product decision (`removeImport` does it on request).
+            guard Self.importsEnabled else { return nil }
             guard
                 let data = try? Self.readStableSource(
                     at: archiveFile,

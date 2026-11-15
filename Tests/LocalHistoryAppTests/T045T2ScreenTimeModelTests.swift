@@ -24,6 +24,22 @@
             XCTAssertFalse(model.isBusy, "no export started")
         }
 
+        /// T-064 lot 6 (B2 P2): the device ID is unavailable at start (Keychain locked): the archive opens at a later refresh.
+        @MainActor
+        func testArchiveOpensLaterWhenTheDeviceIDComesBack() {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("t064-screentime-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            var id = DeviceIdentityInfo.unavailableDeviceID
+            let model = AppleScreenTimeDashboardModel(
+                rootDirectory: root, deviceID: id, selectedDay: day, accessEnabled: false, refreshInterval: 60,
+                deviceIDProvider: { id })
+            XCTAssertFalse(model.retryRepositoryIfNeeded(), "still unavailable")
+            id = "test-device"
+            XCTAssertTrue(model.retryRepositoryIfNeeded(), "opens with the real ID")
+            XCTAssertTrue(model.retryRepositoryIfNeeded(), "stays open")
+        }
+
         func testSharePayloadTotalsOnlyHidesDevices() {
             let payload = AppleScreenTimeDashboardModel.systemSharePayloadForTesting(
                 from: T045T2Fixtures.summary(day: day), disclosureLevel: .totalsOnly)

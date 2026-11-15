@@ -16,7 +16,8 @@
                 wrappedValue: AppleScreenTimeDashboardModel(
                     rootDirectory: AppPaths.screenTimeDirectory,
                     deviceID: device.deviceID,
-                    selectedDay: navigation.selectedDay
+                    selectedDay: navigation.selectedDay,
+                    deviceIDProvider: { [weak device] in device?.deviceID ?? "" }
                 )
             )
         }

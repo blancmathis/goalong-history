@@ -2361,6 +2361,20 @@
             XCTAssertEqual(try Data(contentsOf: outside), outsideBytes)
         }
 
+        /// T-064 lot 6 (B2 P3): imports are disabled, so a leftover archive is not read; it is not deleted either.
+        func testLeftoverArchiveIsNeitherReadNorDeletedWhileImportsAreDisabled() throws {
+            let container = try makeTemporaryDirectory(prefix: "goalong-chatgpt-leftover")
+            defer { try? FileManager.default.removeItem(at: container) }
+            let history = container.appendingPathComponent("history", isDirectory: true)
+            try ChatGPTSecureStorage.prepareDirectory(history)
+            let store = ChatGPTHistoryStore(rootDirectory: history)
+            let bytes = Data("{\"leftover\":true}".utf8)
+            try bytes.write(to: store.archiveFile)
+            XCTAssertNil(store.summary())
+            XCTAssertTrue(store.messages(for: Date()).isEmpty)
+            XCTAssertEqual(try Data(contentsOf: store.archiveFile), bytes)
+        }
+
         func testDisabledChatGPTImportDoesNotOpenSymlinkOrCreateStorage() throws {
             let container = try makeTemporaryDirectory(prefix: "goalong-chatgpt-import-races")
             defer { try? FileManager.default.removeItem(at: container) }

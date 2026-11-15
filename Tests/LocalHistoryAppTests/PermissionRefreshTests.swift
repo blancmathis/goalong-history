@@ -283,6 +283,21 @@
             XCTAssertFalse(menu.contains("permissions.currentStatus"))
         }
 
+        /// T-064 lot 6 (D2 P2): « Allow » reads the real grant, not a cached snapshot that says « granted ».
+        func testInputMonitoringRequestReadsTheDirectGrantNotTheCache() {
+            var direct = (accessibility: false, inputMonitoring: false)
+            let manager = PermissionManager(statusProbe: { self.healthyStatus }, directPreflight: { direct })
+            XCTAssertFalse(manager.requestInputMonitoring(), "the user removed the grant: the cache must not answer yes")
+            direct.inputMonitoring = true
+            XCTAssertTrue(manager.requestInputMonitoring())
+        }
+
+        func testCannotCompleteAloneTriggersOneRetry() {
+            XCTAssertTrue(PermissionManager.shouldRetryAfterCannotComplete(AXError.cannotComplete.rawValue))
+            XCTAssertFalse(PermissionManager.shouldRetryAfterCannotComplete(AXError.apiDisabled.rawValue))
+            XCTAssertFalse(PermissionManager.shouldRetryAfterCannotComplete(nil))
+        }
+
         private var healthyStatus: PermissionStatus {
             PermissionStatus(
                 accessibility: true,
