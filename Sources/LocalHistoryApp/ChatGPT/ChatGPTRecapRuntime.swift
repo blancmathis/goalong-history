@@ -498,6 +498,12 @@ import AppleScreenTime
             qos: .userInitiated
         )
         private var dayOverviewRequestID = 0  // guarded by runStateLock
+        /// Overviews already measured, by day and sources (guarded by runStateLock). Reused while
+        /// the day's journal is unchanged and the entry is younger than `dayOverviewCacheLifetime`,
+        /// so browsing days or reopening the page does not re-read and re-verify the whole day.
+        private var dayOverviewCache: [String: (builtAt: Date, overview: ChatGPTRecapDayOverview)] = [:]
+        private static let dayOverviewCacheLifetime: TimeInterval = 10 * 60
+        private static let dayOverviewCacheCapacity = 8
         #if DEBUG
             private var dayOverviewBuildCount = 0  // guarded by runStateLock
         #endif
@@ -605,6 +611,7 @@ import AppleScreenTime
                 self.selectedDay = self.selectedDayKey.start()
                 // The overview was measured between the old zone's bounds of this date: read it again.
                 self.discardPendingDayOverview()
+                self.clearDayOverviewCache()
                 self.dayOverview = nil
                 self.dayOverviewError = nil
                 self.refreshDayOverview()
@@ -725,6 +732,7 @@ import AppleScreenTime
 
         /// A history clear may have erased the recap of the day on screen: show what is left on disk.
         func refreshAfterHistoryClear() {
+            clearDayOverviewCache()
             streamedMarkdown = ""
             recap = ChatGPTRecapPersistence.load(for: selectedDay, from: recapsDirectory)
             proofReport = nil
@@ -746,6 +754,51 @@ import AppleScreenTime
             runStateLock.lock()
             defer { runStateLock.unlock() }
             return dayOverviewRequestID == id
+        }
+
+        private func clearDayOverviewCache() {
+            runStateLock.lock()
+            dayOverviewCache.removeAll()
+            runStateLock.unlock()
+        }
+
+        /// Day, sources and journal state of an overview. Today's journal grows with each event,
+        /// so a busy day is read again; a closed day is reused until the lifetime ends.
+        private func dayOverviewCacheKey(day: Date, includeScreenTime: Bool, includeAgentActivity: Bool) -> String {
+            func stamp(_ url: URL) -> String {
+                guard let values = try? fileManager.attributesOfItem(atPath: url.path) else { return "-" }
+                let size = (values[.size] as? NSNumber)?.int64Value ?? -1
+                let modified = (values[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+                return "\(size)@\(modified)"
+            }
+            return [
+                String(day.timeIntervalSince1970), deviceID,
+                includeScreenTime ? "st" : "-", includeAgentActivity ? "ag" : "-",
+                stamp(AppPaths.eventFileURL(for: day)), stamp(AppPaths.semanticFileURL(for: day)),
+            ].joined(separator: "|")
+        }
+
+        private func cachedDayOverview(for key: String, now: Date) -> ChatGPTRecapDayOverview? {
+            runStateLock.lock()
+            defer { runStateLock.unlock() }
+            guard let entry = dayOverviewCache[key] else { return nil }
+            // A clock moved either way ends the entry too.
+            guard now.throttleElapsed(since: entry.builtAt) < Self.dayOverviewCacheLifetime else {
+                dayOverviewCache[key] = nil
+                return nil
+            }
+            return entry.overview
+        }
+
+        private func storeDayOverview(_ overview: ChatGPTRecapDayOverview, for key: String, now: Date) {
+            runStateLock.lock()
+            defer { runStateLock.unlock() }
+            dayOverviewCache[key] = (now, overview)
+            while dayOverviewCache.count > Self.dayOverviewCacheCapacity,
+                let oldest = dayOverviewCache.min(by: { $0.value.builtAt < $1.value.builtAt })?.key
+            {
+                dayOverviewCache[oldest] = nil
+            }
         }
 
         /// An overview read before a clear or a stop must not be shown after it.
@@ -807,21 +860,33 @@ import AppleScreenTime
                 guard let self else { return }
                 // A later day was chosen meanwhile: skip this full read.
                 guard self.isLatestDayOverviewRequest(requestID) else { return }
-                #if DEBUG
-                    self.runStateLock.lock()
-                    self.dayOverviewBuildCount += 1
-                    self.runStateLock.unlock()
-                #endif
+                let cacheKey = self.dayOverviewCacheKey(
+                    day: requestedDay, includeScreenTime: includeScreenTime,
+                    includeAgentActivity: includeAgentActivity
+                )
                 do {
-                    let measuredOverview = try self.dayOverviewReader?(requestedDay)
-                        ?? ChatGPTRecapContextBuilder.dayOverview(from: ChatGPTRecapContextBuilder.build(
-                            for: requestedDay,
-                            deviceID: self.deviceID,
-                            chatHistoryStore: self.chatHistoryStore,
-                            includeScreenTime: includeScreenTime,
-                            includeAgentActivity: includeAgentActivity,
-                            analyzeAgentContent: false
-                        ))
+                    let measuredOverview: ChatGPTRecapDayOverview
+                    if let cached = self.cachedDayOverview(for: cacheKey, now: Date()) {
+                        measuredOverview = cached
+                    } else {
+                        #if DEBUG
+                            self.runStateLock.lock()
+                            self.dayOverviewBuildCount += 1
+                            self.runStateLock.unlock()
+                        #endif
+                        measuredOverview = try self.dayOverviewReader?(requestedDay)
+                            ?? ChatGPTRecapContextBuilder.dayOverview(from: ChatGPTRecapContextBuilder.build(
+                                for: requestedDay,
+                                deviceID: self.deviceID,
+                                chatHistoryStore: self.chatHistoryStore,
+                                includeScreenTime: includeScreenTime,
+                                includeAgentActivity: includeAgentActivity,
+                                analyzeAgentContent: false
+                            ))
+                        if self.isLatestDayOverviewRequest(requestID) {
+                            self.storeDayOverview(measuredOverview, for: cacheKey, now: Date())
+                        }
+                    }
                     let overview = storedSourceCounts.map {
                         measuredOverview.replacingAgentMetrics(with: $0)
                     } ?? measuredOverview
@@ -1165,6 +1230,12 @@ import AppleScreenTime
                 }
                 defer { self.derivedWriteBarrier.endJob(permit) }
                 var runDirectory: URL?
+                // Set once the day's context may have reached ChatGPT: a later failure must not
+                // send the whole day again at every wake (see `scheduleAutomaticRetry`).
+                var sentToProvider = false
+                // A proof created for a recap that is never stored is withdrawn, so the chain
+                // does not advance past a recap that does not exist.
+                var unstoredProof: AnalysisProofCreationResult?
                 do {
                     let context = try ChatGPTRecapContextBuilder.build(
                         for: normalizedDay,
@@ -1214,6 +1285,7 @@ import AppleScreenTime
                           GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == privacy.revision else {
                         throw CodexAppServerError.generationFailed("Les autorisations ont changé. Aucune analyse n’a été envoyée.")
                     }
+                    sentToProvider = true
                     let assessment = try session.generateRecap(
                         prompt: prompt,
                         workingDirectory: directory
@@ -1276,6 +1348,7 @@ import AppleScreenTime
                             recap: signedDraft,
                             identity: identity
                         )
+                        unstoredProof = proof
                         result = ChatGPTDailyRecap(
                             schemaVersion: 4,
                             day: signedDraft.day,
@@ -1300,6 +1373,7 @@ import AppleScreenTime
                         throw RecapGenerationInterruption.historyCleared
                     }
                     try ChatGPTRecapPersistence.write(result, to: self.recapsDirectory)
+                    unstoredProof = nil
                     let proofReport = result.proof.flatMap {
                         try? self.proofStore.verify(reference: $0)
                     }
@@ -1331,6 +1405,7 @@ import AppleScreenTime
                     }
                 } catch {
                     if let runDirectory { try? self.fileManager.removeItem(at: runDirectory) }
+                    if let unstoredProof { self.proofStore.discard(unstoredProof) }
                     if !(error is RecapGenerationInterruption) {
                         let detail = CodexAppServerLimits.boundedUTF8(
                             ActivitySemanticTextSanitizer.redact(error.localizedDescription) ?? "",
@@ -1365,7 +1440,9 @@ import AppleScreenTime
                                 message: GoalongUserFacingError.message(error)
                             )
                         } else {
-                            self.scheduleAutomaticRetry(for: normalizedDay, after: error)
+                            self.scheduleAutomaticRetry(
+                                for: normalizedDay, after: error,
+                                sentToProvider: sentToProvider && !(error is RecapGenerationInterruption))
                         }
                     }
                 }
@@ -1478,8 +1555,8 @@ import AppleScreenTime
                 connectionState = state
             }
 
-            func scheduleAutomaticRetryForTesting(for day: Date, after error: Error) {
-                scheduleAutomaticRetry(for: day, after: error)
+            func scheduleAutomaticRetryForTesting(for day: Date, after error: Error, sentToProvider: Bool = false) {
+                scheduleAutomaticRetry(for: day, after: error, sentToProvider: sentToProvider)
             }
 
             var automaticRetryAttemptForTesting: Int { automaticRetryAttempt }
@@ -1524,11 +1601,21 @@ import AppleScreenTime
             generateRecap(for: completedDay, automatic: true)
         }
 
-        private func scheduleAutomaticRetry(for day: Date, after error: Error) {
-            guard started, automaticRecapsEnabled, Self.isRetryableAutomaticError(error) else {
+        /// Retryable errors get the bounded schedule. A non-retryable error after the day was sent
+        /// to ChatGPT (proof, signature or storage failure) closes the day for automatic runs
+        /// until the next launch: otherwise every wake or clock change would send it again.
+        /// A manual « Générer » stays possible.
+        private func scheduleAutomaticRetry(for day: Date, after error: Error, sentToProvider: Bool = false) {
+            guard started, automaticRecapsEnabled else { return }
+            let normalizedDay = Calendar.current.startOfDay(for: day)
+            guard Self.isRetryableAutomaticError(error) else {
+                guard sentToProvider else { return }
+                automaticRetryWorkItem?.cancel()
+                automaticRetryWorkItem = nil
+                automaticRetryDay = normalizedDay
+                automaticRetryAttempt = Self.automaticRetryDelays.count
                 return
             }
-            let normalizedDay = Calendar.current.startOfDay(for: day)
             if automaticRetryDay != normalizedDay {
                 automaticRetryWorkItem?.cancel()
                 automaticRetryWorkItem = nil
