@@ -808,6 +808,86 @@
             XCTAssertEqual(sessions, ["retained-before-commit", "appended-after-commit"])
         }
 
+        /// T-064 lot 11: a rewrite no longer occupies the append queue. The recorder's
+        /// writer and `flush()` proceed during it; rows appended meanwhile are kept.
+        func testDeletionRewriteDoesNotBlockSameStoreAppendsAndKeepsThem() throws {
+            let root = try makeTemporaryDirectory()
+            let events = root.appendingPathComponent("events", isDirectory: true)
+            try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+            // Local noon: every row stays in one local day journal in any time zone.
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = .current
+            let cutoff = calendar.date(
+                from: DateComponents(year: 2026, month: 8, day: 23, hour: 12)
+            )!
+            let appendDuringRewrite = DispatchSemaphore(value: 0)
+            let appendFinished = DispatchSemaphore(value: 0)
+            var store: JSONLStore!
+            var appendError: Error?
+            store = try JSONLStore(
+                retentionDays: 0,
+                eventsDirectory: events,
+                prepareApplicationStorage: false,
+                beforeDeletionCommitLock: {
+                    appendDuringRewrite.signal()
+                    // Old code ran this on the append queue: the append below could
+                    // not start until the deletion finished.
+                    _ = appendFinished.wait(timeout: .now() + 2)
+                }
+            )
+            for (index, offset) in [-120.0, -60, 60, 90].enumerated() {
+                _ = try store.appendAndWait(
+                    HistoryEvent(
+                        sessionID: "row-\(index)",
+                        timestamp: cutoff.addingTimeInterval(offset),
+                        kind: .heartbeat
+                    )
+                )
+            }
+            let deletionFinished = expectation(description: "deletion finished")
+            store.deleteEvents(since: cutoff) { result in
+                XCTAssertEqual(try? result.get(), 2)
+                deletionFinished.fulfill()
+            }
+            XCTAssertEqual(appendDuringRewrite.wait(timeout: .now() + 2), .success)
+            DispatchQueue.global().async {
+                do {
+                    _ = try store.appendAndWait(
+                        HistoryEvent(
+                            sessionID: "appended-during-rewrite",
+                            timestamp: cutoff.addingTimeInterval(120),
+                            kind: .heartbeat
+                        )
+                    )
+                    try store.flushAndWait()
+                } catch {
+                    appendError = error
+                }
+                appendFinished.signal()
+            }
+            wait(for: [deletionFinished], timeout: 5)
+            XCTAssertNil(appendError)
+            _ = try store.appendAndWait(
+                HistoryEvent(
+                    sessionID: "appended-after-rewrite",
+                    timestamp: cutoff.addingTimeInterval(180),
+                    kind: .heartbeat
+                )
+            )
+            try store.flushAndWait()
+
+            let file = events.appendingPathComponent(
+                AppPaths.localDayString(for: cutoff) + ".jsonl"
+            )
+            let sessions = try Data(contentsOf: file).split(separator: 0x0A).compactMap {
+                try? JSONDecoder.iso8601.decode(HistoryEvent.self, from: Data($0)).sessionID
+            }
+            XCTAssertEqual(
+                sessions,
+                ["row-0", "row-1", "appended-during-rewrite", "appended-after-rewrite"]
+            )
+        }
+
         func testJSONLStoreRejectsFinalAndAncestorDirectorySymlinks() throws {
             let root = try makeTemporaryDirectory()
             let actualParent = root.appendingPathComponent("actual", isDirectory: true)

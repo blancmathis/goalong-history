@@ -351,6 +351,17 @@
             return false
         }
 
+        /// Returns the scheduling token to a consistent state when capture restarts. A
+        /// stop can end a drain early (or keep a control event) while the token is still
+        /// owned; without this, `enqueue` would never schedule a drain again. True means
+        /// input is waiting and the caller must schedule one drain.
+        func rearmDrainScheduling() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            drainScheduled = pendingCount > 0 || pendingTapDisabled != nil
+            return drainScheduled
+        }
+
         @discardableResult
         func discardPending() -> Int {
             lock.lock()
@@ -799,6 +810,9 @@
                 return false
             }
             isRunning = true
+            if ingress.rearmDrainScheduling() {
+                DispatchQueue.main.async { [weak self] in self?.drainPendingEvents() }
+            }
             lastSuccessfulStartAt = Date()
             unexpectedRestartGate.cancel()
             Diagnostics.write("Event tap created and enabled; waiting for a real input callback")
@@ -899,7 +913,9 @@
                 sourceStateIdentifier: event.getIntegerValueField(.eventSourceStateID),
                 targetProcessIdentifier: event.getIntegerValueField(.eventTargetUnixProcessID),
                 observedContext: contextMonitor.latestSnapshot,
-                capturingWasEnabled: state.isCapturing,
+                // Never `isCapturing` here: its global-pause read may wait on the disk
+                // and the system disables a tap whose callback is too slow.
+                capturingWasEnabled: state.isCapturingHint,
                 secureInputWasEnabled: IsSecureEventInputEnabled()
             )
 
@@ -1120,7 +1136,10 @@
                 return
             }
 
-            guard input.capturingWasEnabled, state.isCapturing else {
+            // `isCapturing` first: each drain refreshes the callback's cached hint, so a
+            // pause lifted by another process stops dropping input after one batch.
+            let capturingNow = state.isCapturing
+            guard input.capturingWasEnabled, capturingNow else {
                 cancelOpenInteractionsForBoundary()
                 return
             }

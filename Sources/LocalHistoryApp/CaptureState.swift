@@ -9,14 +9,33 @@
         private var systemAwake = true
         private var displaysAwake = true
         private var screenUnlocked = true
+        /// Last global-pause value read by `isCapturing`. Only `isCapturingHint` uses it.
+        private var lastGlobalPause = false
         private let isGloballyPaused: () -> Bool
 
         init(isGloballyPaused: @escaping () -> Bool = { GoalongGlobalPause.isPaused() }) {
             self.isGloballyPaused = isGloballyPaused
         }
 
+        /// Authoritative value. The global pause may read its file (lstat, and a read
+        /// when the file changed) under its own process-wide lock.
         var isCapturing: Bool {
-            !isGloballyPaused() && lock.withLock { !manualPaused && userSessionActive && systemAwake && displaysAwake && screenUnlocked }
+            let globallyPaused = isGloballyPaused()
+            return lock.withLock {
+                lastGlobalPause = globallyPaused
+                return !globallyPaused && localFlagsAllowCapture
+            }
+        }
+
+        /// No I/O and no shared lock: for the event-tap callback, which must never wait
+        /// on the disk. The global pause part is the value last read by `isCapturing`;
+        /// every consumer re-checks `isCapturing` before it records anything.
+        var isCapturingHint: Bool {
+            lock.withLock { !lastGlobalPause && localFlagsAllowCapture }
+        }
+
+        private var localFlagsAllowCapture: Bool {
+            !manualPaused && userSessionActive && systemAwake && displaysAwake && screenUnlocked
         }
 
         var isManuallyPaused: Bool {
