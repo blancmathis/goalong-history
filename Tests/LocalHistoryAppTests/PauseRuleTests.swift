@@ -283,5 +283,81 @@ final class PauseRuleTests: XCTestCase {
         draft.setPause(legacy)
         XCTAssertFalse(draft.pauseChanged, "back to the opening values = unchanged")
     }
+
+    // T-064 (P0): a zone change (Paris → Kiritimati → Paris) never hands back a used budget; the next day is normal.
+    func testT064ZoneRoundTripKeepsUsedBudget() {
+        var kiritimati = Calendar(identifier: .gregorian); kiritimati.timeZone = TimeZone(identifier: "Pacific/Kiritimati")!
+        let policy = PausePolicy(budgetMinutes: 10)
+        let used = "Les pauses de cette période sont prises."
+        var (_, usage) = request(policy, nil, at: date(11, 22, 30, month: 11))
+        usage = PauseEngine.current(usage, policy: policy, now: date(11, 22, 45, month: 11), calendar: calendar)
+        XCTAssertEqual(request(policy, usage, at: date(11, 22, 45, month: 11)).0, .refused(used))
+        // 23:00 in Paris is the next day, 12:00, in Kiritimati: the Paris day holds until its midnight.
+        let east = PauseEngine.request(policy, usage: usage, lock: .locked, hasPassword: false, proof: .none,
+                                       now: date(11, 23, 0, month: 11), calendar: kiritimati)
+        XCTAssertEqual(east.0, .refused("Les pauses de cette période sont prises. Verrouillé : aucune pause en plus."))
+        XCTAssertEqual(request(policy, east.1, at: date(11, 23, 30, month: 11)).0, .refused(used), "back to Paris")
+        // After the old midnight, the next day starts in the zone in use; coming back keeps that day's use.
+        let next = PauseEngine.request(policy, usage: east.1, lock: .locked, hasPassword: false, proof: .none,
+                                       now: date(12, 0, 30, month: 11), calendar: kiritimati)
+        XCTAssertEqual(next.0, .granted(end: date(12, 0, 40, month: 11), extra: false), "a new day, a new budget")
+        let ended = PauseEngine.current(next.1, policy: policy, now: date(12, 1, 0, month: 11), calendar: kiritimati)
+        XCTAssertEqual(request(policy, ended, at: date(12, 1, 0, month: 11)).0, .refused(used), "back to Paris, same day used")
+        XCTAssertEqual(request(policy, ended, at: date(13, 9, month: 11)).0, .granted(end: date(13, 9, 10, month: 11), extra: false))
+    }
+
+    // T-064 (P0), in the controller: the zone swaps under a running « Verrouillé » rule.
+    @MainActor func testT064ZoneChangeInControllerKeepsUsedBudget() {
+        var current = calendar, now = date(11, 22, 30, month: 11)
+        let value = list([always(lock: .locked, pause: PausePolicy(budgetMinutes: 10))])
+        let c = BlockingController(document: BlockingDocument(lists: [value]), clock: { now }, calendarProvider: { current },
+                                   continuous: { now.timeIntervalSince1970 })
+        c.refresh()
+        XCTAssertEqual(c.takeBreak(listID: value.id), .ok)
+        now = date(11, 22, 45, month: 11); c.refresh()
+        XCTAssertNotEqual(c.takeBreak(listID: value.id), .ok)
+        current.timeZone = TimeZone(identifier: "Pacific/Kiritimati")!; now = date(11, 23, month: 11); c.refresh()
+        XCTAssertNotEqual(c.takeBreak(listID: value.id), .ok, "Kiritimati")
+        current.timeZone = TimeZone(identifier: "Europe/Paris")!; now = date(11, 23, 10, month: 11); c.refresh()
+        XCTAssertNotEqual(c.takeBreak(listID: value.id), .ok, "back to Paris")
+        now = date(12, 9, month: 11); c.refresh()
+        XCTAssertEqual(c.takeBreak(listID: value.id), .ok, "next day")
+    }
+
+    // T-064 (P1): the clock set back a day before a reboot keeps the period in progress.
+    func testT064ClockSetBackKeepsUsedBudget() throws {
+        let policy = PausePolicy(budgetMinutes: 10)
+        let usage = PauseEngine.current(request(policy, nil, at: date(12, 10, month: 11)).1, policy: policy,
+                                        now: date(12, 11, month: 11), calendar: calendar)
+        XCTAssertEqual(usage.periodEnd, date(13, 0, month: 11))
+        XCTAssertEqual(request(policy, usage, at: date(11, 10, month: 11)).0, .refused("Les pauses de cette période sont prises."))
+        XCTAssertEqual(request(policy, usage, at: date(13, 8, month: 11)).0, .granted(end: date(13, 8, 10, month: 11), extra: false))
+        // A file of an older version (no `periodEnd`) still reads; the key decides, as before.
+        let old = try JSONDecoder().decode(PauseUsage.self, from: Data(#"{"period":"day:2026-11-12","usedSeconds":600,"count":1,"extraCount":0,"extra":false}"#.utf8))
+        XCTAssertNil(old.periodEnd)
+        XCTAssertEqual(PauseEngine.current(old, policy: policy, now: date(12, 20, month: 11), calendar: calendar).periodEnd, date(13, 0, month: 11))
+    }
+
+    // T-064 (P2): « Durcir seulement » never trades a long wait for « Recopier ».
+    func testT064GateHardenOnly() {
+        let policy = PausePolicy(budgetMinutes: 10, gate: .wait(minutes: 1_440))
+        func with(_ gate: PausePolicy.Gate, from base: PausePolicy = policy) -> PausePolicy { var value = base; value.gate = gate; return value }
+        XCTAssertNotNil(PauseEngine.weakening(policy, with(.typing)), "a day of wait → retype")
+        XCTAssertNotNil(PauseEngine.weakening(policy, with(.wait(minutes: 5))))
+        XCTAssertNotNil(PauseEngine.weakening(policy, with(.none)))
+        XCTAssertNil(PauseEngine.weakening(policy, with(.password)))
+        XCTAssertNotNil(PauseEngine.weakening(with(.typing), with(.wait(minutes: 1))))
+        XCTAssertNil(PauseEngine.weakening(with(.wait(minutes: 5)), with(.wait(minutes: 10))))
+        XCTAssertNil(PauseEngine.weakening(with(.none), with(.wait(minutes: 1))))
+        XCTAssertNotNil(PauseEngine.weakening(with(.password), with(.typing)))
+    }
+
+    // T-064 (P3): a pause never outlasts the caller's usage day (held across a zone change).
+    func testT064PauseEndsWithUsageDay() {
+        let now = date(11, 22, month: 11)
+        let decision = PauseEngine.request(PausePolicy(budgetMinutes: 30, period: .week), usage: nil, lock: .free, hasPassword: false,
+                                           proof: .none, now: now, calendar: calendar, dayEnd: date(11, 22, 10, month: 11)).0
+        XCTAssertEqual(decision, .granted(end: date(11, 22, 10, month: 11), extra: false))
+    }
 }
 #endif
