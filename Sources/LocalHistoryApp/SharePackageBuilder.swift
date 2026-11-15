@@ -904,10 +904,25 @@
         ) throws -> [LocalMinuteSeal] {
             var seals: [LocalMinuteSeal] = []
             var retainedBytes: Int64 = 0
+            var skippedTornRows = 0
             _ = try scanJSONLines(
                 LocalMinuteSeal.self,
                 at: file,
                 cancellation: cancellation,
+                skipUndecodableRow: { row in
+                    // T-064 lot 8 (point 1): older builds kept a torn append (crash,
+                    // ENOSPC) as its own row. Such bytes are not JSON, so they carry no
+                    // seal and no sequence: skipping one keeps the day readable, and the
+                    // chain check below still fails on any missing or altered seal.
+                    guard skippedTornRows == 0,
+                        (try? JSONSerialization.jsonObject(with: row)) == nil
+                    else { return false }
+                    skippedTornRows += 1
+                    Diagnostics.write(
+                        "Skipped one torn minute-seal row (\(row.count) bytes) in \(file.lastPathComponent)"
+                    )
+                    return true
+                },
                 onValue: { seal, lineBytes in
                     guard seals.count < self.limits.maximumSealRows else {
                         throw ShareBuildError.sourceIncomplete(
@@ -1136,6 +1151,7 @@
             expectedPrefixTailFingerprint: String? = nil,
             maximumSourceBytes requestedMaximumSourceBytes: Int64? = nil,
             cancellation: @escaping () -> Bool,
+            skipUndecodableRow: ((Data) -> Bool)? = nil,
             onValue: (Value, Int) throws -> Void
         ) throws -> JSONLScanOutcome? {
             guard !cancellation() else { throw ShareBuildError.cancelled }
@@ -1232,6 +1248,10 @@
                         try decoder.decode(type, from: pending)
                     }
                 } catch {
+                    if skipUndecodableRow?(pending) == true {
+                        pending.removeAll(keepingCapacity: true)
+                        return
+                    }
                     throw ShareBuildError.sourceIncomplete(
                         "invalid JSONL row \(decodedRows + 1) in \(file.lastPathComponent)"
                     )
@@ -1273,6 +1293,9 @@
                 }
             }
 
+            if !pending.isEmpty, skipUndecodableRow?(pending) == true {
+                pending.removeAll()
+            }
             guard pending.isEmpty else {
                 throw ShareBuildError.sourceIncomplete(
                     "unterminated JSONL row in \(file.lastPathComponent)"

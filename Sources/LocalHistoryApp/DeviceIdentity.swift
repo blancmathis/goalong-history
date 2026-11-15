@@ -310,7 +310,9 @@ import AppleScreenTime
         /// Any other load failure means an existing key could not be read right now.
         static func isTierUnavailable(_ error: Error) -> Bool {
             switch error as? DeviceIdentityError {
-            case .cannotCreateKey: return true
+            // T-064 lot 8 (point 6): a locked keychain refuses creation only for now.
+            // Falling to a lower tier then would fork the identity at the next launch.
+            case .cannotCreateKey(let status): return status != errSecInteractionNotAllowed
             case .cannotLoadKey(let status): return status == errSecMissingEntitlement
             default: return false
             }
@@ -511,22 +513,35 @@ import AppleScreenTime
             return tag
         }
 
-        private static func loadOrCreateLocalSoftwareKey() throws -> SecKey {
-            try AppPaths.prepare()
+        /// T-064 lot 8 (point 6): an existing key file is never replaced. If it cannot be
+        /// read or decoded, signing stays suspended (the caller throws) instead of forking
+        /// the identity. A new key is written to a 0600 temporary file, synced, then moved
+        /// into place only if no key file appeared meanwhile.
+        static func loadOrCreateLocalSoftwareKey(
+            at fileURL: URL = AppPaths.softwareSigningKeyFile,
+            prepareStorage: () throws -> Void = { try AppPaths.prepare() }
+        ) throws -> SecKey {
+            try prepareStorage()
             let attributes: [String: Any] = [
                 kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
                 kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
                 kSecAttrKeySizeInBits as String: 256,
             ]
 
-            if let data = try? Data(contentsOf: AppPaths.softwareSigningKeyFile) {
-                var loadError: Unmanaged<CFError>?
-                if let key = SecKeyCreateWithData(data as CFData, attributes as CFDictionary, &loadError) {
-                    try? FileManager.default.setAttributes(
-                        [.posixPermissions: 0o600], ofItemAtPath: AppPaths.softwareSigningKeyFile.path)
-                    return key
+            func loadExisting() throws -> SecKey {
+                guard let data = try? Data(contentsOf: fileURL) else {
+                    throw DeviceIdentityError.cannotLoadKey(errSecIO)
                 }
+                var loadError: Unmanaged<CFError>?
+                guard let key = SecKeyCreateWithData(data as CFData, attributes as CFDictionary, &loadError) else {
+                    throw DeviceIdentityError.cannotLoadKey(osStatus(from: loadError))
+                }
+                _ = chmod(fileURL.path, 0o600)
+                return key
             }
+
+            var existing = stat()
+            if lstat(fileURL.path, &existing) == 0 { return try loadExisting() }
 
             var createError: Unmanaged<CFError>?
             guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &createError) else {
@@ -536,11 +551,34 @@ import AppleScreenTime
             guard let data = SecKeyCopyExternalRepresentation(key, &exportError) as Data? else {
                 throw DeviceIdentityError.cannotExportPublicKey(osStatus(from: exportError))
             }
-            do {
-                try data.write(to: AppPaths.softwareSigningKeyFile, options: [.atomic])
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600], ofItemAtPath: AppPaths.softwareSigningKeyFile.path)
-            } catch {
+
+            let temporaryURL = fileURL.deletingLastPathComponent()
+                .appendingPathComponent(".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp")
+            let descriptor = Darwin.open(
+                temporaryURL.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+            guard descriptor >= 0 else { throw DeviceIdentityError.cannotPersistSoftwareKey }
+            var written = 0
+            let wroteAll: Bool = data.withUnsafeBytes { buffer in
+                guard let base = buffer.baseAddress else { return false }
+                while written < data.count {
+                    let result = Darwin.write(descriptor, base.advanced(by: written), data.count - written)
+                    if result > 0 { written += result; continue }
+                    if result < 0, errno == EINTR { continue }
+                    return false
+                }
+                return true
+            }
+            let synced = wroteAll && fsync(descriptor) == 0
+            _ = Darwin.close(descriptor)
+            guard synced else {
+                _ = unlink(temporaryURL.path)
+                throw DeviceIdentityError.cannotPersistSoftwareKey
+            }
+            guard renamex_np(temporaryURL.path, fileURL.path, UInt32(RENAME_EXCL)) == 0 else {
+                let renameError = errno
+                _ = unlink(temporaryURL.path)
+                // Another launch created the key first: use that one, never overwrite it.
+                if renameError == EEXIST { return try loadExisting() }
                 throw DeviceIdentityError.cannotPersistSoftwareKey
             }
             return key
