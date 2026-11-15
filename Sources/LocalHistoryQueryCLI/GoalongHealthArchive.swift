@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import LocalHistoryCore
 import CoreFoundation
 
 /// Compact, explicitly imported days only. The original Apple export is never copied.
@@ -146,7 +147,7 @@ public enum GoalongHealthArchive {
             try require(number(row["sampleCount"], maximum: 500_000, integer: true) && (row["sampleCount"] as? Int ?? 0) > 0)
         }
         seen.removeAll()
-        let local = DateFormatter(); local.locale = Locale(identifier: "en_US_POSIX"); local.timeZone = zone; local.dateFormat = "yyyy-MM-dd"
+        let local = DateFormatter(); local.calendar = LocalDayKey.gregorianCalendar(timeZone: zone ?? .current); local.locale = Locale(identifier: "en_US_POSIX"); local.timeZone = zone; local.dateFormat = "yyyy-MM-dd"
         for value in workouts {
             let row = try object(value, ["id", "sport", "source", "startedAt", "endedAt", "durationSeconds", "distanceMeters", "energyKcal"])
             guard let id = row["id"] as? String, let sport = row["sport"] as? String,

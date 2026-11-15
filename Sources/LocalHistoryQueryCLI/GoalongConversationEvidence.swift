@@ -38,7 +38,7 @@ public enum GoalongConversationEvidence {
             throw GoalongProfileAnalysis.invalid("Choisissez au plus 31 jours de contexte conversationnel.")
         }
         let iso = ISO8601DateFormatter(), dayFormat = DateFormatter()
-        dayFormat.locale = Locale(identifier: "en_US_POSIX"); dayFormat.dateFormat = "yyyy-MM-dd"
+        dayFormat.calendar = LocalDayKey.gregorianCalendar(); dayFormat.locale = Locale(identifier: "en_US_POSIX"); dayFormat.dateFormat = "yyyy-MM-dd"
         let deadline = Date().addingTimeInterval(60)
         var day = first, rows: [GoalongProfileAnalysis.Evidence] = [], seen = Set<String>(), bytes = 0, partial = false
         while day < end {

@@ -422,8 +422,17 @@
                     return true
                 }
             }
-            let normalized = name.lowercased()
-            return browserNameMarkers.contains { normalized.contains($0) }
+            return isBrowserName(name)
+        }
+
+        /// A browser name matches whole words only: "Archive Utility" and "Adobe Media Encoder"
+        /// contain "arc" and "dia" but are not browsers, while "Arc", "Dia" and "Microsoft Edge" are.
+        static func isBrowserName(_ name: String) -> Bool {
+            let words = name.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            guard !words.isEmpty else { return false }
+            let joined = " " + words.joined(separator: " ") + " "
+            if browserNamePhrases.contains(where: { joined.contains(" " + $0 + " ") }) { return true }
+            return !browserNameWords.isDisjoint(with: words)
         }
 
         private static let knownBrowserBundleIdentifiers = Set(
@@ -431,11 +440,12 @@
                 + ["com.apple.mobilesafari"]
         )
 
-        private static let browserNameMarkers = [
+        private static let browserNameWords: Set<String> = [
             "safari", "chrome", "chromium", "firefox", "librewolf", "floorp",
             "edge", "brave", "arc", "opera", "vivaldi", "orion", "duckduckgo",
-            "zen browser", "dia", "sigmaos", "browser", "aside", "ecosia",
+            "dia", "sigmaos", "aside", "ecosia",
         ]
+        private static let browserNamePhrases = ["zen browser"]
 
         private static func applicationKey(
             name: String,

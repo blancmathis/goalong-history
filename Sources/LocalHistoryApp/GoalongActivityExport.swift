@@ -16,7 +16,7 @@ enum GoalongActivityExport {
     static func csv(period: GoalongLocalAnalytics.Period, grouping: GoalongActivityUsageGrouping,
                     calendar: Calendar = .current, now: Date = Date()) -> String {
         let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.calendar = LocalDayKey.gregorianCalendar(timeZone: calendar.timeZone); formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         var lines = [header.joined(separator: ";")]
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
@@ -49,7 +49,7 @@ enum GoalongActivityExport {
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
         let days = period.days
-        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        let formatter = DateFormatter(); formatter.calendar = LocalDayKey.gregorianCalendar(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         let range = [days.first, days.last].compactMap { $0.map { formatter.string(from: $0.date) } }
         panel.nameFieldStringValue = "Goalong-activite-\(Set(range).sorted().joined(separator: "_au_")).csv"
         NSApplication.shared.activate(ignoringOtherApps: true)

@@ -91,7 +91,7 @@ extension Notification.Name {
         do {
             guard sourcesEnabled else { throw GoalongProfileAnalysis.invalid("Une source sélectionnée a été désactivée.") }
             try revalidateNative()
-            let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
+            let formatter = DateFormatter(); formatter.calendar = LocalDayKey.gregorianCalendar(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
             request = try GoalongProfileAnalysis.prepare(date: formatter.string(from: day), timezone: TimeZone.current.identifier,
                 evidence: evidence.filter { selectedEvidence.contains($0.id) }, policy: policy, selected: GoalongProfileAnalysis.modules.filter { modules.contains($0) }, includeConversations: includeConversations)
             status = "Prompt préparé. Les termes exclus ont retiré les événements concernés ; les alias ont été appliqués."

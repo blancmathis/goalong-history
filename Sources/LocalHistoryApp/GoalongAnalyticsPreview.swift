@@ -14,7 +14,7 @@ enum GoalongAnalyticsPreview {
             return makeDay(day, calendar: calendar)
         }
         let formatter = DateFormatter()
-        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.calendar = LocalDayKey.gregorianCalendar(timeZone: calendar.timeZone); formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         let dayLabel = formatter.string(from: last)
         let examples: [(String, String, String, String)] = [

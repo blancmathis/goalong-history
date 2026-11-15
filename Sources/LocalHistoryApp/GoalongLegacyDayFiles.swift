@@ -63,16 +63,19 @@
         /// Old lines, then the Gregorian file, through one atomic replace; the old file goes only after.
         /// A second pass finds the old lines already inside and only drops the old file.
         private static func merge(root: URL, folder: String, legacy: String, into name: String) {
-            guard var old = try? GoalongSystemSourceFiles.read(root: root, folder: folder, name: legacy, maximumBytes: dayFileBytes),
-                  let newer = try? GoalongSystemSourceFiles.read(root: root, folder: folder, name: name, maximumBytes: dayFileBytes)
-            else { return }
-            if !old.isEmpty, old.last != 10 { old.append(10) }
-            if !old.isEmpty, newer.range(of: old) == nil {
-                guard old.count + newer.count <= dayFileBytes,
-                      (try? GoalongSystemSourceFiles.write(old + newer, root: root, folder: folder, name: name, maximumBytes: dayFileBytes)) != nil
+            // Under the folder lock that every writer takes: an append between the read and the replace is not lost.
+            try? GoalongSystemSourceFiles.withFolderLock(root: root, folder: folder) {
+                guard var old = try? GoalongSystemSourceFiles.read(root: root, folder: folder, name: legacy, maximumBytes: dayFileBytes),
+                      let newer = try? GoalongSystemSourceFiles.read(root: root, folder: folder, name: name, maximumBytes: dayFileBytes)
                 else { return }
+                if !old.isEmpty, old.last != 10 { old.append(10) }
+                if !old.isEmpty, newer.range(of: old) == nil {
+                    guard old.count + newer.count <= dayFileBytes,
+                          (try? GoalongSystemSourceFiles.write(old + newer, root: root, folder: folder, name: name, maximumBytes: dayFileBytes, lockHeld: true)) != nil
+                    else { return }
+                }
+                try? GoalongSystemSourceFiles.remove(root: root, folder: folder, name: legacy)
             }
-            try? GoalongSystemSourceFiles.remove(root: root, folder: folder, name: legacy)
         }
     }
 #endif

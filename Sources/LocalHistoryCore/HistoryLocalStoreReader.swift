@@ -1311,12 +1311,7 @@ public struct HistoryLocalStoreReader {
         do {
             let sourceRoot = try HistoryPinnedSourceDirectory(rootURL: rootDirectory)
             let eventsSource = try HistoryPinnedSourceDirectory(parent: sourceRoot, name: "events")
-            let formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = calendar.timeZone
-            formatter.dateFormat = "yyyy-MM-dd"
-            let exactName = formatter.string(from: dayStart) + ".jsonl"
+            let exactName = LocalDayKey.string(from: dayStart, timeZone: calendar.timeZone) + ".jsonl"
             eventFiles = try eventsSource.regularFile(named: exactName).map { [$0] } ?? []
             pinnedRoot = sourceRoot
             pinnedEvents = eventsSource
@@ -3413,27 +3408,7 @@ public struct HistoryLocalStoreReader {
     }
 
     private func localDayInterval(from fileName: String) -> DateInterval? {
-        guard fileName.utf8.count >= 10 else { return nil }
-        let prefix = String(fileName.prefix(10))
-        let pieces = prefix.split(separator: "-", omittingEmptySubsequences: false)
-        guard pieces.count == 3,
-            pieces[0].count == 4,
-            pieces[1].count == 2,
-            pieces[2].count == 2,
-            let year = Int(pieces[0]),
-            let month = Int(pieces[1]),
-            let day = Int(pieces[2])
-        else { return nil }
-        var calendar = Calendar.current
-        calendar.locale = Locale(identifier: "en_US_POSIX")
-        guard let start = calendar.date(from: DateComponents(year: year, month: month, day: day)) else {
-            return nil
-        }
-        let verified = calendar.dateComponents([.year, .month, .day], from: start)
-        guard verified.year == year, verified.month == month, verified.day == day,
-            let end = calendar.date(byAdding: .day, value: 1, to: start)
-        else { return nil }
-        return DateInterval(start: start, end: end)
+        LocalDayKey.interval(fromFileName: fileName)
     }
 
     private func loadJSONLines<T: Decodable>(
