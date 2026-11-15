@@ -13,17 +13,48 @@ public struct GuardArming: Equatable, Sendable {
         self.endContinuous = endContinuous; self.markerDate = markerDate
     }
 
-    /// Applies one read of `guard-until`. A higher end always wins; a lower, removed or unreadable
-    /// marker is accepted only while the app is alive. Without any memory, an unreadable marker arms nothing.
-    public mutating func apply(_ marker: GuardMarker, wall: Date, continuous: TimeInterval, appAlive: Bool) {
+    /// T-064: how long a lower or removed marker must stay so, read while the healthy app runs, before the
+    /// guard believes it. The app rewrites a marker its block still wants on every refresh (15 s poll), so a
+    /// file removed by someone else comes back before this delay; a kill inside it finds the guard still armed.
+    public static let disarmConfirmation: TimeInterval = 30
+    /// Continuous time a lower or removed marker was first read while the live app speaks; nil otherwise.
+    public private(set) var pendingDisarmSince: TimeInterval?
+
+    /// Applies one read of `guard-until`. A higher end always wins; a lower, removed or unreadable marker is
+    /// accepted only from the live app, and only once it has stayed so for `confirmation` (T-064): a marker
+    /// removed then the app killed within that delay never disarms. Without any memory, an unreadable marker arms nothing.
+    public mutating func apply(_ marker: GuardMarker, wall: Date, continuous: TimeInterval, appAlive: Bool,
+                               confirmation: TimeInterval = GuardArming.disarmConfirmation) {
         switch marker {
         case .date(let date):
-            if endContinuous != nil, date == markerDate { return }
+            if endContinuous != nil, date == markerDate { pendingDisarmSince = nil; return }
             let end = continuous + date.timeIntervalSince(wall)
-            if appAlive || endContinuous.map({ end > $0 }) ?? true { endContinuous = end; markerDate = date }
+            if endContinuous.map({ end > $0 }) ?? true {
+                endContinuous = end; markerDate = date; pendingDisarmSince = nil
+            } else if appAlive, confirmed(continuous: continuous, confirmation: confirmation) {
+                endContinuous = end; markerDate = date
+            }
         case .absent, .invalid:
-            if appAlive || endContinuous == nil { endContinuous = nil; markerDate = nil }
+            if endContinuous == nil || (appAlive && confirmed(continuous: continuous, confirmation: confirmation)) {
+                endContinuous = nil; markerDate = nil
+            }
         }
+        if !appAlive { pendingDisarmSince = nil }
+    }
+
+    /// A lowering read from the live app: at once when nothing is armed any more, else after `confirmation`.
+    private mutating func confirmed(continuous: TimeInterval, confirmation: TimeInterval) -> Bool {
+        guard isArmed(continuous: continuous) else { pendingDisarmSince = nil; return true }
+        guard let since = pendingDisarmSince else { pendingDisarmSince = continuous; return confirmation <= 0 }
+        guard continuous - since >= confirmation else { return false }
+        pendingDisarmSince = nil
+        return true
+    }
+
+    /// Seconds left before a pending lowering may be believed, when one waits.
+    public func disarmConfirmationRemaining(continuous: TimeInterval,
+                                            confirmation: TimeInterval = GuardArming.disarmConfirmation) -> TimeInterval? {
+        pendingDisarmSince.map { max(0, $0 + confirmation - continuous) }
     }
 
     /// Memory of a previous guard process of this boot (`guard-state.json`), when it still lies ahead.

@@ -65,9 +65,10 @@ final class GuardEngineIntegrationTests: XCTestCase {
 
     private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
                              sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil,
-                             continuityAllowed: Bool = true) {
+                             continuityAllowed: Bool = true, disarmConfirmation: TimeInterval = 0.5) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
         environment.continuityAllowed = continuityAllowed
+        environment.disarmConfirmation = disarmConfirmation
         environment.observeSession = { [weak self] handler in self?.announce = handler }
         if let wall { environment.wall = wall }
         if let bootTime { environment.bootTime = bootTime }
@@ -145,17 +146,35 @@ final class GuardEngineIntegrationTests: XCTestCase {
         XCTAssertEqual(app.launchCount, 0)
     }
 
-    func testRemovingTheMarkerWhileTheAppRunsEndsTheGuardQuickly() throws {
+    /// T-064: the live app's removal is believed after the confirmation delay (0.5 s here, 30 s for real).
+    func testRemovingTheMarkerWhileTheAppRunsEndsTheGuardAfterTheConfirmation() throws {
         let pid = try app.spawn()
         arm()
         markHealthy(pid)
         startEngine()
         XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
         XCTAssertTrue(files.writeMarker(until: nil))
-        let elapsed = waitUntil(1) { code == 0 }
+        usleep(250_000)
+        XCTAssertNil(code, "not before the confirmation")
+        let elapsed = waitUntil(2) { code == 0 }
         XCTAssertNotNil(elapsed)
-        XCTAssertLessThan(elapsed ?? 1, 0.2)
+        XCTAssertLessThan(elapsed ?? 2, 1)
         XCTAssertEqual(files.readState()?.armed, false)
+    }
+
+    /// T-064 (A-blocage P0): `rm guard-until; sleep 0.1; kill -9` — the guard must not end, it relaunches.
+    func testRemovingTheMarkerThenKillingTheAppRelaunchesIt() throws {
+        let pid = try app.spawn()
+        arm()
+        markHealthy(pid)
+        startEngine(disarmConfirmation: 5)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        XCTAssertTrue(files.writeMarker(until: nil))
+        usleep(100_000)
+        kill(pid, SIGKILL)
+        XCTAssertNotNil(waitUntil(2) { app.launchCount == 1 })
+        XCTAssertNil(code)
+        XCTAssertEqual(files.readState()?.armed, true)
     }
 
     func testRemovingTheMarkerWhileTheAppIsDeadChangesNothing() throws {
@@ -171,7 +190,7 @@ final class GuardEngineIntegrationTests: XCTestCase {
         XCTAssertNil(code, "the relaunched app has not reported health yet: it cannot disarm")
         // Once healthy, the app is the authority again: its own refresh would rewrite or remove the marker.
         if let pid = app.current { markHealthy(pid) }
-        XCTAssertNotNil(waitUntil(1) { code == 0 })
+        XCTAssertNotNil(waitUntil(2) { code == 0 })
     }
 
     func testTheEndOfTheBlockEndsTheGuard() throws {

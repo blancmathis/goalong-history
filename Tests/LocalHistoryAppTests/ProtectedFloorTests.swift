@@ -359,5 +359,35 @@ import XCTest
         (jevFloor.backing as? MemoryFloorBacking)?.failsReads = true
         XCTAssertEqual(JevSurveillanceStore(defaults: d, floor: jevFloor).restoredNotice, ProtectedFloor.unavailableText)
     }
+
+    /// T-064 (A-blocage P1): keychain locked at launch, blocking.json weakened while Goalong was closed. The saves made
+    /// before the copy answers never rewrite it from the weakened file; once it answers, the protected rule comes back.
+    func testACopyUnreadableAtLaunchIsNeverRewrittenFromAWeakenedFile() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let backing = MemoryFloorBacking()
+        let protected = list(.typing)
+        try BlockingStore(directory: directory, floor: ProtectedFloor(backing: backing)).save(BlockingDocument(lists: [protected]), now: now)
+        var weaker = protected; weaker.program.ranges[0].lock = .free
+        try BlockingStore(directory: directory).save(BlockingDocument(lists: [weaker]), now: now) // the file, by hand
+
+        backing.failsReads = true // the session's keychain is still locked at launch
+        let store = BlockingStore(directory: directory, floor: ProtectedFloor(backing: backing))
+        let now = self.now
+        let c = BlockingController(clock: { now }, store: store, calendar: paris, continuous: { now.timeIntervalSince1970 })
+        addTeardownBlock { @MainActor in c.shutdown() }
+        XCTAssertEqual(c.error, ProtectedFloor.unavailableText)
+        XCTAssertEqual(c.lists.first?.program.ranges.first?.lock, .free, "the file is taken as it is for now")
+        XCTAssertFalse(try store.save(BlockingDocument(lists: [weaker]), now: now), "said: the copy is not checked")
+        let kept = try XCTUnwrap(backing.items[ProtectedFloor.blockingKey])
+        XCTAssertEqual(try JSONDecoder().decode(BlockingFloor.self, from: kept).lists.first?.program.ranges.first?.lock, .typing,
+                       "the copy is never rewritten from the weakened file")
+
+        backing.failsReads = false // unlocked
+        c.refresh()
+        XCTAssertEqual(c.lists.first?.program.ranges.first?.lock, .typing, "the protected rule comes back")
+        XCTAssertEqual(c.error, ProtectedFloor.restoredText)
+        XCTAssertEqual(try BlockingStore(directory: directory).loadRecovering(now: now).document.lists.first?.program.ranges.first?.lock,
+                       .typing, "written back to the file")
+    }
 }
 #endif

@@ -225,6 +225,21 @@ if [[ "$lock_status" -ne 3 ]] || ! grep -Fq 'scheduled' <<<"$lock_output"; then
   exit 1
 fi
 
+# T-064: guard-continuity without a severe block releases the guard before the quit (make local included).
+HOME_CONT="$TEST_ROOT/home-continuity"
+/bin/mkdir -p "$HOME_CONT/Library/Application Support/LocalHistory/Blocking"
+: >"$HOME_CONT/Library/Application Support/LocalHistory/Blocking/guard-continuity"
+CONT_STUB="$HOME_CONT/Applications/GoalongContStub$$.app/Contents/MacOS/GoalongContStub$$"
+/bin/mkdir -p "$(dirname "$CONT_STUB")"
+/usr/bin/printf '#!/bin/bash\n# --unregister-guard\necho "$1" > "%s/cont-ran"\n' "$TEST_ROOT" >"$CONT_STUB"
+/bin/chmod +x "$CONT_STUB"
+HOME="$HOME_CONT" GOALONG_LOCAL_TRY=1 /bin/bash -c 'source "$1"; APP_NAME="$2" EXECUTABLE_NAME="$2" \
+  BUNDLE_ID="ai.goalong.test.absent.$2"; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" "GoalongContStub$$" >/dev/null 2>&1 || true
+if [[ "$(cat "$TEST_ROOT/cont-ran" 2>/dev/null)" != "--unregister-guard" ]]; then
+  echo "guard-continuity did not release the guard before make local replaced the app." >&2
+  exit 1
+fi
+
 MARKER_FILE="$TEST_ROOT/legacy-marker"
 /usr/bin/printf '%s\n' 'captureFullContents' >"$MARKER_FILE"
 set +e

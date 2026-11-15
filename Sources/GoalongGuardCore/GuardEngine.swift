@@ -33,6 +33,8 @@ public struct GuardEnvironment {
     public var refusedSessionEndDelay: TimeInterval = GuardDecision.refusedSessionEndDelay
     /// `guard-continuity` counts (T-059 lot 5): the installed Goalong only, never Goalong Dev or a test copy.
     public var continuityAllowed = false
+    /// A lower or removed `guard-until` read while the healthy app runs is believed after this delay (T-064; tests shorten it).
+    public var disarmConfirmation: TimeInterval = GuardArming.disarmConfirmation
     /// Subscribes to loginwindow's session events (the real guard: distributed notifications).
     public var observeSession: (@escaping (GuardSessionEvent) -> Void) -> Void = { _ in }
 
@@ -151,7 +153,10 @@ public final class GuardEngine {
         // The app speaks for the block only once it has reported health: its blocking runtime then has
         // already rewritten the marker. A freshly relaunched app cannot disarm by not having written it yet.
         let appSpeaks = watchedPID.map { pid in files.readHealth()?.pid == pid } ?? false
-        arming.apply(files.readMarker(now: wall), wall: wall, continuous: continuous, appAlive: appSpeaks)
+        // T-064: a lowering is believed only after `disarmConfirmation` with the app still alive: a marker removed
+        // just before a kill must not end the guard while the app dies before its next refresh.
+        arming.apply(files.readMarker(now: wall), wall: wall, continuous: continuous, appAlive: appSpeaks,
+                     confirmation: environment.disarmConfirmation)
         updateContinuity(now: wall.timeIntervalSince1970)
         noteHealth()
         var input = GuardInput()
@@ -333,10 +338,13 @@ public final class GuardEngine {
         timer.activate()
     }
 
-    /// Wakes at the end of the armed window or of the continuity horizon, whichever comes first.
+    /// Wakes at the end of the armed window, of the continuity horizon or of a pending disarm confirmation,
+    /// whichever comes first.
     private func scheduleEnd(continuous: TimeInterval, now: Double) {
         let continuityRemaining = continuityActive(now: now) ? continuityUntil.map { $0 - now } : nil
-        let ends = [arming.remaining(continuous: continuous), continuityRemaining].compactMap { $0 }
+        let ends = [arming.remaining(continuous: continuous), continuityRemaining,
+                    arming.disarmConfirmationRemaining(continuous: continuous, confirmation: environment.disarmConfirmation)]
+            .compactMap { $0 }
         guard let remaining = ends.min() else { return }
         scheduleWake(after: remaining + 0.05)
     }

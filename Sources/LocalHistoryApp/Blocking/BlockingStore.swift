@@ -56,11 +56,26 @@ struct BlockingStore {
     func loadRecovering(now: Date = Date()) throws -> (document: BlockingDocument, recovery: Recovery, restored: Int, copyUnavailable: Bool) { // wall: the document's ends are wall dates
         let copy = floor?.read(BlockingFloor.self, key: ProtectedFloor.blockingKey) ?? .absent
         let loaded = try loadFile()
-        if case .unavailable = copy { return (loaded.document, loaded.recovery, 0, true) }
+        if case .unavailable = copy {
+            floor?.setUnverified(ProtectedFloor.blockingKey, true) // T-064: no copy rewrite before `verifyCopy`
+            return (loaded.document, loaded.recovery, 0, true)
+        }
         guard let kept = copy.value else { return (loaded.document, loaded.recovery, 0, false) }
         let result = BlockingFloor.restore(loaded.document, floor: kept, now: now)
         if result.restored > 0 { try save(result.document, now: now) }
         return (result.document, loaded.recovery, result.restored, false)
+    }
+
+    /// T-064: after a launch without the copy, the first time it answers the running document is checked against it,
+    /// as `loadRecovering` would have done. Nil = nothing to check, or the copy still does not answer. The caller adopts
+    /// the document and saves it (the copy is written again from then on).
+    func verifyCopy(_ document: BlockingDocument, now: Date = Date()) -> (document: BlockingDocument, restored: Int)? { // wall: the document's ends are wall dates
+        guard let floor, floor.isUnverified(ProtectedFloor.blockingKey) else { return nil }
+        let copy = floor.read(BlockingFloor.self, key: ProtectedFloor.blockingKey)
+        if case .unavailable = copy { return nil }
+        floor.setUnverified(ProtectedFloor.blockingKey, false)
+        guard let kept = copy.value else { return (document, 0) }
+        return BlockingFloor.restore(document, floor: kept, now: now)
     }
 
     private func loadFile() throws -> (document: BlockingDocument, recovery: Recovery) {
@@ -118,8 +133,10 @@ struct BlockingStore {
     /// when that copy would take nothing back at the next launch (a hardening, or nothing protected); otherwise nothing
     /// is written and `floorUnavailable` is thrown, so a stop passed in Goalong is never undone later as a tampering.
     /// False = written, but the copy could not be checked (keychain unavailable since launch): say it.
+    /// T-064: a copy not verified since launch is left as it is (`verifyCopy`); only the file is written.
     @discardableResult
     func save(_ document: BlockingDocument, now: Date = Date()) throws -> Bool { // wall: the floor keeps what is not over in the document's wall frame
+        if let floor, floor.isUnverified(ProtectedFloor.blockingKey) { try saveFile(document); return false }
         var copied = true
         if let floor, !floor.save(BlockingFloor.of(document, now: now), key: ProtectedFloor.blockingKey) {
             switch floor.known(BlockingFloor.self, key: ProtectedFloor.blockingKey) {
