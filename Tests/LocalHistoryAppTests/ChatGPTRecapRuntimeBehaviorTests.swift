@@ -26,6 +26,9 @@
             executable: URL? = nil,
             sessionFactory: @escaping (URL) throws -> CodexAppServerSession = { _ in
                 throw NSError(domain: "ChatGPTRecapRuntimeBehaviorTests", code: 1)
+            },
+            dayOverviewReader: @escaping (Date) throws -> ChatGPTRecapDayOverview = { _ in
+                throw CodexAppServerError.generationFailed("journée de test")
             }
         ) -> ChatGPTRecapRuntime {
             ChatGPTRecapRuntime(
@@ -40,7 +43,7 @@
                 delayedAutomaticScheduler: { _ in },
                 automaticRetryScheduler: { _, _ in },
                 analysisConsentProvider: { true },
-                dayOverviewReader: { _ in throw CodexAppServerError.generationFailed("journée de test") }
+                dayOverviewReader: dayOverviewReader
             )
         }
 
@@ -323,6 +326,42 @@
             try waitUntil { !runtime.isLoadingDayOverview }
             XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 1)
             XCTAssertEqual(runtime.selectedDay, Calendar.current.date(byAdding: .day, value: -3, to: today)!)
+        }
+
+        /// T-064 lot 9: reopening the page or coming back to a day reuses the measured overview
+        /// instead of re-reading and re-verifying the whole day; a history clear reads it again.
+        func testDayOverviewIsReusedUntilSomethingChanges() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let runtime = makeRuntime(container: container, dayOverviewReader: { day in
+                ChatGPTRecapDayOverview(
+                    day: day, activeSeconds: 60, workSeconds: 30, sourceEventCount: 3, privateMinutes: 0,
+                    focusBlockCount: 0, computerApplications: [], screenTimeSeconds: 0, screenTimeDevices: [],
+                    screenTimeApplications: [], agentSessions: 0, agentMessages: 0, agentToolCalls: 0,
+                    agentErrors: 0, analyzedAgentSessions: 0)
+            })
+            runtime.configure(deviceID: "overview-cache-device")
+            let today = Calendar.current.startOfDay(for: Date())
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            let twoDaysAgo = Calendar.current.date(byAdding: .day, value: -2, to: today)!
+            runtime.selectDay(yesterday)
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 1)
+            XCTAssertEqual(runtime.dayOverview?.day, yesterday)
+
+            runtime.refreshDayOverview()
+            try waitUntil { !runtime.isLoadingDayOverview }
+            runtime.selectDay(twoDaysAgo)
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 2)
+            runtime.selectDay(yesterday)
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 2, "the same unchanged day was measured again")
+            XCTAssertEqual(runtime.dayOverview?.day, yesterday)
+
+            runtime.refreshAfterHistoryClear()
+            try waitUntil { !runtime.isLoadingDayOverview }
+            XCTAssertEqual(runtime.dayOverviewBuildCountForTesting, 3)
         }
 
         func testFailedDisconnectKeepsAutomaticRecapsAndFreesTheCodexHome() throws {

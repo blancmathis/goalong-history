@@ -8,6 +8,8 @@
     struct AnalysisProofCreationResult {
         let reference: AnalysisProofReference
         let report: AnalysisProofVerificationReport
+        /// Chain head before this proof; restored if the proof is discarded.
+        fileprivate var previousChainHead: AnalysisProofStore.ChainHead?
     }
 
     enum AnalysisProofStoreError: Error, LocalizedError, GoalongFrenchDescribable {
@@ -57,7 +59,7 @@
     }
 
     final class AnalysisProofStore {
-        private struct ChainHead: Codable {
+        fileprivate struct ChainHead: Codable {
             let schemaVersion: Int
             let sequence: Int64
             let executionID: String
@@ -204,6 +206,8 @@
             let requestData = try request.canonicalData()
 
             var capsuleURL: URL?
+            var publishedDirectory = false
+            var previousChainHead: ChainHead?
             do {
                 capsuleURL = try evidenceStore.storeGeneratedResponse(
                     rawResponseData,
@@ -231,6 +235,7 @@
                 let responseData = try response.canonicalData()
 
                 let chainHead = loadChainHead()
+                previousChainHead = chainHead
                 let sequence = (chainHead?.sequence ?? -1) + 1
                 let nonce = try secureRandom(count: 32)
                 let anchors = try? shareBuilder.anchorBounds(for: day)
@@ -321,6 +326,7 @@
                     to: staging.appendingPathComponent("manifest.json", isDirectory: false)
                 )
                 try fileManager.moveItem(at: staging, to: finalDirectory)
+                publishedDirectory = true
                 try? fileManager.setAttributes(
                     [.posixPermissions: 0o700], ofItemAtPath: finalDirectory.path
                 )
@@ -349,10 +355,50 @@
                 )
                 let report = try verify(reference: reference)
                 guard report.isLocallyValid else { throw AnalysisProofStoreError.invalidProof }
-                return AnalysisProofCreationResult(reference: reference, report: report)
+                return AnalysisProofCreationResult(
+                    reference: reference, report: report, previousChainHead: chainHead
+                )
             } catch {
+                if publishedDirectory {
+                    // The final folder must not outlive its capsule, nor stay the chain head.
+                    rollBackChainHead(from: executionID, to: previousChainHead)
+                    try? fileManager.removeItem(at: finalDirectory)
+                }
                 if capsuleURL != nil { try? evidenceStore.destroy(executionID: executionID) }
                 throw error
+            }
+        }
+
+        /// Withdraws a proof whose recap was never stored: removes its folder and encrypted
+        /// capsule, and moves the chain head back when it still points at this proof.
+        /// After « Effacer l'historique » the folder is already gone and nothing is rewritten.
+        func discard(_ created: AnalysisProofCreationResult) {
+            let executionID = created.reference.executionID
+            guard UUID(uuidString: executionID) != nil,
+                executionID == created.reference.proofDirectoryName
+            else { return }
+            rollBackChainHead(from: executionID, to: created.previousChainHead)
+            try? fileManager.removeItem(
+                at: rootDirectory.appendingPathComponent(executionID, isDirectory: true)
+            )
+            try? evidenceStore.destroy(executionID: executionID)
+        }
+
+        private func rollBackChainHead(from executionID: String, to previous: ChainHead?) {
+            let url = rootDirectory.appendingPathComponent("chain-head.json", isDirectory: false)
+            guard let data = try? ChatGPTHistoryStore.readStableSource(at: url, maximumBytes: 8 * 1_024),
+                let current = try? JSONDecoder().decode(ChainHead.self, from: data),
+                current.executionID == executionID
+            else { return }
+            if let previous, previous.executionID != executionID,
+                fileManager.fileExists(
+                    atPath: rootDirectory.appendingPathComponent(previous.executionID, isDirectory: true)
+                        .appendingPathComponent("run.jws", isDirectory: false).path
+                )
+            {
+                try? writeChainHead(previous)
+            } else {
+                try? fileManager.removeItem(at: url)
             }
         }
 

@@ -338,7 +338,7 @@
             var developerProjects = 0
             if let development = try GoalongDeveloperRecap.build(day: day, selection: selection, agents: safeAgents, privacy: privacy, onProjects: { developerProjects = $0 }) { sections.append(development) }
             let assembled = sections.joined(separator: "\n\n")
-            guard let rendered = ActivitySemanticTextSanitizer.redact(assembled), rendered.count <= maximumRenderedDataCharacters else {
+            guard let rendered = ActivitySemanticTextSanitizer.redact(assembled).map(neutralizingContextFence), rendered.count <= maximumRenderedDataCharacters else {
                 throw CodexAppServerError.protocolLimitExceeded("les données choisies dépassent la taille permise.")
             }
             let counts = ChatGPTRecapSourceCounts(localEvents: details ? activity.coverage.sourceEventCount : 0,
@@ -424,6 +424,10 @@
         static func prompt(for context: ChatGPTRecapContext, outputLanguage: String, outputGuidance: String? = nil,
                            workDefinition: String = "") throws -> String {
             let guidance = outputGuidance ?? ""
+            // The observed data must never close its own untrusted-data block (see `neutralizingContextFence`).
+            guard context.renderedData.range(of: "</goalong_context", options: .caseInsensitive) == nil,
+                context.renderedData.range(of: "<goalong_context", options: .caseInsensitive) == nil
+            else { throw CodexAppServerError.protocolLimitExceeded("Données du bilan mal délimitées.") }
             guard guidance.count <= 4000, workDefinition.count <= 4000 else { throw CodexAppServerError.protocolLimitExceeded("Consignes trop longues.") }
             let encodedGuidance = String(decoding: try JSONEncoder().encode(guidance), as: UTF8.self)
                 .replacingOccurrences(of: "<", with: "\\u003c").replacingOccurrences(of: ">", with: "\\u003e")
@@ -543,13 +547,21 @@
         /// validated index and folder ceilings. This preserves the scanner's per-cycle CPU, RAM,
         /// and I/O limits without silently truncating a large provider inventory after eight
         /// cycles. The scanner never persists transcript bodies.
+        /// Extra cycles also stop after `timeBudget`: a source that stays « incomplete » must not
+        /// hold the recap queue (account check, sign-out, recap) for minutes. What was analysed is
+        /// kept; the rest stays « not analysed » in the overview, as when the cycle cap is reached.
+        static let agentScanTimeBudget: TimeInterval = 120
+
         static func scanAgentActivity(
             for day: Date,
             analyzeContent: Bool,
             store: AgentActivityStore,
             configuration: AgentActivityConfiguration,
-            scanner: AgentActivityScanner
+            scanner: AgentActivityScanner,
+            timeBudget: TimeInterval = agentScanTimeBudget,
+            now: () -> Date = Date.init
         ) -> AgentActivityOverview {
+            let deadline = now().addingTimeInterval(timeBudget)
             let validated = configuration.validated()
             var result = scanner.scan(
                 configuration: validated,
@@ -566,6 +578,10 @@
             )
             var cycleCount = 1
             while analyzeContent, result.analysisIncomplete, cycleCount < maximumCycleCount, !GoalongGlobalPause.isPaused() {
+                guard now() < deadline else {
+                    Diagnostics.write("Agent activity recap scan stopped after its time budget (\(cycleCount) cycles).")
+                    break
+                }
                 result = scanner.scan(
                     configuration: validated,
                     analysisDay: day,
@@ -699,6 +715,18 @@
             )
         }
 
+        /// Observed text (page titles, window text, agent messages) must not close or reopen the
+        /// `<goalong_context>` block that marks it as untrusted data. Only that tag is defused
+        /// (`<` → `&lt;`); other text is unchanged. Applied before the digest is computed.
+        static func neutralizingContextFence(_ text: String) -> String {
+            guard text.range(of: "goalong_context", options: .caseInsensitive) != nil else { return text }
+            guard let expression = try? NSRegularExpression(
+                pattern: "<(\\s*/?\\s*goalong_context)", options: [.caseInsensitive]
+            ) else { return text.replacingOccurrences(of: "<", with: "&lt;") }
+            let range = NSRange(text.startIndex..., in: text)
+            return expression.stringByReplacingMatches(in: text, range: range, withTemplate: "&lt;$1")
+        }
+
         private static func renderData(
             day: Date,
             activity: ActivityDayAnalysis,
@@ -748,7 +776,7 @@
                 manifest,
             ]
             let assembled = sections.joined(separator: "\n\n")
-            guard let redacted = ActivitySemanticTextSanitizer.redact(assembled),
+            guard let redacted = ActivitySemanticTextSanitizer.redact(assembled).map(neutralizingContextFence),
                 redacted.count <= maximumRenderedDataCharacters
             else {
                 throw CodexAppServerError.protocolLimitExceeded(
