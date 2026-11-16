@@ -140,12 +140,24 @@ import LocalHistoryQueryCLI
     func refreshHasData() {
         let value = storeFactory().hasData
         if value != hasStoredData { hasStoredData = value }
+        // Nothing stored: the button says so; `deleteData` still reads the rule itself (fail-closed).
+        let refusal = value ? dataDeleteRefusal() : nil
+        if refusal != deleteRefusal { deleteRefusal = refusal }
+    }
+    /// T-064 lot14 (R P1): why « Supprimer les données des séances » is refused now, read once per refresh, not per render.
+    @Published private(set) var deleteRefusal: String?
+    /// The controller's rule, or the stored commitments' when the module is off: deleting must never drop an unsettled
+    /// commitment past its free window, an applied stake or an open exit. An unreadable file refuses too (fail-closed).
+    func dataDeleteRefusal() -> String? {
+        if let controller { controller.refresh(); return controller.dataDeleteRefusal }
+        let values: [FocusCommitment]
+        do { values = try storeFactory().commitments() } catch { return ConcentrationController.unsettledDeleteRefusal }
+        return ConcentrationController.dataDeleteRefusal(values, now: clock(), clock: nil, calendar: calendar)
     }
 
     func deleteData() throws {
         error = nil
-        controller?.refresh()
-        if controller?.hasLockedBlock == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
+        if let refusal = dataDeleteRefusal() { error = refusal; deleteRefusal = refusal; throw FocusFailure.locked }
         // The running session carries a protected « Surveillance »: stop it first, through its stop (T-050 B1).
         if controller?.surveillanceProtected == true { error = FocusFailure.locked.rawValue; throw FocusFailure.locked }
         let wasEnabled = modules?.isEnabled(.concentration) == true
@@ -207,7 +219,7 @@ import LocalHistoryQueryCLI
                 }
                 guard let self, !Task.isCancelled, generation == self.measurementGeneration,
                       canRead == (GoalongCapabilityConsentStore.shared.isEnabled(.localComputerHistory) && !GoalongGlobalPause.isPaused()) else { if self?.measurementGeneration == generation { self?.measurementTask = nil }; return }
-                controller?.applyMeasurements(Array(measured.values), hasDefinition: hasDefinition)
+                controller?.applyMeasurements(Array(measured.values), hasDefinition: hasDefinition, measurable: canRead)
                 self.measurementError = nil
             } catch {
                 if !(error is CancellationError) { self?.measurementError = FocusUIError.message(error) }

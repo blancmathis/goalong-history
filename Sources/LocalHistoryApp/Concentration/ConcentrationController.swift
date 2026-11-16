@@ -113,6 +113,30 @@ struct FocusPanel: Equatable {
             if case .commitment = block.origin { return block.end > b.now }; return false
         }
     }
+    /// T-064 lot14 (R P1): « Supprimer les données des séances » follows `deleteCommitment` (and keeps a stake's exits):
+    /// refused while a commitment's free window is over before settlement, or a missed result still has an applied
+    /// stake or an open exit. `nil` = free.
+    var dataDeleteRefusal: String? {
+        if hasLockedBlock { return Self.lockedBlockDeleteRefusal }
+        return Self.dataDeleteRefusal(commitments, now: stakeNow(), clock: clockState(), calendar: calendar) { self.exitOpen($0) }
+    }
+    static let lockedBlockDeleteRefusal = "Un blocage verrouillé est en cours : suppression impossible avant sa fin."
+    static let unsettledDeleteRefusal = "Un engagement attend son règlement : suppression impossible avant son bilan."
+    static let resultDeleteRefusal = "Un engagement manqué a encore son enjeu ou sa sortie ouverts : suppression impossible avant leur fin."
+    /// Same rule without a controller (module off): wall clock, no block end, open exits by the stored dates.
+    static func dataDeleteRefusal(_ values: [FocusCommitment], now: Date, clock: BlockingClockState?, calendar: Calendar,
+                                  exitOpen: ((FocusCommitment) -> Bool)? = nil) -> String? {
+        for value in values {
+            guard let result = value.result else {
+                if FocusCommitRule.check(old: value, new: nil, now: now, clock: clock, calendar: calendar) != .free { return unsettledDeleteRefusal }
+                continue
+            }
+            if result.stake.state == .applied, let stake = value.stake,
+               FocusCommitmentRules.stakeEnd(stake, settledAt: result.settledAt, calendar: calendar).map({ $0 > now }) ?? false { return resultDeleteRefusal }
+            if exitOpen?(value) ?? FocusCommitmentRules.exitOpen(value, now: now, clock: clock, calendar: calendar) { return resultDeleteRefusal }
+        }
+        return nil
+    }
     private var hasLockedPhaseBlock: Bool {
         guard let id = phaseBlockID, let b = blocking() else { return false }
         return b.activeBlocks.contains { $0.id == id && $0.lock == .locked && $0.end > b.now }
@@ -283,7 +307,7 @@ struct FocusPanel: Equatable {
         guard var value = currentSession else { throw FocusFailure.notFound }
         if hasLockedPhaseBlock { throw FocusFailure.locked }
         guard value.mode.kind == .pomodoro, value.events.count < 1023 else { throw FocusFailure.invalidArgument }
-        value.events.append(.init(kind: .skip, at: clock())); value.plannedEndAt = FocusPhases.plannedEnd(value)
+        value.events.append(.init(kind: .skip, at: Self.eventTime(clock(), after: value))); value.plannedEndAt = FocusPhases.plannedEnd(value)
         try persist(value); currentSession = value; refresh()
     }
     /// `surveillanceConfirmed` = the caller passed the stop of the session's « Surveillance » (`JevStopGate`). Without
@@ -302,8 +326,11 @@ struct FocusPanel: Equatable {
         value.outcome = outcome; value.note = note
         try finish(value, at: clock(), reason: outcome == .done ? .completed : .member)
     }
+    /// T-064 lot14 (R P2): a clock set back below the session's last event must not make the stop or skip invalid
+    /// (the session could not be closed until the clock caught up). The event keeps the order of the file.
+    static func eventTime(_ now: Date, after session: FocusSession) -> Date { max(now, session.events.last?.at ?? session.startedAt, session.startedAt) }
     private func finish(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) throws {
-        var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
+        var value = session; value.events.append(.init(kind: .stop, at: Self.eventTime(end, after: session), reason: reason))
         value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
         try persist(value)
         // The stop is on disk: the session ends in memory too, even if the earned-time credit fails.
@@ -508,9 +535,11 @@ struct FocusPanel: Equatable {
         // Also without observation: sessions, plans and period ends still need a measurement (T-044 B2-02).
         if value.at.throttleElapsed(since: lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
-    func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool) {
+    /// `measurable` false: the history cannot be read now (consent off, global pause). A work or task commitment is then
+    /// left unsettled, never settled at 0 with its stake applied; it settles at the next readable measurement (T-064 lot14, R P2).
+    func applyMeasurements(_ days: [GoalongLocalAnalytics.Day], hasDefinition: Bool, measurable: Bool = true) {
         measuredDays = Dictionary(uniqueKeysWithValues: days.map { (FocusCalendar.dayKey($0.date, calendar: calendar), $0) })
-        definitionAvailable = hasDefinition; updateMeasures(); checkLimits(); settleCommitments()
+        definitionAvailable = hasDefinition; updateMeasures(); checkLimits(); settleCommitments(measurable: measurable)
         if let currentSession { sessionFacts = facts(currentSession) }
     }
     private func updateMeasures() {
@@ -859,10 +888,10 @@ extension ConcentrationController {
         }
         return FocusCommitmentRules.progress(value, days: Array(measuredDays.values), sessions: values, plans: plans, at: clock(), hasDefinition: definitionAvailable, calendar: calendar)
     }
-    private func settleCommitments() {
+    private func settleCommitments(measurable: Bool) {
         do {
             var next = commitments, ids: [UUID] = []
-            for i in next.indices where next[i].result == nil {
+            for i in next.indices where next[i].result == nil && (measurable || !next[i].kind.needsHistory) {
                 guard let bounds = next[i].period.interval(calendar: calendar), bounds.end <= stakeNow() else { continue }
                 let progress = try commitmentProgress(next[i])
                 next[i].result = FocusCommitmentRules.settle(next[i], progress: progress, at: clock(), blockingOn: blocking() != nil,

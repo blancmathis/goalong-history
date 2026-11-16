@@ -86,9 +86,14 @@ import SwiftUI
                         Button("Supprimer les données des séances…", role: .destructive) { confirmingDelete = true }
                             .buttonStyle(.link).font(.system(size: 12)).foregroundStyle(LHTheme.danger)
                             // R-77 (R9C-54): held back, with the reason, when there is nothing to delete.
-                            .disabled(concentration.controller?.hasLockedBlock == true || !concentration.hasStoredData)
-                            .help(concentration.hasStoredData ? "" : "Aucune donnée de séance sur ce Mac.")
+                            .disabled(concentration.controller?.hasLockedBlock == true || concentration.deleteRefusal != nil || !concentration.hasStoredData)
+                            .help(concentration.deleteRefusal ?? (concentration.hasStoredData ? "" : "Aucune donnée de séance sur ce Mac."))
                             .onAppearWhenShown { concentration.refreshHasData() }
+                        // T-064 lot14: the reason is written, not only in the tooltip.
+                        if let refusal = concentration.deleteRefusal, concentration.hasStoredData {
+                            Text(refusal).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }.padding(.top, 2).padding(.bottom, 6) // The red link keeps clear of the row's divider (UI-11C).
                 }
             }

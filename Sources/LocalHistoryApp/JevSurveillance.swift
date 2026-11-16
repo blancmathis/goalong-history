@@ -121,12 +121,40 @@ enum JevRangeWrite: Equatable {
         }
         // A protected range removed or weakened in the defaults (or a document made unreadable) comes back from the copy.
         let copy = floor?.read([JevSurveillanceRange].self, key: ProtectedFloor.jevKey) ?? .absent
+        let marksCopy = floor?.read([JevSessionMark].self, key: ProtectedFloor.jevMarksKey) ?? .absent
         if case .unavailable = copy { restoredNotice = ProtectedFloor.unavailableText; return }
-        guard let kept = copy.value, !kept.isEmpty else { return }
-        let restored = Self.restore(error == nil ? document : JevSurveillanceDocument(), floor: kept)
-        guard restored.count > 0 else { return }
-        save(restored.document)
+        if case .unavailable = marksCopy { restoredNotice = ProtectedFloor.unavailableText; return }
+        let kept = copy.value ?? [], keptMarks = marksCopy.value ?? []
+        guard !kept.isEmpty || !keptMarks.isEmpty else { return }
+        let ranges = Self.restore(error == nil ? document : JevSurveillanceDocument(), floor: kept)
+        let marks = Self.restoreMarks(ranges.document, floor: keptMarks)
+        guard ranges.count + marks.count > 0 else { return }
+        save(marks.document)
         restoredNotice = ProtectedFloor.restoredText
+    }
+
+    /// The marks of `document` that ask Jev something protected (a stop other than Libre): kept in the copy.
+    static func protectedMarks(_ document: JevSurveillanceDocument) -> [JevSessionMark] {
+        document.marks.filter { $0.on && $0.lock != .free }
+    }
+
+    /// T-064 lot14 (S P2): `document` with every protected session mark of `floor` it lost or weakened put back. Pure.
+    /// An own session already over (`end` passed) is not put back.
+    static func restoreMarks(_ document: JevSurveillanceDocument, floor: [JevSessionMark], now: Date = Date()) -> (document: JevSurveillanceDocument, count: Int) {
+        var next = document, count = 0
+        for old in floor where old.on && old.lock != .free && (old.kind != .own || (old.end ?? .distantPast) > now) {
+            if let index = next.marks.lastIndex(where: { $0.id == old.id && $0.kind == old.kind }) {
+                if weakens(old, next.marks[index]) { next.marks[index] = old; count += 1 }
+            } else { next.marks.append(old); count += 1 }
+        }
+        return (next, count)
+    }
+
+    /// `new` asks less than `old`: off, a weaker stop or settings, or (own session) a shorter run. Pure.
+    static func weakens(_ old: JevSessionMark, _ new: JevSessionMark) -> Bool {
+        guard new.on, new.lock.strength >= old.lock.strength, isAtLeast(new.settings, old.settings) else { return true }
+        guard old.kind == .own else { return false }
+        return (new.start ?? .distantPast) > (old.start ?? .distantPast) || (new.end ?? .distantPast) < (old.end ?? .distantPast)
     }
 
     /// `document` with every range of `floor` it lost or weakened put back (hardening kept). Pure.
@@ -216,6 +244,15 @@ enum JevRangeWrite: Equatable {
             case .absent: break
             case .value(let kept):
                 guard Self.restore(next, floor: kept).count == 0 else { restoredNotice = ProtectedFloor.unsavedText; return false }
+            case .unavailable: restoredNotice = ProtectedFloor.staleText
+            }
+        }
+        let marks = Self.protectedMarks(next)
+        if let floor, !floor.save(marks.isEmpty ? nil : marks, key: ProtectedFloor.jevMarksKey) {
+            switch floor.known([JevSessionMark].self, key: ProtectedFloor.jevMarksKey) {
+            case .absent: break
+            case .value(let kept):
+                guard Self.restoreMarks(next, floor: kept).count == 0 else { restoredNotice = ProtectedFloor.unsavedText; return false }
             case .unavailable: restoredNotice = ProtectedFloor.staleText
             }
         }
