@@ -66,8 +66,10 @@
             try Data("protected".utf8).write(to: target)
             try FileManager.default.createSymbolicLink(at: eventFile, withDestinationURL: target)
 
-            let components = try makeRecorder(fixture: fixture, initialDate: timestamp)
-            XCTAssertTrue(components.recorder.record(kind: .mouseClick, timestamp: timestamp))
+            let components = try makeRecorder(fixture: fixture, initialDate: timestamp, isMainThread: { false })
+            // T-064: off the main thread `record` reports the real write, so a caller (ContextMonitor)
+            // does not advance its own state on a row that never reached the disk.
+            XCTAssertFalse(components.recorder.record(kind: .mouseClick, timestamp: timestamp), "A refused write is reported")
             components.recorder.flush()
             components.sealer.waitUntilIdleForTesting()
 

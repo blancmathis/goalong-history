@@ -6,7 +6,8 @@ import AgentActivity
 
 extension ChatGPTRecapContextBuilder {
     static func buildGranular(day: Date, deviceID: String, includeScreenTime: Bool,
-                              includeAgentActivity: Bool, selection: GoalongAnalysisSelection) throws -> ChatGPTRecapContext {
+                              includeAgentActivity: Bool, selection: GoalongAnalysisSelection,
+                              calendar: GoalongCalendarLane? = nil) throws -> ChatGPTRecapContext {
         let root = AppPaths.applicationSupportDirectory
         let pause = try GoalongGlobalPause.admit(in: root)
         let privacy = GoalongPrivacyPolicy.load(in: root)
@@ -42,7 +43,7 @@ extension ChatGPTRecapContextBuilder {
         }
         let supplemental = selection.systemSources.map { flags in
             GoalongSystemRecapSections.load(root: root, day: GoalongLocalAnalytics.build(events: events, day: day),
-                selection: flags, consent: consents.snapshot, scope: scope, privacy: privacy)
+                selection: flags, consent: consents.snapshot, scope: scope, privacy: privacy, calendar: calendar)
         }
         try GoalongGlobalPause.revalidate(pause, in: root)
         guard GoalongPrivacyPolicy.load(in: root).revision == privacy.revision, consents.snapshot == sourceConsents else {

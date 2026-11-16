@@ -603,6 +603,14 @@ public enum GoalongQueryCLI {
     static let missingSavedDayMessage = "No saved Screen Time record exists for this day. Open Goalong History to collect it; export-site never reads Apple's stores or starts a refresh."
     /// True when the export stopped because Goalong saved no Screen Time record for the day
     /// (Mac off or Goalong closed). Such a day stays missing: it is never collected later.
+    static let differentTimezoneMessage = "The saved day uses a different timezone. Export without websites to avoid mixing different day boundaries."
+    /// Raised when the saved day was recorded in another timezone than the Mac's now: website
+    /// details cannot be exported without mixing two day boundaries.
+    public static var differentTimezoneError: Error { CLIError.unsafeSource(differentTimezoneMessage) }
+    public static func isDifferentTimezone(_ error: Error) -> Bool {
+        if case .unsafeSource(let value)? = error as? CLIError { return value == differentTimezoneMessage }
+        return false
+    }
     public static func isMissingSavedDay(_ error: Error) -> Bool {
         if case .unsafeSource(let value)? = error as? CLIError { return value == missingSavedDayMessage }
         return false
@@ -1971,7 +1979,7 @@ public enum GoalongQueryCLI {
                 throw CLIError.unsafeSource("Computer History is off in Goalong. Enable it before exporting website details.")
             }
             guard record.timeZoneIdentifier == Calendar.current.timeZone.identifier else {
-                throw CLIError.unsafeSource("The saved day uses a different timezone. Export without websites to avoid mixing different day boundaries.")
+                throw differentTimezoneError
             }
             let loaded = HistoryLocalStoreReader(rootDirectory: root).loadDailyWebsiteUsage(day: requestedDay)
             guard loaded.state == .ready else {

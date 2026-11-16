@@ -21,7 +21,7 @@ import Foundation
         case .playing, .loading: playing = nil; return
         default: break
         }
-        controller.refresh()
+        controller.refreshInBackground()
         guard let source = Self.focusSource(in: controller.sources, last: lastSource()) else { playing = nil; return }
         controller.play(source)
         // Focus sources prepare in a task: the state is `.loading` now and `.playing` later.

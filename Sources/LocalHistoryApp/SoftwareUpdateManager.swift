@@ -635,9 +635,18 @@ import AppleScreenTime
             }
         }
 
+        /// An aborted cycle is not always ours to clean up: "no update" and refused probes end the same
+        /// way. Only the `update` lease written by this manager's own relaunch is removed; another
+        /// issuer's lease (permission restart, installer) stays for the guard to honour.
+        nonisolated static func releaseUpdateLease(ownedRelaunch: Bool, files: GuardFiles = GoalongGuardFiles.standard) {
+            guard ownedRelaunch, files.readLease()?.reason == GuardLease.update else { return }
+            files.removeLease()
+        }
+
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
+            let ownedRelaunch = isRelaunchingForUpdate
             isRelaunchingForUpdate = false
-            GoalongGuardFiles.standard.removeLease()
+            Self.releaseUpdateLease(ownedRelaunch: ownedRelaunch)
             if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }

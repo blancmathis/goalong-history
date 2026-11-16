@@ -68,6 +68,25 @@ final class AmbianceTests: XCTestCase {
         guard case .error = controller.state else { return XCTFail("Missing source must fail honestly") }
         controller.removeOwnFile(missing); XCTAssertTrue(settings.ownFiles.isEmpty)
     }
+    /// T-064: the stat of a personal file runs off the main actor, then the result is published on it.
+    @MainActor func testBackgroundRefreshPublishesAvailabilityAfterTheScan() async throws {
+        let support = try root(), input = try root(), settings = AmbianceSettings(defaults: defaults())
+        settings.isEnabled = true
+        let file = input.appendingPathComponent("lointain.wav")
+        try Data([1]).write(to: file)
+        let module = AmbianceModule(settings: settings) { support }, controller = try XCTUnwrap(module.controller)
+        await controller.addOwnFiles([file])?.value
+        XCTAssertTrue(try XCTUnwrap(controller.sources.first { $0.kind == .ownFile }).isAvailable)
+        try FileManager.default.removeItem(at: file)
+        controller.refreshInBackground()
+        // The disk was not read synchronously: the last known state stays until the scan publishes.
+        XCTAssertTrue(try XCTUnwrap(controller.sources.first { $0.kind == .ownFile }).isAvailable)
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, controller.sources.first(where: { $0.kind == .ownFile })?.isAvailable == true {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(try XCTUnwrap(controller.sources.first { $0.kind == .ownFile }).isAvailable)
+    }
     @MainActor func testMissingPackDoesNotPretendToPlay() throws {
         let settings = AmbianceSettings(defaults: defaults()); settings.isEnabled = true
         let support = try root(), module = AmbianceModule(settings: settings) { support }

@@ -452,8 +452,11 @@
                 focusSample = FocusObservation(at: observedAt, observing: true, available: true, idleSeconds: observedIdleSeconds, context: label.key, verdict: assignment?.verdict, task: assignment?.task)
             }
             let activityMetadata = presence.metadata(at: observedAt)
+            var transitionRecorded = true
             if let transition = Self.contextTransition(from: previous, to: current) {
-                recorder.record(
+                // `previous` only advances once the transition row is written; otherwise
+                // the next cycle records it again instead of leaving no "current" row.
+                transitionRecorded = recorder.record(
                     kind: transition.kind,
                     context: current,
                     metadata: activityMetadata.merging([
@@ -481,7 +484,7 @@
             lastPresenceActive = presence.isActive
             lastIdleLimit = presence.idleLimitSeconds
 
-            previous = current
+            if transitionRecorded { previous = current }
             return current
         }
 
