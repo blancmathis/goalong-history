@@ -19,16 +19,35 @@ private final class GoalongCalendarRecapRead: @unchecked Sendable {
     func value() -> GoalongCalendarLane { lock.lock(); defer { lock.unlock() }; return lane }
 }
 enum GoalongSystemRecapSections {
-    /// The existing recap builder is synchronous and runs on a utility worker. Bound its wait;
-    /// an accidental main-thread caller gets an explicit partial agenda rather than blocking UI.
+    static let calendarTimeout: TimeInterval = 9
+    static func calendarApplies(selection: GoalongSystemRecapSelection, consent: GoalongConsentDocument, privacy: GoalongPrivacyPolicy) -> Bool {
+        selection.calendar && consent.isEnabled(.calendar) && !privacy.hasExclusions
+    }
+    /// Agenda read for async callers. It awaits without holding a cooperative-pool thread: the read and the
+    /// timeout race in a task group, and the first one to finish wins (a timeout gives an explicit partial agenda).
+    static func calendarLane(day: Date, timeout: TimeInterval = calendarTimeout,
+                             read: @escaping @Sendable (Date) async -> GoalongCalendarLane = { await GoalongCalendarSource.shared.read(day: $0, enabled: true) }) async -> GoalongCalendarLane {
+        let partial = GoalongCalendarLane(status: .partial, calendarStatus: .partial, remindersStatus: .partial)
+        return await withTaskGroup(of: GoalongCalendarLane?.self) { group in
+            group.addTask { await read(day) }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? partial
+        }
+    }
+    /// Async callers (Swift tasks) pass the agenda read by `calendarLane`. Only a caller on a dedicated
+    /// dispatch queue may omit it and block here; the wait is bounded. A main-thread caller gets an explicit partial agenda.
     static func load(root: URL, day: GoalongLocalAnalytics.Day, selection: GoalongSystemRecapSelection,
-                     consent: GoalongConsentDocument, scope: GoalongAnalysisScope, privacy: GoalongPrivacyPolicy) -> GoalongSystemSourcesDay {
+                     consent: GoalongConsentDocument, scope: GoalongAnalysisScope, privacy: GoalongPrivacyPolicy,
+                     calendar prefetched: GoalongCalendarLane? = nil) -> GoalongSystemSourcesDay {
         let config = try? RecorderConfig.load(from: root.appendingPathComponent("config.json"))
         let calls = GoalongCallPresenceMonitor.lane(root: root, day: day.date,
             enabled: selection.calls && consent.isEnabled(.localComputerHistory) && config?.effectiveCaptureCallPresence != false, privacy: privacy)
         var agenda = GoalongCalendarLane.disabled
-        if selection.calendar && consent.isEnabled(.calendar) && !privacy.hasExclusions {
-            if Thread.isMainThread { agenda = .init(status: .partial, calendarStatus: .partial, remindersStatus: .partial) }
+        if calendarApplies(selection: selection, consent: consent, privacy: privacy) {
+            if let prefetched { agenda = prefetched }
+            else if Thread.isMainThread { agenda = .init(status: .partial, calendarStatus: .partial, remindersStatus: .partial) }
             else {
                 let result = GoalongCalendarRecapRead()
                 let task = Task { result.finish(await GoalongCalendarSource.shared.read(day: day.date, enabled: true)) }

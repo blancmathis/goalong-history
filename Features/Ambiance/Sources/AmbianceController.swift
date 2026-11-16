@@ -36,7 +36,7 @@ import OndeCore
     public func play(_ source: AmbianceSource) {
         stop()
         guard settings.isEnabled else { state = .error(AmbianceError.disabled.localizedDescription); return }
-        refresh()
+        refreshInBackground()
         guard let canonical = sources.first(where: { $0.id == source.id && $0.kind == source.kind && $0.isAvailable }) else {
             state = .error(AmbianceError.unavailable.localizedDescription); return
         }
@@ -252,10 +252,48 @@ import OndeCore
         guard source.kind == .ownFile, let path = source.path else { return }
         settings.ownFiles = settings.ownFiles.filter { $0 != path }; refreshSources()
     }
+    /// Disk facts behind availability. Gathered by `scan`, which never touches the main actor's state.
+    private struct Scan: Sendable {
+        var installed: [String: Bool] = [:]
+        var leftovers: [String: Bool] = [:]
+        var presentFiles: [String: Bool] = [:]
+    }
+    private var lastScan = Scan()
+    private var scanTicket = UUID()
+    /// Stats of the pack folders and of every personal file (possibly on a dead network share).
+    private nonisolated static func scan(store: AmbiancePackStore, ownFiles: [String], cleanOrphans: Bool) -> Scan {
+        // No install runs: interrupted installs may have left staging folders behind.
+        if cleanOrphans { store.removeOrphans() }
+        var result = Scan()
+        for pack in AmbiancePackCatalog.packs {
+            let installed = store.isInstalled(pack)
+            result.installed[pack.id] = installed
+            result.leftovers[pack.id] = !installed && store.hasLeftovers(pack)
+        }
+        for path in ownFiles { result.presentFiles[path] = FileManager.default.fileExists(atPath: path) }
+        return result
+    }
+    /// Synchronous refresh (start-up, installs, tests). A phase of a Concentration session or a page
+    /// that appears uses `refreshInBackground()`: a personal file on a dead share must not freeze the main actor.
     public func refresh() {
         guard settings.isEnabled else { shutdown(); return }
-        // No install runs: interrupted installs may have left staging folders behind.
-        if downloadTasks.isEmpty { store.removeOrphans() }
+        scanTicket = UUID()
+        apply(Self.scan(store: store, ownFiles: settings.ownFiles, cleanOrphans: downloadTasks.isEmpty))
+    }
+    /// Reads the disk off the main actor, then publishes on it. The latest call wins; sources keep their
+    /// last known availability until the result arrives (a lost file then fails when it is opened).
+    public func refreshInBackground() {
+        guard settings.isEnabled else { shutdown(); return }
+        let ticket = UUID(); scanTicket = ticket
+        let store = store, ownFiles = settings.ownFiles
+        Task { [weak self] in
+            let scan = await Task.detached(priority: .utility) { Self.scan(store: store, ownFiles: ownFiles, cleanOrphans: false) }.value
+            guard let self, self.scanTicket == ticket, self.settings.isEnabled else { return }
+            self.apply(scan)
+        }
+    }
+    private func apply(_ scan: Scan) {
+        lastScan = scan
         packs = AmbiancePackCatalog.packs.map { pack in
             let pending = packs.first(where: { $0.id == pack.id })?.status
             let absent: AmbiancePackState.Status
@@ -264,26 +302,24 @@ import OndeCore
             case .failed(let message): absent = .failed(message)
             default: absent = .notInstalled
             }
-            let installed = store.isInstalled(pack)
+            let installed = scan.installed[pack.id] ?? false
             return AmbiancePackState(id: pack.id, title: pack.title, bytes: pack.bytes,
                                      status: installed ? .installed : absent,
-                                     hasLeftovers: !installed && store.hasLeftovers(pack))
+                                     hasLeftovers: scan.leftovers[pack.id] ?? false)
         }
         refreshSources()
     }
     private func refreshSources() {
-        func installed(_ id: String) -> Bool {
-            AmbiancePackCatalog.packs.first(where: { $0.id == id }).map(store.isInstalled) ?? false
-        }
-        let orchestra = installed("orchestra"), textures = installed("textures")
+        let orchestra = lastScan.installed["orchestra"] ?? false, textures = lastScan.installed["textures"] ?? false
         sources = (FocusCompositions.profiles + RelaxCompositions.profiles).map {
             AmbianceSource(id: $0.id, title: AmbianceSource.compositionTitles[$0.id] ?? $0.id,
                            kind: $0.mode == .focus ? .focus : .relax, isAvailable: orchestra)
         }
         if textures { sources += AmbianceSource.textures.map { AmbianceSource(id: $0.0, title: $0.1, kind: .texture, isAvailable: true) } }
+        // A file added since the last scan was just chosen by the person: present until a scan says otherwise.
         sources += settings.ownFiles.map {
             AmbianceSource(id: "file:" + $0, title: URL(fileURLWithPath: $0).lastPathComponent, kind: .ownFile,
-                           isAvailable: FileManager.default.fileExists(atPath: $0), path: $0)
+                           isAvailable: lastScan.presentFiles[$0] ?? true, path: $0)
         }
     }
     private func setStatus(_ id: String, _ status: AmbiancePackState.Status) {

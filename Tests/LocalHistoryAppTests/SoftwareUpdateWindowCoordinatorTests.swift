@@ -60,5 +60,15 @@ final class SoftwareUpdateWindowCoordinatorTests: XCTestCase {
         helper.beginExplicitPresentation(); helper.reconcile([window])
         XCTAssertFalse(window.isVisible); XCTAssertEqual(window.level, .normal)
     }
+    /// T-064: a presentation that never gets a window (Sparkle showed nothing) ends by itself.
+    @MainActor func testPresentationWithoutAnyWindowEndsAfterItsTimeout() async throws {
+        let helper = SoftwareUpdateWindowCoordinator(ordersWindows: false, windowTimeout: 0.1, recognizes: { _ in false })
+        defer { helper.finish() }
+        helper.beginExplicitPresentation()
+        XCTAssertTrue(helper.isObservingEveryUpdate)
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertFalse(helper.isPresenting)
+        XCTAssertEqual(helper.observerCount, 0)
+    }
 }
 #endif

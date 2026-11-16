@@ -87,6 +87,22 @@ final class GoalongWebsiteAutoSenderR174Tests: XCTestCase {
         XCTAssertTrue(scheduler.status.contains("uspendu"), scheduler.status)
     }
 
+    /// T-064: a day saved in another timezone cannot be exported, but it must not stop the plan:
+    /// the day is named as skipped and the daily send stays on for the next day.
+    @MainActor func testDayInAnotherTimezoneIsSkippedAndThePlanKeepsRunning() async throws {
+        let root = hermeticDataRoot()
+        let (defaults, suite) = try scheduled("other-timezone", root: root)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let scheduler = GoalongWebsiteAutoSender(defaults: defaults, root: root, exporter: { _, _, _ in
+            throw GoalongQueryCLI.differentTimezoneError
+        }, sender: { _, _, _, _ in XCTFail("Nothing to send"); return Data() }, sourceConsent: { _ in true }, sharingRulesReadable: { true })
+        await scheduler.tick(now: now)
+        XCTAssertTrue(scheduler.enabled, "The plan is not stopped by a timezone change")
+        XCTAssertNotNil(scheduler.savedConfiguration?.missingDay, "The skipped day is named")
+        XCTAssertNotEqual(scheduler.savedConfiguration?.lastAttempt, "2026-09-11", "The day is consumed: the next day is tried")
+        XCTAssertTrue(scheduler.status.contains("continue"), scheduler.status)
+    }
+
     /// The user pauses while the site cannot be reached: no "new try in 5 min" on a paused plan.
     @MainActor func testPauseDuringAnUnreachableSendKeepsThePauseText() async throws {
         let root = hermeticDataRoot()

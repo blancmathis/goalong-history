@@ -467,9 +467,16 @@ import AgentActivity
             let ticket = UUID(); previewGeneration = ticket; previewBusy = true; error = nil
             previewTask?.cancel()
             previewTask = Task {
-                let worker = Task.detached(priority: .userInitiated) {
+                // Read the agenda with an async wait first: the detached worker below must not block a pool thread on it.
+                var agenda: GoalongCalendarLane?
+                if let flags = next.systemSources, GoalongSystemRecapSections.calendarApplies(
+                    selection: flags, consent: GoalongCapabilityConsentStore.shared.snapshot,
+                    privacy: GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory)) {
+                    agenda = await GoalongSystemRecapSections.calendarLane(day: date)
+                }
+                let worker = Task.detached(priority: .userInitiated) { [agenda] in
                     try ChatGPTRecapContextBuilder.buildGranular(day: date, deviceID: device,
-                        includeScreenTime: next.screenTime, includeAgentActivity: next.conversations, selection: next).renderedData
+                        includeScreenTime: next.screenTime, includeAgentActivity: next.conversations, selection: next, calendar: agenda).renderedData
                 }
                 do {
                     let value = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })

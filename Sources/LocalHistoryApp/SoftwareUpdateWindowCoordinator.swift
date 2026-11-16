@@ -25,8 +25,13 @@ import Sparkle
     private(set) var isPresenting = false
     private let recognizes: (NSWindow) -> Bool
     private let ordersWindows: Bool
+    /// An explicit action that never leads to a Sparkle window (probe finds nothing, click lost to a
+    /// failed check) must not leave the per-turn observer running: give up after this delay.
+    private let windowTimeout: TimeInterval
+    private var timeoutTask: Task<Void, Never>?
 
-    init(ordersWindows: Bool = true, recognizes: ((NSWindow) -> Bool)? = nil) {
+    init(ordersWindows: Bool = true, windowTimeout: TimeInterval = 120, recognizes: ((NSWindow) -> Bool)? = nil) {
+        self.windowTimeout = windowTimeout
         self.ordersWindows = ordersWindows; self.recognizes = recognizes ?? { Self.isSparkleWindow($0) }
     }
     static func isSparkleWindow(_ window: NSWindow) -> Bool {
@@ -41,6 +46,13 @@ import Sparkle
     }
     func beginExplicitPresentation() {
         isPresenting = true; focusPending = true
+        timeoutTask?.cancel()
+        let timeout = windowTimeout
+        timeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.entries.isEmpty else { return }
+            self.finish()
+        }
         let center = NotificationCenter.default
         if updateObserver == nil {
             // Fires every event-loop turn: it lives only while a Sparkle window is on screen.
@@ -135,6 +147,7 @@ import Sparkle
         window.hidesOnDeactivate = entry.hidesOnDeactivate
     }
     func finish() {
+        timeoutTask?.cancel(); timeoutTask = nil
         isPresenting = false; focusPending = false
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll(); removeUpdateObserver()

@@ -216,6 +216,12 @@
             try queue.sync { try latestPersistedEventOnQueue() }
         }
 
+        /// The row was written but the integrity cursor could not consume it: refuse appends
+        /// until the durable tail is reconciled, or the next row would reuse its sequence.
+        func requireWriteRecovery() {
+            queue.sync { requiresWriteRecovery = true }
+        }
+
         var needsWriteRecovery: Bool {
             queue.sync { requiresWriteRecovery }
         }

@@ -20,6 +20,14 @@
         var storageRecoveryCount: UInt64 = 0
     }
 
+    /// Carries the real persistence result of one admitted event back to an off-main caller.
+    final class WriteCompletion: @unchecked Sendable {
+        private let semaphore = DispatchSemaphore(value: 0)
+        private var written = false
+        func finish(_ result: Bool) { written = result; semaphore.signal() }
+        func wait() -> Bool { semaphore.wait(); return written }
+    }
+
     enum EventRecorderPersistenceError: LocalizedError {
         case recorderClosed
         case writerCapacityExceeded(Int)
@@ -128,7 +136,6 @@
         private var failureCount: UInt64 = 0
         private var lastFailureOperation: String?
         private var lastFailureDescription: String?
-        private var writerPoisonReason: String?
         private var publishedStorageInterruption: (since: Date, kind: CaptureStorageFailureKind, lost: UInt64)?
         private var storageRecoveryCount: UInt64 = 0
 
@@ -248,7 +255,7 @@
             }
 
             let shouldWaitForCapacity = !isMainThread()
-            let completion = shouldWaitForCapacity ? DispatchSemaphore(value: 0) : nil
+            let completion = shouldWaitForCapacity ? WriteCompletion() : nil
             var overflowStarted = false
 
             writerCondition.lock()
@@ -281,8 +288,9 @@
 
             admitEventLocked(base, completion: completion, privacyRevision: policyStamp, globalPauseRevision: pauseRevision)
             writerCondition.unlock()
-            completion?.wait()
-            return true
+            // Off main the caller learns whether the row was really written; on main
+            // the write is asynchronous and admission is all that can be reported.
+            return completion?.wait() ?? true
         }
 
         static func metadataForObservation(context: ContextSnapshot?, kind: EventKind, timestamp: Date,
@@ -414,7 +422,7 @@
         /// `writerQueueCapacity` EventRecorder work items.
         private func admitEventLocked(
             _ base: HistoryEvent,
-            completion: DispatchSemaphore?,
+            completion: WriteCompletion?,
             privacyRevision: String,
             globalPauseRevision: String
         ) {
@@ -425,15 +433,16 @@
 
             let admittedAt = captureMetrics.map { _ in captureClock.uptime() }
             writerQueue.async { [self] in
+                var written = false
                 defer {
                     finishEventTask()
-                    completion?.signal()
+                    completion?.finish(written)
                 }
                 if let admittedAt {
                     captureMetrics?(AXOperationMetric(requestID: base.id, stage: .waiting, operation: "writer",
                         duration: max(0, captureClock.uptime() - admittedAt), onMain: Thread.isMainThread, error: 0))
                 }
-                persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
+                written = persist(base, isObservationGap: false, privacyRevision: privacyRevision, globalPauseRevision: globalPauseRevision)
             }
         }
 
@@ -529,13 +538,6 @@
                     SupportDiagnostics.shared.failure(error, component: .capture)
                 return false }
             }
-            if let writerPoisonReason {
-                noteFailure(
-                    operation: "append",
-                    error: EventRecorderPersistenceError.writerPoisoned(writerPoisonReason)
-                )
-                return false
-            }
             guard isStorageGap || resumeStorageIfPossible(before: base.timestamp) else {
                 storageInterruption?.recordLoss(at: base.timestamp)
                 publishStorageInterruption()
@@ -560,8 +562,16 @@
                 // The row exists but the live cursor could not consume it. Continuing
                 // would reuse a sequence, so poison this launch and recover from the
                 // durable tail on restart.
-                writerPoisonReason = error.localizedDescription
-                noteFailure(operation: "integrity_commit", error: error)
+                // The live cursor is unusable until the durable tail is reconciled, so the failure is
+                // published as a storage interruption: health shows it,
+                // diagnostics fire once, and the next due attempt reconciles the durable
+                // tail in-process and writing resumes (see resumeStorageIfPossible).
+                noteFailure(operation: "integrity_commit", error: error, reportToSupport: false)
+                store.requireWriteRecovery()
+                // The row is durable and stays in the chain after reconciliation, so its root
+                // must still reach the minute seal.
+                minuteSealer.receive(event)
+                handleStorageFailure(error, lostEventAt: nil)
                 return false
             }
 

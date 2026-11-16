@@ -336,6 +336,15 @@ import AppleScreenTime
             // Paused while the day was read: the pause text stays, the day is named on resume or restart.
             guard enabled else { return }
             status = Self.missingDayNotice(saved.missingDay ?? day) + " L’envoi quotidien continue."
+        } catch where GoalongQueryCLI.isDifferentTimezone(error) {
+            // The Mac changed timezone since the day was saved (travel): that day cannot be exported with
+            // its sites without mixing two day boundaries. Nothing left this Mac; skip the day, name it,
+            // and keep the plan running so the next day goes out as usual.
+            networkRetry = nil
+            guard var saved = configuration(), saved.identifier == current.identifier else { return }
+            saved.missingDay = Self.appendingMissingDay(day, to: saved.missingDay); try? store(saved)
+            guard enabled else { return }
+            status = "La journée du \(GoalongUIFormat.day(key: day)) a été enregistrée dans un autre fuseau horaire : elle n’est pas envoyée. L’envoi quotidien continue."
         } catch GoalongSiteSubmissionError.unreachable {
             // Nothing reached the site: try the same day again later, a few times.
             restoreAttempt(previousAttempt, of: current)
