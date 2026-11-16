@@ -78,6 +78,9 @@ final class KeychainFloorBacking: ProtectedFloorBacking {
 
 struct ProtectedFloor {
     static let blockingKey = "blocking", redScreenKey = "red-screen", jevKey = "jev"
+    /// T-064 lot14 (S P2): the protected « Surveillance » session marks, in their own item: the `jev` copy of older
+    /// versions keeps its format (`[JevSurveillanceRange]`).
+    static let jevMarksKey = "jev-marks"
     let backing: ProtectedFloorBacking
     /// The copy this run last read or wrote, per key: `.some(nil)` = known absent; no entry = not known.
     private let memo = Memo()

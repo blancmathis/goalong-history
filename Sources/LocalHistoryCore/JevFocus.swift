@@ -77,6 +77,9 @@ public struct JevTimedBreak: Codable, Equatable, Sendable {
         endsAt > startedAt && endsAt.timeIntervalSince(startedAt) <= 7200
             && startedAt.timeIntervalSince1970.isFinite && endsAt.timeIntervalSince1970.isFinite
     }
+    /// T-064 lot14 (S P2): a break read back from disk must have begun already. A `startedAt` in the future (a file
+    /// written by hand, or a clock set back) would hold the full duration until that date: it is not a break.
+    public func isCurrent(at now: Date) -> Bool { isValid && startedAt <= now }
 }
 
 public enum JevPayload {
@@ -209,7 +212,7 @@ public enum JevError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .noActivity: return "Aucune nouvelle activité : aucun appel de surveillance."
-        case .budget: return "Budget de surveillance dépassé : analyse suspendue, aucune alerte."
+        case .budget: return "Budget de surveillance dépassé : cette vérification est sautée, nouvel essai dans quelques minutes."
         case .invalidResponse: return "Réponse de surveillance non exploitable : aucune alerte."
         case .authentication: return "Clé d’accès Jev refusée. Corrigez-la dans Garde-fous › Surveillance → Gérer la connexion."
         case .paymentRequired: return "Crédit TypeSafe épuisé (fournisseur de Jev) : surveillance suspendue, aucune alerte. Rechargez le compte TypeSafe puis cliquez sur Réessayer."

@@ -23,7 +23,7 @@ import LocalHistoryCore
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             Text("Le service ne voit ni captures d’écran ni vidéos. Sur X et YouTube, la précision dépend des titres et contrôles exposés par le navigateur. La lecture au premier plan reste suivie pendant le délai d’inactivité choisi. Une lecture vidéo explicitement détectée peut continuer sans clavier ; un onglet d’arrière-plan ne suffit pas.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
-            Text("Chaque envoi est limité à 1 600 octets. Jev se suspend si le service signale un usage trop élevé.")
+            Text("Chaque envoi est limité à 1 600 octets. Si le service signale un usage trop élevé, Jev saute la vérification et réessaie quelques minutes plus tard.")
                 .font(.caption).foregroundStyle(LHTheme.secondaryText)
             if let tokens = monitor.lastInputTokens {
                 Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")

@@ -220,7 +220,11 @@ struct FocusCommitmentResult: Codable, Equatable {
     }
 }
 struct FocusCommitment: Codable, Equatable, Identifiable {
-    enum Kind: String, Codable { case work, task, sessions, plan }
+    enum Kind: String, Codable {
+        case work, task, sessions, plan
+        /// Measured from the local history, not from Goalong's own session or plan files.
+        var needsHistory: Bool { self == .work || self == .task }
+    }
     struct Edit: Codable, Equatable { var at: Date; var target: Int; var stake: FocusStake? }
     var id = UUID()
     var period: FocusCommitmentPeriod

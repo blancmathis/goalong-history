@@ -196,7 +196,9 @@
             store.reconcileDefinition()
             XCTAssertEqual(store.verdicts.assignment(for: xcode.key)?.task, "goalong", "Kept while the commitment is open")
 
-            let runtime = ConcentrationRuntime(storeFactory: { FocusStore(directory: root) }, presentsPanels: false)
+            // T-064 lot14: deleting refuses an unsettled commitment past its free window; this one is still free.
+            let inWindow = FocusCalendar.dayInterval("2026-10-28", calendar: .autoupdatingCurrent)!.start.addingTimeInterval(12 * 3600)
+            let runtime = ConcentrationRuntime(storeFactory: { FocusStore(directory: root) }, presentsPanels: false, clock: { inWindow })
             try runtime.deleteData()
             XCTAssertNil(store.verdicts.assignment(for: xcode.key), "Released as soon as the data is deleted")
         }

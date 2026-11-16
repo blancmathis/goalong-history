@@ -103,9 +103,15 @@ struct JevRecentCheck: Identifiable {
         }
         do {
             if let data = try JevLocalFiles.read("break.json", root: localRoot) {
-                let value = try JSONDecoder().decode(JevTimedBreak.self, from: data)
+                let value = try JSONDecoder().decode(JevTimedBreak.self, from: data), now = Date()
                 guard value.isValid else { throw JevError.invalidResponse }
-                timedBreak = value; remainingSeconds = value.remaining(at: Date())
+                if value.isCurrent(at: now) {
+                    timedBreak = value; remainingSeconds = value.remaining(at: now)
+                } else {
+                    // T-064 lot14 (S P2): a break that has not begun yet grants no pause; Jev keeps watching.
+                    timedBreak = nil; remainingSeconds = 0
+                    try? JevLocalFiles.write(nil, name: "break.json", root: localRoot)
+                }
             }
             // No file: keep a break that is running in memory (its save may have failed);
             // the countdown still ends it through endBreak().
@@ -280,6 +286,17 @@ struct JevRecentCheck: Identifiable {
         streak.dismissWarning()
         JevWarningPanel.shared.dismissPopup()
     }
+    /// T-064 lot14 (S P2): a protected « Surveillance » (any stop but Libre) cannot be cut by cutting the network. A
+    /// failed or skipped call keeps the reminder and veil in place, frozen at their stage (no verdict is invented);
+    /// a Libre one clears them, as before. The status says it.
+    static func keepsInterventionsOnFailure(_ locks: [BlockLock]) -> Bool { locks.contains { $0 != .free } }
+    static let protectedOfflineText = "Jev ne répond pas : la surveillance protégée garde son rappel en place."
+    /// An over-budget answer waits at least 5 min, then the usual backoff (up to 10 min).
+    static func budgetRetryDelay(_ backoff: TimeInterval) -> TimeInterval { max(300, backoff) }
+    private func resetAfterFailure() {
+        guard Self.keepsInterventionsOnFailure(currentActivity().map(\.lock)) else { resetInterventions(); return }
+        if procrastinationSeconds > 0 { status = Self.protectedOfflineText }
+    }
     private func resetInterventions() {
         streak.reset(); procrastinationSeconds = 0
         JevWarningPanel.shared.hide()
@@ -340,7 +357,7 @@ struct JevRecentCheck: Identifiable {
         guard let window = inbox.take(start: start, end: end), window.hasActivity else {
             SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable, aucun appel"; return
         }
-        guard now >= retryAfter else { resetInterventions(); return }
+        guard now >= retryAfter else { resetAfterFailure(); return }
         let body: Data
         let workStore = JevWorkContextStore.shared
         let workRevision = workStore.revision
@@ -405,16 +422,20 @@ struct JevRecentCheck: Identifiable {
             } catch {
                 SupportDiagnostics.shared.failure(error, component: .monitoring)
                 guard self.epoch == token, !Task.isCancelled else { return }
-                self.request = nil; self.resetInterventions()
+                self.request = nil
                 self.error = (error as? JevError)?.errorDescription ?? "Connexion à Jev indisponible. Aucun classement inventé."
                 self.status = self.error ?? "Service Jev indisponible"
+                self.resetAfterFailure()
                 self.consecutiveFailures += 1
                 self.errorIsTransient = true
                 // 30 s, 1 min, 2 min… up to 10 min: a failing service is not called every cycle.
                 let backoff = min(600, 30 * pow(2, Double(min(self.consecutiveFailures - 1, 5))))
                 if let error = error as? JevError {
                     switch error {
-                    case .authentication, .budget, .paymentRequired:
+                    // T-064 lot14 (S P2): an over-budget answer skips this window and waits, like a failing service; it
+                    // never stops Jev for good. Only a refused key or payment opens the circuit.
+                    case .budget: self.retryAfter = Date().addingTimeInterval(Self.budgetRetryDelay(backoff))
+                    case .authentication, .paymentRequired:
                         self.circuitOpen = true; self.circuitReason = error; self.errorIsTransient = false
                         SupportDiagnostics.shared.record(.monitorPaused, component: .monitoring, level: .warning,
                             values: [.state: .state(error == .paymentRequired ? .paymentRequired : error == .authentication ? .authentication : .blocked)])
