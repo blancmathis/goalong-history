@@ -87,7 +87,12 @@
             return event.replacingIntegrity(integrity)
         }
 
+        /// Test seam: runs before the live cursor consumes a persisted row; a throw simulates
+        /// an `integrity_commit` failure after the row is already on disk.
+        var commitFault: (() throws -> Void)?
+
         func commitPersisted(_ event: HistoryEvent) throws {
+            try commitFault?()
             guard let integrity = event.integrity else {
                 throw IntegrityJournalError.missingIntegrity
             }

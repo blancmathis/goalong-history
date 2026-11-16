@@ -97,6 +97,75 @@
             try components.recorder.closeAndWait()
         }
 
+        func testIntegrityCommitFailureAfterRowWrittenReconcilesAndResumesWithoutReuse() throws {
+            let fixture = try makeFixture()
+            let t0 = Date(timeIntervalSince1970: 1_787_480_000)
+            let now = NSLock()
+            var current = t0
+            let store = try JSONLStore(retentionDays: 0, eventsDirectory: fixture.events, prepareApplicationStorage: false)
+            let state = makeState(fixture)
+            let journal = IntegrityJournal(stateStore: state)
+            let sealer = makeSealer(state: state, fixture: fixture, initialDate: t0)
+            let recorder = EventRecorder(
+                store: store, integrityJournal: journal, minuteSealer: sealer,
+                isMainThread: { false },
+                clock: { now.lock(); defer { now.unlock() }; return current },
+                storageRetryDelays: [10]
+            )
+            let eventFile = fixture.events.appendingPathComponent(AppPaths.localDayString(for: t0) + ".jsonl")
+
+            XCTAssertTrue(recorder.record(kind: .mouseClick, timestamp: t0))
+
+            var injected = 0
+            journal.commitFault = {
+                injected += 1
+                if injected == 1 { throw FixtureError.injectedSealFailure }
+            }
+            // Row 2 reaches the disk, then the cursor refuses it.
+            XCTAssertFalse(recorder.record(kind: .mouseClick, timestamp: t0.addingTimeInterval(1)))
+            journal.commitFault = nil
+            let interrupted = recorder.persistenceSnapshot
+            XCTAssertNotNil(interrupted.lastFailureOperation)
+            XCTAssertNotNil(interrupted.storageInterruptedSince)
+            XCTAssertEqual(interrupted.storageRecoveryCount, 0)
+            XCTAssertEqual(state.snapshot.nextEventSequence, 2, "live cursor is behind the durable row")
+
+            // Before the retry is due, nothing is written and nothing is reused.
+            XCTAssertFalse(recorder.record(kind: .mouseClick, timestamp: t0.addingTimeInterval(2)))
+            XCTAssertEqual(try decodeEvents(at: eventFile).count, 2)
+
+            now.lock(); current = t0.addingTimeInterval(30); now.unlock()
+            XCTAssertTrue(recorder.record(kind: .mouseClick, timestamp: t0.addingTimeInterval(30)))
+            try recorder.flushAndWait()
+            sealer.waitUntilIdleForTesting()
+
+            let events = try decodeEvents(at: eventFile)
+            let sequences = events.compactMap { $0.integrity?.sequence }
+            XCTAssertEqual(sequences, [1, 2, 3, 4], "no sequence reused or skipped")
+            XCTAssertEqual(Set(events.compactMap { $0.integrity?.eventHash }).count, 4, "no hash reused")
+            XCTAssertEqual(events[2].metadata?["gap_reason"], "storage_unavailable")
+            XCTAssertEqual(state.snapshot.nextEventSequence, 5, "live cursor reconciled then advanced")
+            XCTAssertEqual(state.snapshot.previousEventHash, events[3].integrity?.eventHash)
+
+            var previous = String(repeating: "0", count: 64)
+            for (index, event) in events.enumerated() {
+                let integrity = try XCTUnwrap(event.integrity)
+                XCTAssertEqual(integrity.sequence, UInt64(index + 1))
+                XCTAssertEqual(integrity.previousEventHash, previous)
+                XCTAssertEqual(
+                    integrity.eventHash,
+                    ChainHash.event(sequence: integrity.sequence, previous: previous, eventRoot: integrity.eventRoot)
+                )
+                previous = integrity.eventHash
+            }
+            XCTAssertEqual(sealer.runtimeSnapshot.pendingRootCount, 4)
+
+            let recovered = recorder.persistenceSnapshot
+            XCTAssertNil(recovered.storageInterruptedSince)
+            XCTAssertEqual(recovered.storageRecoveryCount, 1)
+            try recorder.closeAndWait()
+        }
+
         func testConcurrentCallersProduceOneOrderedHashChainWithoutDuplicates() throws {
             let fixture = try makeFixture()
             let timestamp = Date(timeIntervalSince1970: 1_787_480_000)

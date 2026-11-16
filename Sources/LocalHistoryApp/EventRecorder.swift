@@ -567,6 +567,10 @@
                 // diagnostics fire once, and the next due attempt reconciles the durable
                 // tail in-process and writing resumes (see resumeStorageIfPossible).
                 noteFailure(operation: "integrity_commit", error: error, reportToSupport: false)
+                store.requireWriteRecovery()
+                // The row is durable and stays in the chain after reconciliation, so its root
+                // must still reach the minute seal.
+                minuteSealer.receive(event)
                 handleStorageFailure(error, lostEventAt: nil)
                 return false
             }
