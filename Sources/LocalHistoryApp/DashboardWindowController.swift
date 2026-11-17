@@ -234,6 +234,7 @@
             if viewModel.navigationStore.selectedSection != section { viewModel.selectSection(section) }
 
             let application = NSApplication.shared
+            let wasAccessory = application.activationPolicy() != .regular
             application.setActivationPolicy(.regular)
             if window == nil {
                 loadWindow()
@@ -246,6 +247,15 @@
             showWindow(nil)
             application.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
+            if wasAccessory {
+                // T-062: right after `.accessory` → `.regular`, AppKit can drop this first activation and leave
+                // the window behind the frontmost app. Ask once more on the next turn, only if still inactive.
+                DispatchQueue.main.async { [weak window] in
+                    guard let window, window.isVisible, !application.isActive else { return }
+                    application.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
             SoftwareUpdateManager.shared.registerDashboardWindow(window)
             SoftwareUpdateManager.shared.dashboardWasShown()
             updateDashboardVisibility()

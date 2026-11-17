@@ -227,6 +227,7 @@ enum SupportSourceAllowlist {
         "KeyboardBacklightSettings.swift",
         "KeyboardBrightnessDriver.swift",
         "LaunchAtLoginManager.swift",
+        "LaunchWindowIntent.swift",
         "LegacyInstallationMigrator.swift",
         "LocalActivityMemoryStore.swift",
         "LocalOnlyCodexAppServerClient.swift",

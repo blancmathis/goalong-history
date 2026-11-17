@@ -147,6 +147,11 @@ import AppleScreenTime
         private var localCaptureRuntimeActive = false
 
         private var runtimeStarted = false
+        /// T-062: how this process was launched (a person → the window opens; login item, guard → quiet).
+        private var launchIntent: LaunchWindowIntent = .quiet
+        /// T-062: a reopen (second Spotlight/Dock launch) that came before the runtime existed.
+        private var reopenBeforeStart = false
+        private var showWindowObserver: NSObjectProtocol?
         private var userQuitConfirmed = false
         /// Set when an installer or uninstaller asked us to stop with SIGTERM.
         private var terminatingForSignal = false
@@ -179,6 +184,10 @@ import AppleScreenTime
             }
         }
 
+        func applicationWillFinishLaunching(_ notification: Notification) {
+            launchIntent = LaunchWindowIntent.current()
+        }
+
         func applicationDidFinishLaunching(_ notification: Notification) {
             PermissionRecovery.launchWhenParentHasExited { [weak self] in self?.startApplication() }
         }
@@ -189,6 +198,8 @@ import AppleScreenTime
                 NSRunningApplication.runningApplications(withBundleIdentifier: ProductIdentity.bundleIdentifier)
                     .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated }?
                     .activate()
+                // T-062: activating the menu-bar copy shows nothing; a person who launched Goalong wants its window.
+                if launchIntent == .showWindow || reopenBeforeStart { LaunchWindowIntent.askRunningCopyToShowWindow() }
                 NSApplication.shared.terminate(nil)
                 return
             }
@@ -496,6 +507,9 @@ import AppleScreenTime
 
             installWorkspaceObservers()
             installPermissionAttentionObservers()
+            showWindowObserver = DistributedNotificationCenter.default().addObserver(
+                forName: LaunchWindowIntent.showWindowNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.dashboardWindowController?.show(section: nil) }
             let resumedSetup = PermissionRecovery.consumeSetupReturn()
             if GoalongGuardFiles.isGuardRelaunch {
                 // Reopened by the blocking guard after a kill: quiet, no window (spec K §6).
@@ -519,8 +533,20 @@ import AppleScreenTime
                     .flatMap(DashboardSection.init(rawValue:)) ?? dashboardViewModel.navigationStore.selectedSection
                 dashboardWindowController?.show(section: previousSection)
             }
+            showWindowIfLaunchedByPerson()
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
+        }
+
+        /// T-062: a launch from Spotlight, Finder or the Dock (or a reopen during startup) opens the window
+        /// once; before, only the second launch (a reopen) did. The first-run welcome keeps its own delayed show.
+        private func showWindowIfLaunchedByPerson() {
+            let requested = launchIntent == .showWindow || reopenBeforeStart
+            reopenBeforeStart = false
+            guard requested, let controller = dashboardWindowController,
+                  dashboardViewModel?.navigationStore.showWelcome != true,
+                  !(controller.isWindowLoaded && controller.window?.isVisible == true) else { return }
+            controller.show(section: nil)
         }
 
         func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -894,6 +920,8 @@ import AppleScreenTime
             }
             workspaceObservers.removeAll()
             for observer in screenLockObservers { DistributedNotificationCenter.default().removeObserver(observer) }
+            if let showWindowObserver { DistributedNotificationCenter.default().removeObserver(showWindowObserver) }
+            showWindowObserver = nil
             screenLockObservers.removeAll()
             SupportDiagnosticsRuntime.shared.stop()
         }
@@ -902,7 +930,9 @@ import AppleScreenTime
             _ sender: NSApplication,
             hasVisibleWindows flag: Bool
         ) -> Bool {
-            dashboardWindowController?.show(section: nil)
+            // T-062: during startup (permission handshake up to 20 s) the dashboard does not exist yet.
+            guard runtimeStarted, let dashboardWindowController else { reopenBeforeStart = true; return false }
+            dashboardWindowController.show(section: nil)
             return false
         }
 
