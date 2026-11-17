@@ -794,6 +794,36 @@ final class BlockingEngineTests: XCTestCase {
         XCTAssertTrue(c.activeBlocks.isEmpty)
     }
 
+    /// T-063: a wait the clock watch could not move (clock set back while Goalong was closed, file written by a
+    /// clock ahead) never lasts longer than the longest wait (1 h); the shortened wait is kept, the count too.
+    @MainActor func testPasswordWaitNeverExceedsTheLongestWait() throws {
+        let store = try temporaryStore(); var now = date()
+        let list = BlockList(name: "Sites")
+        var credential = try XCTUnwrap(BlockPasswordLock.make("fixture", at: now))
+        credential.failedAttempts = 5; credential.retryAfter = now.addingTimeInterval(86_400 * 365)
+        let session = BlockSession(listIDs: [list.id], start: now, end: now.addingTimeInterval(86_400 * 400), lock: .password)
+        try store.save(.init(lists: [list], sessions: [session], passwordLock: credential))
+        let c = BlockingController(clock: { now }, store: store, continuous: { now.timeIntervalSince1970 })
+        let capped = now.addingTimeInterval(BlockingController.longestPasswordWait)
+        XCTAssertEqual(c.unlockWithPassword("fixture", blockID: session.id), .wait(until: capped))
+        XCTAssertEqual(try store.load().passwordLock?.retryAfter, capped)
+        XCTAssertEqual(try store.load().passwordLock?.failedAttempts, 5)
+        XCTAssertEqual(c.authorizeQuit(password: "fixture"), .wait(until: capped))
+        XCTAssertEqual(c.activeBlocks.map(\.id), [session.id])
+        now = capped
+        XCTAssertEqual(c.unlockWithPassword("fixture", blockID: session.id), .ok)
+        XCTAssertTrue(c.activeBlocks.isEmpty)
+    }
+
+    /// T-063: the quit prompt focuses its field, Enter quits, Esc cancels.
+    @MainActor func testQuitPasswordPromptTakesKeysAtOnce() {
+        let (alert, field) = AppDelegate.quitPasswordAlert()
+        XCTAssertTrue(alert.window.initialFirstResponder === field)
+        XCTAssertEqual(alert.buttons.map(\.title), ["Quitter", "Annuler"])
+        XCTAssertEqual(alert.buttons.first?.keyEquivalent, "\r")
+        XCTAssertEqual(alert.buttons.last?.keyEquivalent, "\u{1b}")
+    }
+
     /// T-063: the rule switch's prompt never sends an empty field; the sheet focuses the field to type first.
     @MainActor func testPasswordPromptsNeverSendEmptyAndFocusTheFirstField() {
         var sent: [String] = []

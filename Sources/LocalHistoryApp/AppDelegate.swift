@@ -669,15 +669,7 @@ import AppleScreenTime
             guard !quitAlertIsVisible else { return false }
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
-            let alert = NSAlert()
-            alert.messageText = "Mot de passe de blocage exigé"
-            alert.informativeText = "Quitter Goalong suspend le blocage jusqu’au prochain lancement. Le mot de passe choisi pour le blocage est nécessaire."
-            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-            field.placeholderString = "Mot de passe de blocage"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Quitter")
-            alert.addButton(withTitle: "Annuler")
-            alert.window.initialFirstResponder = field
+            let (alert, field) = Self.quitPasswordAlert()
             NSApplication.shared.activate(ignoringOtherApps: true)
             guard alert.runModal() == .alertFirstButtonReturn else { field.stringValue = ""; return false }
             let result = controller.authorizeQuit(password: field.stringValue)
@@ -695,6 +687,22 @@ import AppleScreenTime
             passwordGiven = true
             return !consumeAuthorization || controller.consumeQuitAuthorization()
             }
+        }
+
+        /// The blocking password's quit prompt, built but not shown. T-063: the field takes the keys at once;
+        /// Enter = « Quitter », Esc = « Annuler » (NSAlert gives Esc only to a button titled « Cancel »).
+        @MainActor static func quitPasswordAlert() -> (NSAlert, NSSecureTextField) {
+            let alert = NSAlert()
+            alert.messageText = "Mot de passe de blocage exigé"
+            alert.informativeText = "Quitter Goalong suspend le blocage jusqu’au prochain lancement. Le mot de passe choisi pour le blocage est nécessaire."
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+            field.placeholderString = "Mot de passe de blocage"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Quitter")
+            alert.addButton(withTitle: "Annuler").keyEquivalent = "\u{1b}"
+            alert.window.initialFirstResponder = field
+            alert.layout()
+            return (alert, field)
         }
 
         /// Turns SIGTERM (installer, uninstaller) into a normal quit so the full shutdown sequence runs:

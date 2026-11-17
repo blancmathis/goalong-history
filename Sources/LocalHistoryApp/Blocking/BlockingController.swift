@@ -968,6 +968,8 @@ import LocalHistoryQueryCLI
     func revokeQuitAuthorization() { quitAuthorization = nil }
 
     nonisolated static let emptyPasswordText = "Entrez le mot de passe de blocage."
+    /// The longest wait after wrong passwords (also the cap after a clock change).
+    nonisolated static let longestPasswordWait: TimeInterval = 3_600
 
     private func refusePassword(_ reason: String) -> BlockingPasswordResult {
         error = reason; return .refused(reason: reason)
@@ -978,7 +980,15 @@ import LocalHistoryQueryCLI
         guard var credential = document.passwordLock, credential.isValid else {
             return refusePassword("Le mot de passe est illisible : les blocages restent verrouillés jusqu’à leur fin.")
         }
-        if let until = credential.retryAfter, until > clock() { return .wait(until: until) }
+        if let until = credential.retryAfter, until > clock() {
+            // T-063: the wait never exceeds its longest step. A wait set before the clock went back would else
+            // last as long as the step back (a year back = a password useless for a year).
+            let longest = clock().addingTimeInterval(Self.longestPasswordWait)
+            guard until > longest else { return .wait(until: until) }
+            credential.retryAfter = longest
+            document.passwordLock = credential; commit()
+            return .wait(until: longest)
+        }
         // T-063: an empty field (Enter, a click on the button) is not a try: no count, no wait. It never matches.
         guard !password.isEmpty else { return refusePassword(Self.emptyPasswordText) }
         let matches = credential.matches(password)
@@ -986,7 +996,7 @@ import LocalHistoryQueryCLI
         else {
             credential.failedAttempts = min(credential.failedAttempts, 16) + 1
             if credential.failedAttempts >= 5 {
-                let delay = min(3_600.0, 60 * pow(2, Double(min(credential.failedAttempts - 5, 6))))
+                let delay = min(Self.longestPasswordWait, 60 * pow(2, Double(min(credential.failedAttempts - 5, 6))))
                 credential.retryAfter = clock().addingTimeInterval(delay)
             }
         }
