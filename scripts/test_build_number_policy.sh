@@ -86,4 +86,27 @@ test "$(localhistory_local_try_build_number 30000000.4266167.999901)" = "3000000
 grep -q '"GITHUB_ACTIONS": "true"' "$ROOT_DIR/scripts/local_auto_deploy.py" || {
   echo "local_auto_deploy.py must set GITHUB_ACTIONS=true with GITHUB_RUN_ID" >&2; exit 1; }
 
+# make perso: the make local try slot plus an exact source commit, owner's Mac only.
+commit=0123456789abcdef0123456789abcdef01234567
+(
+  unset GITHUB_ACTIONS GITHUB_RUN_ID GITHUB_RUN_ATTEMPT LOCALHISTORY_LOCAL_TRY_BASE
+  reject localhistory_validate_perso_source "$commit"                     # no try base
+  export LOCALHISTORY_LOCAL_TRY_BASE=30000000.4266167.303702
+  accept localhistory_validate_perso_source "$commit"
+  reject localhistory_validate_perso_source 0123456                       # short SHA
+  reject localhistory_validate_perso_source 0123456789ABCDEF0123456789ABCDEF01234567                # not lowercase hex
+  reject localhistory_validate_perso_source ""
+  GITHUB_ACTIONS=true reject localhistory_validate_perso_source "$commit" # never in CI
+  LOCALHISTORY_LOCAL_TRY_BASE=30000000.4266167.303799 reject localhistory_validate_perso_source "$commit"
+  # Same number as make local: above its base, below the next run's release (never a downgrade).
+  accept localhistory_validate_build_number 30000000.4266167.303799
+)
+# The perso keys and compile flag are only set through that validator (build_app_core.sh), and the
+# release pipeline never passes them.
+grep -q 'localhistory_validate_perso_source "$PERSO_SOURCE_COMMIT"' "$ROOT_DIR/scripts/build_app_core.sh"
+grep -q 'GoalongPersoSourceCommit' "$ROOT_DIR/scripts/build_app_core.sh"
+if grep -rn 'LOCALHISTORY_PERSO_\|GOALONG_PERSO\|GOALONG_LOCAL_PERSO' "$ROOT_DIR/.github" >/dev/null; then
+  echo "The release workflows must not build perso bundles." >&2; exit 1
+fi
+
 echo "Build number policy passed."

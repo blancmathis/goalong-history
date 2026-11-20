@@ -71,6 +71,20 @@ elif [[ -n "$DEV_DATA_MODE$DEV_ICON_SOURCE$DEV_SERVER$DEV_SOURCE_BRANCH$DEV_SOUR
   exit 1
 fi
 
+# make perso (owner's daily build, scripts/local_try.sh): records the exact source commit so the app
+# installs only a release that contains it, and compiles the perso-only GitHub check (GOALONG_PERSO).
+# Only beside a make local try base, release configuration, never in CI; releases carry no perso key.
+PERSO_SOURCE_COMMIT="${LOCALHISTORY_PERSO_SOURCE_COMMIT:-}"
+PERSO_SOURCE_BRANCH="${LOCALHISTORY_PERSO_SOURCE_BRANCH:-}"
+PERSO_SWIFT_FLAGS=()
+if [[ -n "$PERSO_SOURCE_COMMIT$PERSO_SOURCE_BRANCH" ]]; then
+  if ! localhistory_validate_perso_source "$PERSO_SOURCE_COMMIT" || [[ "$DEVELOPMENT_BUILD" != 0 || "$BUILD_CONFIGURATION" != release ]]; then
+    echo "LOCALHISTORY_PERSO_* is reserved for make perso (release configuration, a make local try base, outside CI)." >&2
+    exit 1
+  fi
+  PERSO_SWIFT_FLAGS=(-Xswiftc -DGOALONG_PERSO)
+fi
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build_app.sh must run on macOS." >&2
   exit 1
@@ -161,7 +175,7 @@ build_arch() {
   mkdir -p "$logs"
   local log="$logs/build-$arch.log"
   local cli_log="$logs/build-$arch-cli.log"
-  local command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"})
 
   echo "Building ${arch}…"
   set +e
@@ -174,7 +188,7 @@ build_arch() {
     return "$status"
   fi
 
-  local bin_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" --show-bin-path)
+  local bin_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"} --show-bin-path)
   local bin_dir
   bin_dir="$(cd "$ROOT_DIR" && "${bin_command[@]}")"
   local binary="$bin_dir/$PRODUCT_NAME"
@@ -418,6 +432,11 @@ if [[ "$DEVELOPMENT_BUILD" == 1 ]]; then
   /usr/bin/plutil -insert GoalongDevServer -bool "$([[ "$DEV_SERVER" == on ]] && echo YES || echo NO)" "$CONTENTS/Info.plist"
   # Goalong Dev never claims goalong-history:// links: they always open the installed Goalong.
   /usr/bin/plutil -remove CFBundleURLTypes "$CONTENTS/Info.plist"
+fi
+if [[ -n "$PERSO_SOURCE_COMMIT" ]]; then
+  /usr/bin/plutil -insert GoalongPersoSourceCommit -string "$PERSO_SOURCE_COMMIT" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongPersoSourceBranch -string "${PERSO_SOURCE_BRANCH:-unknown}" "$CONTENTS/Info.plist"
+  /usr/bin/plutil -insert GoalongPersoBuiltAt -string "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CONTENTS/Info.plist"
 fi
 /usr/bin/python3 "$ROOT_DIR/scripts/update_policy.py" --configure-info "$CONTENTS/Info.plist"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null

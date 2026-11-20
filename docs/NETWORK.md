@@ -20,6 +20,12 @@ then the signed release archive it names on GitHub or its CDN, or a smaller sign
 same release when one matches the installed build. They send no activity data or system
 profile, and installation needs the user's approval. See [`UPDATE-SECURITY.md`](UPDATE-SECURITY.md).
 
+Owner-only `make perso` builds (compiled with `GOALONG_PERSO`, never by CI, so absent from every
+published release) also ask GitHub's public API, anonymously, whether a newer release contains the
+build's source commit: GETs to `https://api.github.com/repos/blancmathis/goalong-history/compare/…`
+and `…/commits/<sha>/pulls`, ephemeral session, no cookies or credentials. They send public commit
+identifiers and a release tag only. A release without that commit is not offered to the perso build.
+
 When the user separately enables ChatGPT analysis, Goalong may launch the reviewed local Codex
 binary with the fixed `app-server` argument. Codex owns its authenticated ChatGPT transport.
 Goalong passes a bounded daily context and does not expose arbitrary commands, executables,

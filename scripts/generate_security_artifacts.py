@@ -376,6 +376,15 @@ def capability_manifest(app: Path, edition: str, root: Path) -> dict[str, Any]:
         },
         "network": {
             "declaredDestinations": declared_network_destinations,
+            # `make perso` (owner's local build, -DGOALONG_PERSO): absent from every published release.
+            "ownerPersoBuilds": {
+                "inPublicReleases": False,
+                "compileFlag": "GOALONG_PERSO",
+                "destination": "https://api.github.com/repos/blancmathis/goalong-history/",
+                "method": "GET",
+                "session": "ephemeral-no-cookies-cache-credentials",
+                "sends": "perso commit, merge commits and a release tag (public identifiers only)",
+            },
             "ambiancePacks": {
                 "defaultEnabled": False,
                 "remoteTransportImplemented": True,
