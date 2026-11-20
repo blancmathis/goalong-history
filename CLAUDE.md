@@ -9,16 +9,18 @@
 1. **Goalong Dev** (itération locale) : `make dev` construit le worktree en une app séparée qui tourne **à côté** de Goalong installé. Ne publie rien.
 2. **Goalong local** (essai réel, sans GitHub) : `make local` remplace Goalong dans `/Applications` par le worktree, signé comme une release. Ne publie rien. Voir plus bas.
 3. **Goalong perso** (usage quotidien du propriétaire) : `make perso` = `make local` sur un commit propre, qui garde ce commit. Sparkle n’y installe une release que si elle contient ce commit. Voir plus bas.
-4. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
+4. **Release** : une PR `perso` → `main` qui regroupe tout → CI → merge → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie » (ou « envoie aux clients »).
 
 ## Boucle quotidienne
-`make dev` (essayer à côté) → `make check` → commit → `make perso` (le propriétaire l’installe et s’en sert) → PR quand c’est prêt. Publier : PR → CI → merge sur « déploie ».
+Branche longue `perso`. Une demande du propriétaire = `make dev` (essayer à côté, si utile) → `make check` → commit sur `perso` → `git push origin perso` → `make perso` lancé par l’agent lui-même (vraie installation). Pas de PR par changement, pas d’attente de CI. Publier : sur « déploie », une PR `perso` → `main`, CI, merge.
+- Avant `make perso`, fusionner `origin/main` dans `perso` si `main` a avancé : le build perso ne doit pas être plus ancien que la release installée (sinon l’installation est refusée).
+- Une PR normale reste pour une mise en place unique (outillage, le canal perso lui-même).
 
 ## Goalong perso (`make perso`)
 - Même build que `make local` (`scripts/local_try.sh`, créneau d’essai 99), mais refuse un arbre modifié et écrit commit et branche dans Info.plist (`GoalongPersoSourceCommit`). Réglages › Mises à jour affiche « Build perso · branche · sha ».
 - Sparkle : la release la plus récente n’est proposée que si GitHub confirme qu’elle contient le commit (ancêtre du tag, ou PR fusionnée dans `main`). Sinon une ligne « Release X ignorée : ne contient pas ton commit <sha> » ; en cas de doute (pas poussé, réseau, limite d’API) : ignorée, nouvel essai plus tard. Jamais de retour en arrière. Une fois la PR fusionnée, la release suivante remplace le build perso.
 - Code réseau compilé seulement avec `-DGOALONG_PERSO` (jamais en CI) : les releases publiques ne changent pas. Sortir du perso : réinstaller une release à la main.
-- **Agents** : seulement `make perso NO_INSTALL=1 OUT=/private/tmp/…`. L’installation est faite par le propriétaire.
+- **Agents** : lancent `make perso` eux-mêmes après commit et push sur `perso`. `make perso NO_INSTALL=1 OUT=/private/tmp/…` reste possible pour un essai à blanc. En cas de refus de l’installation, de retour en arrière ou d’un blocage qui refuse de quitter : s’arrêter et le signaler, ne pas contourner.
 - Aucune autre installation locale dans `/Applications` : `make install-source` garde un numéro `YYYYMMDD.HHMMSS` < `30000000.x`, que Sparkle remplace aussitôt.
 - Agent launchd `ai.goalong.local-auto-deploy` (publication rapide après merge, signée sur le Mac) : seul le propriétaire le démarre (`python3 scripts/install_local_auto_deploy.py --start`). Les agents ne chargent ni ne rechargent aucun `ai.goalong.local-*`.
 
@@ -26,7 +28,7 @@
 - `scripts/local_try.sh` : build release, arch du Mac, sans tests (faire `make check` avant), signée avec le certificat épinglé et les droits release, Sparkle actif. Bundle id `ai.goalong.localhistory` : permissions et données réelles gardées.
 - Numéro de build : créneau d’essai (tentative 99) de la release la plus récente connue (app installée et manifeste public). Sparkle ne réinstalle donc pas cette release par-dessus ; la release suivante (run plus récent) remplace l’essai normalement. Politique : `scripts/build_number_policy.sh`, test `scripts/test_build_number_policy.sh`.
 - L’installation passe par `scripts/install_from_source.sh` (même identité de signature exigée, refus pendant un blocage sévère, fermeture propre, retour arrière). Refus si l’app installée est plus récente que l’essai.
-- **Agents** : seulement `make local NO_INSTALL=1 OUT=/private/tmp/…` (build, signe, vérifie ; ni fermeture, ni installation). L’installation est faite par le propriétaire.
+- **Agents** : préférer `make perso` (commit propre et traçable). `make local` reste permis ; `NO_INSTALL=1 OUT=/private/tmp/…` = build, signe, vérifie, sans fermeture ni installation.
 
 ## Goalong Dev (`make dev`)
 - App `~/Applications/Goalong Dev.app` : bundle id `ai.goalong.localhistory.dev`, processus `Goalong History Dev`, même certificat que la release (exigence désignée sans empreinte : les permissions accordées restent d’un build à l’autre). Icône DEV, point orange en barre des menus, titres « — Dev », bandeau branche · commit · données.
@@ -43,7 +45,8 @@
 
 ## Interdits
 - Jamais forcer la fermeture : un blocage actif peut refuser de quitter ; le résoudre dans l’app.
-- Ne pas modifier `/Applications/Goalong History.app` (hors `make local` lancé par le propriétaire), ni le trousseau, ni `blocking.json` à la main app ouverte.
+- Ne pas modifier `/Applications/Goalong History.app` autrement que par `make perso` / `make local` (garde-fous de `scripts/install_from_source.sh` : même identité de signature, refus pendant un blocage sévère, fermeture propre, retour arrière), ni le trousseau, ni `blocking.json` à la main app ouverte.
+- Migration de données, réglages `*_FORCE` et `*_ALLOW_*` : le propriétaire seulement.
 
 ## Vérifications
 - Jamais `swift test` nu. Trois commandes, toutes en HOME jetable (`scripts/run_swift_tests.sh`) : `make check` (boucle rapide : build incrémental + tests des cibles modifiées vs `origin/main`, ou `FILTER=Regex`, sans les 5 tests lents ; durée affichée), `make test` (suite complète puis rapport des tests ignorés ; un skip absent de `scripts/expected_skips.txt` fait échouer), `make test-ui` (rendus et tests AX opt-in, `GOALONG_*_SNAPSHOTS` / `*_UI_TESTS`, sans fenêtre visible ; dit si l’écran est verrouillé ; PNG dans `/tmp/goalong-test-ui-*`). Un test opt-in nouveau doit entrer dans `expected_skips.txt` (`python3 scripts/skip_report.py LOG --emit-allowlist` aide). Les cibles App et Ambiance chargent le hook `GoalongHeadlessTestSupport`, qui supprime à la sortie les plists `UserDefaults(suiteName:)` créés par la course (jamais ceux qui existaient) ; `scripts/clean_leaked_test_prefs.sh [--dry-run|--delete] [--include-other-test-suites]` nettoie les anciennes fuites (`goalong-auto-consent-*` seulement par défaut). Puis `make audit`.
