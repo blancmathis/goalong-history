@@ -44,7 +44,9 @@ if [[ "$PERSO" == 1 ]]; then
   fi
   PERSO_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
   PERSO_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
-  if [[ -z "$(git -C "$ROOT" branch -r --contains "$PERSO_COMMIT" 2>/dev/null)" ]]; then
+  # Remote-tracking refs may cover main only (narrow fetch refspec): also accept a pushed branch tip.
+  if [[ -z "$(git -C "$ROOT" branch -r --contains "$PERSO_COMMIT" 2>/dev/null)" ]] \
+    && ! git -C "$ROOT" ls-remote --heads origin 2>/dev/null | grep -q "^${PERSO_COMMIT}[[:space:]]"; then
     echo "Note: commit ${PERSO_COMMIT:0:8} is on no remote branch yet. Push it: until GitHub knows it, every release is skipped." >&2
   fi
 fi
