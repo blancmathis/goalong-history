@@ -505,6 +505,17 @@ enum SettingsPane: Hashable {
                 Text("Goalong \(updates.currentVersion)").font(.system(size: 13, weight: .medium))
                 Text(detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
+                // `make perso`: which worktree is installed, and why a release was not offered.
+                if let perso = updates.persoBuild {
+                    Text(perso.label).font(.system(size: 12, design: .monospaced)).foregroundStyle(LHTheme.secondaryText)
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("settings-perso-build")
+                    if let notice = updates.persoNotice {
+                        Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings-perso-notice")
+                    }
+                }
             }
             Spacer(minLength: 12)
             if updates.isChecking || updates.isPreparingAvailableUpdate {

@@ -5,10 +5,20 @@
 - Si un dépôt local ne fetch plus (`bad object refs/heads/feat/garant-mac-20261008`), créer le worktree depuis `~/Developer/goalong-motion-placement-app-20260918`. Ne pas supprimer cette branche locale.
 - Contexte projet (état, décisions, pièges) : `CONTEXT.md` du checkout principal (non versionné).
 
-## Trois voies
+## Quatre voies
 1. **Goalong Dev** (itération locale) : `make dev` construit le worktree en une app séparée qui tourne **à côté** de Goalong installé. Ne publie rien.
 2. **Goalong local** (essai réel, sans GitHub) : `make local` remplace Goalong dans `/Applications` par le worktree, signé comme une release. Ne publie rien. Voir plus bas.
-3. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
+3. **Goalong perso** (usage quotidien du propriétaire) : `make perso` = `make local` sur un commit propre, qui garde ce commit. Sparkle n’y installe une release que si elle contient ce commit. Voir plus bas.
+4. **Release** : PR → CI → merge sur `main` → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie ».
+
+## Boucle quotidienne
+`make dev` (essayer à côté) → `make check` → commit → `make perso` (le propriétaire l’installe et s’en sert) → PR quand c’est prêt. Publier : PR → CI → merge sur « déploie ».
+
+## Goalong perso (`make perso`)
+- Même build que `make local` (`scripts/local_try.sh`, créneau d’essai 99), mais refuse un arbre modifié et écrit commit et branche dans Info.plist (`GoalongPersoSourceCommit`). Réglages › Mises à jour affiche « Build perso · branche · sha ».
+- Sparkle : la release la plus récente n’est proposée que si GitHub confirme qu’elle contient le commit (ancêtre du tag, ou PR fusionnée dans `main`). Sinon une ligne « Release X ignorée : ne contient pas ton commit <sha> » ; en cas de doute (pas poussé, réseau, limite d’API) : ignorée, nouvel essai plus tard. Jamais de retour en arrière. Une fois la PR fusionnée, la release suivante remplace le build perso.
+- Code réseau compilé seulement avec `-DGOALONG_PERSO` (jamais en CI) : les releases publiques ne changent pas. Sortir du perso : réinstaller une release à la main.
+- **Agents** : seulement `make perso NO_INSTALL=1 OUT=/private/tmp/…`. L’installation est faite par le propriétaire.
 - Aucune autre installation locale dans `/Applications` : `make install-source` garde un numéro `YYYYMMDD.HHMMSS` < `30000000.x`, que Sparkle remplace aussitôt.
 - Agent launchd `ai.goalong.local-auto-deploy` (publication rapide après merge, signée sur le Mac) : seul le propriétaire le démarre (`python3 scripts/install_local_auto_deploy.py --start`). Les agents ne chargent ni ne rechargent aucun `ai.goalong.local-*`.
 

@@ -247,6 +247,8 @@ enum SupportSourceAllowlist {
         "PermissionRecovery.swift",
         "PermissionRecoveryLedger.swift",
         "PermissionRepair.swift",
+        "PersoGitHubTransport.swift",
+        "PersoReleaseGate.swift",
         "PreparedSession.swift",
         "PrivacyChoicesOverview.swift",
         "PrivacyPage.swift",

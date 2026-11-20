@@ -6,6 +6,8 @@
 # release over it, and the next published release upgrades it as usual.
 #   NO_INSTALL=1      build, sign and verify only; stop before any install or quit (agents, dry runs)
 #   OUT=/abs/dir      output folder (default .build/goalong-local/out)
+#   PERSO=1           make perso: also record this commit; the app then installs only a release that
+#                     contains it (PersoReleaseGate). Needs a committed tree; push it so GitHub knows it.
 # Tests are not run here: make check / make test before, CI on the PR.
 set -euo pipefail
 
@@ -14,6 +16,7 @@ APP_NAME="Goalong History"
 WORK="$ROOT/.build/goalong-local"
 OUT="${GOALONG_LOCAL_OUT:-$WORK/out}"
 NO_INSTALL="${GOALONG_LOCAL_NO_INSTALL:-0}"
+PERSO="${GOALONG_LOCAL_PERSO:-0}"
 MANIFEST_URL="https://github.com/blancmathis/goalong-history/releases/download/latest-main/release-manifest.json"
 # Test hooks, honored only with NO_INSTALL=1: a fixture manifest (file path) and app folders.
 TEST_MANIFEST="${GOALONG_LOCAL_TEST_MANIFEST:-}"
@@ -28,13 +31,30 @@ source "$ROOT/scripts/build_number_policy.sh"
 [[ "$NO_INSTALL" == 0 || "$NO_INSTALL" == 1 ]] || { echo "NO_INSTALL must be 0 or 1." >&2; exit 2; }
 [[ "$OUT" == /* ]] || { echo "OUT must be an absolute path." >&2; exit 2; }
 [[ "${GITHUB_ACTIONS:-}" != true ]] || { echo "make local is for the owner's Mac, not CI." >&2; exit 1; }
+[[ "$PERSO" == 0 || "$PERSO" == 1 ]] || { echo "PERSO must be 0 or 1." >&2; exit 2; }
+MODE="make local"
+PERSO_COMMIT="" PERSO_BRANCH=""
+if [[ "$PERSO" == 1 ]]; then
+  MODE="make perso"
+  # The recorded commit must be exactly what is built: a release "contains this build" only then.
+  if [[ -n "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]]; then
+    echo "make perso builds a commit: commit (or stash) your changes first. git status:" >&2
+    git -C "$ROOT" status --short >&2
+    exit 1
+  fi
+  PERSO_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+  PERSO_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
+  if [[ -z "$(git -C "$ROOT" branch -r --contains "$PERSO_COMMIT" 2>/dev/null)" ]]; then
+    echo "Note: commit ${PERSO_COMMIT:0:8} is on no remote branch yet. Push it: until GitHub knows it, every release is skipped." >&2
+  fi
+fi
 
 started_all="$(date +%s)"
 step() { printf '%-28s %4s s\n' "$1" "$(( $(date +%s) - $2 ))"; }
 
 mkdir -p "$WORK"
 if ! mkdir "$WORK/lock" 2>/dev/null; then
-  echo "Another make local runs in this checkout. If interrupted, remove $WORK/lock after checking it." >&2
+  echo "Another make local or make perso runs in this checkout. If interrupted, remove $WORK/lock after checking it." >&2
   exit 1
 fi
 trap 'rmdir "$WORK/lock" 2>/dev/null || true' EXIT
@@ -76,13 +96,18 @@ fi
 BASE_BUILD="${base_line%%|*}"
 VERSION="${base_line#*|}"
 TRY_BUILD="$(localhistory_local_try_build_number "$BASE_BUILD")"
-echo "Local try $VERSION ($TRY_BUILD), above release $BASE_BUILD; the next release replaces it."
+if [[ "$PERSO" == 1 ]]; then
+  echo "Perso build $VERSION ($TRY_BUILD) of $PERSO_BRANCH @ ${PERSO_COMMIT:0:8}, above release $BASE_BUILD; only a release that contains this commit replaces it."
+else
+  echo "Local try $VERSION ($TRY_BUILD), above release $BASE_BUILD; the next release replaces it."
+fi
 
 started="$(date +%s)"
 rm -rf "$OUT"
 mkdir -p "$OUT" "$WORK/scratch"
 export LOCALHISTORY_LOCAL_TRY_BASE="$BASE_BUILD"
 if ! env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" \
+    LOCALHISTORY_PERSO_SOURCE_COMMIT="$PERSO_COMMIT" LOCALHISTORY_PERSO_SOURCE_BRANCH="$PERSO_BRANCH" \
     LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_BUILD_CONFIGURATION=release \
     LOCALHISTORY_RUN_TESTS=0 LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 \
     LOCALHISTORY_APP_ENTITLEMENTS="$ROOT/Distribution/GoalongHistory.entitlements" \
@@ -101,6 +126,8 @@ bash "$ROOT/scripts/verify_release_identity.sh" "$APP" >>"$WORK/build.log" 2>&1 
 LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash "$ROOT/scripts/verify_local_bundle.sh" >>"$WORK/build.log" 2>&1 \
   || { echo "Bundle check failed; see $WORK/build.log" >&2; exit 1; }
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" == "$TRY_BUILD" ]]
+recorded="$(/usr/libexec/PlistBuddy -c 'Print :GoalongPersoSourceCommit' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+[[ "$recorded" == "$PERSO_COMMIT" ]] || { echo "Perso commit in the bundle ($recorded) differs from $PERSO_COMMIT." >&2; exit 1; }
 step "Verify (identity, Sparkle)" "$started"
 
 if [[ "$NO_INSTALL" == 1 ]]; then

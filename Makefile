@@ -1,4 +1,4 @@
-.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status local \
+.PHONY: check test test-ui build app dmg audit install install-source uninstall clean dev dev-stop dev-status local perso \
 	gallery gallery-diff gallery-accept gallery-index gallery-clean gallery-compare
 
 VERSION ?= 0.6.0
@@ -85,6 +85,13 @@ dev-status:
 # GitHub (scripts/local_try.sh). NO_INSTALL=1 OUT=/abs/dir stops before install (agents, dry runs).
 local:
 	GOALONG_LOCAL_NO_INSTALL="$(call goalong_dev_setting,NO_INSTALL)" \
+	GOALONG_LOCAL_OUT="$(call goalong_dev_setting,OUT)" ./scripts/local_try.sh
+
+# make perso: make local of this commit, recorded in the app. The owner's daily build: Sparkle then
+# installs only a release that contains this commit (merged into main), so a newer release without it
+# never replaces the build. Committed tree only. NO_INSTALL=1 OUT=/abs/dir as for make local.
+perso:
+	GOALONG_LOCAL_PERSO=1 GOALONG_LOCAL_NO_INSTALL="$(call goalong_dev_setting,NO_INSTALL)" \
 	GOALONG_LOCAL_OUT="$(call goalong_dev_setting,OUT)" ./scripts/local_try.sh
 
 dmg: app

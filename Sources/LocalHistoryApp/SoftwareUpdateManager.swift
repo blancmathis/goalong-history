@@ -163,6 +163,15 @@ import AppleScreenTime
         @Published private(set) var lastCheckedAt: Date? = GoalongDefaults.standard.object(forKey: SoftwareUpdateManager.lastCheckedKey) as? Date
         /// Set on the first launch after an update so the app can confirm it worked.
         @Published private(set) var updatedFromVersion: String?
+        /// `make perso` build: branch and commit, shown in Settings; nil in every release.
+        let persoBuild = PersoBuildInfo.current
+        /// Why the newest release was not offered to this perso build ("Release X ignorée : …"); nil otherwise.
+        @Published private(set) var persoNotice: String?
+        private lazy var persoChecker: PersoReleaseChecker? = persoBuild.map { build in
+            let checker = PersoReleaseChecker(build: build, fetch: PersoGitHubTransport.fetch)
+            checker.onVerdict = { [weak self] _, verdict in self?.persoVerdictArrived(verdict) }
+            return checker
+        }
         static let lastCheckedKey = "goalong.updates.lastCheckedAt.v1"
         static let lastSeenVersionKey = "goalong.updates.lastSeenVersion.v1"
 
@@ -510,7 +519,7 @@ import AppleScreenTime
         private func markUpToDate() {
             presentationState.recordNoUpdate()
             isChecking = false
-            statusMessage = "\(ProductIdentity.displayName) est à jour."
+            statusMessage = persoNotice ?? "\(ProductIdentity.displayName) est à jour."
             recordCheckResult(.upToDate)
         }
 
@@ -641,6 +650,42 @@ import AppleScreenTime
             if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }
+        }
+
+        /// Releases: nil, Sparkle picks as always. A `make perso` build installs a newer release only when it
+        /// contains the perso commit (`PersoReleaseGate`); otherwise, or while unsure, it reports no update.
+        /// Sparkle never offers an older build, so the perso build is never downgraded either.
+        func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
+            guard let checker = persoChecker else { return nil }
+            let comparator = SUStandardVersionComparator.default
+            let installed = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+            let newest = appcast.items
+                .filter { comparator.compareVersion(installed, toVersion: $0.versionString) == .orderedAscending }
+                .max { comparator.compareVersion($0.versionString, toVersion: $1.versionString) == .orderedAscending }
+            guard let newest else {
+                persoNotice = nil
+                return nil
+            }
+            switch checker.decide(tag: PersoReleaseGate.releaseTag(enclosure: newest.fileURL),
+                                  version: newest.displayVersionString) {
+            case .install:
+                persoNotice = nil
+                return nil
+            case .skip(let notice):
+                persoNotice = notice
+                return SUAppcastItem.empty()
+            }
+        }
+
+        /// A finished GitHub check: probe again at once, so a release that contains the commit is offered
+        /// now and a final "ignorée" reason replaces "en cours". No loop: the checker caches final answers
+        /// and retries an unknown one at most every `PersoReleaseChecker.retryInterval`.
+        private func persoVerdictArrived(_ verdict: PersoReleaseVerdict) {
+            if verdict == .contains { persoNotice = nil }
+            guard automaticallyChecksForUpdates, presentationState.availableVersion == nil else { return }
+            lastBackgroundCheck = nil
+            checkQueue.requestProbe()
+            serveQueuedChecks()
         }
 
         func feedURLString(for updater: SPUUpdater) -> String? {

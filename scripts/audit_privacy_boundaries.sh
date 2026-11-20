@@ -305,9 +305,23 @@ fi
 # uploader stays physically excluded. Jev has its own explicit-consent bounded audit.
 # Every other first-party networking surface is rejected.
 SITE_SUBMISSION="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSiteSubmission.swift"
+# `make perso` builds only (-DGOALONG_PERSO, never set by CI): anonymous GETs to GitHub's public API
+# for this repository. Public releases compile the inert `#else` branch.
+PERSO_TRANSPORT="$ROOT_DIR/Sources/LocalHistoryApp/PersoGitHubTransport.swift"
+if [[ -f "$PERSO_TRANSPORT" ]]; then
+  perso_network="$(awk '/^ *#if GOALONG_PERSO$/{inside=1; next} /^ *#else$/{inside=0} /^ *#endif$/{inside=0} !inside && /URLSession|HTTPURLResponse|URLRequest/' "$PERSO_TRANSPORT")"
+  if [[ -n "$perso_network" ]] \
+    || ! grep -Fq 'url.host == "api.github.com"' "$PERSO_TRANSPORT" \
+    || ! grep -Fq 'hasPrefix(PersoReleaseGate.apiRepository)' "$PERSO_TRANSPORT" \
+    || ! grep -Fq 'request.httpMethod = "GET"' "$PERSO_TRANSPORT" \
+    || grep -RnE 'GOALONG_PERSO|LOCALHISTORY_PERSO_' "$ROOT_DIR/.github" >/dev/null 2>&1; then
+    echo "Perso GitHub transport must stay a GOALONG_PERSO-only GET to api.github.com for this repository, never enabled by CI." >&2
+    failed=true
+  fi
+fi
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/JevTransport.swift" && "$file" != "$AMBIANCE_PACK_DOWNLOADER" ]]; then
+  if [[ "$file" != "$SITE_SUBMISSION" && "$file" != "$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongSitePairing.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/CommitmentUploader.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/JevTransport.swift" && "$file" != "$AMBIANCE_PACK_DOWNLOADER" && "$file" != "$PERSO_TRANSPORT" ]]; then
     echo "Unexpected first-party network API outside the reviewed website, optional Jev and Ambiance pack boundaries: $match" >&2
     failed=true
   fi

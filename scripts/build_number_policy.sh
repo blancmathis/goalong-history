@@ -89,3 +89,24 @@ localhistory_validate_build_number() {
   echo "LOCALHISTORY_BUILD_NUMBER or use a value below $LOCALHISTORY_RELEASE_BUILD_EPOCH." >&2
   return 1
 }
+
+# make perso: a make local try that also records its exact source commit (Info.plist
+# GoalongPersoSourceCommit). Same build number as make local (the try slot above): the app itself then
+# installs a newer release only when that release's tag contains the commit (PersoReleaseGate), so a
+# perso build is replaced by the first release that has its work and never downgraded. Only the owner's
+# Mac builds it: never in CI, never without a try base, always a full 40-hex commit.
+localhistory_validate_perso_source() { # COMMIT
+  local commit="$1"
+  if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "make perso needs the full 40-hex source commit; got: $commit" >&2
+    return 1
+  fi
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "make perso is for the owner's Mac, not CI." >&2
+    return 1
+  fi
+  if ! localhistory_local_try_build_number "${LOCALHISTORY_LOCAL_TRY_BASE:-}" >/dev/null 2>&1; then
+    echo "make perso needs a published release as its try base (LOCALHISTORY_LOCAL_TRY_BASE)." >&2
+    return 1
+  fi
+}
