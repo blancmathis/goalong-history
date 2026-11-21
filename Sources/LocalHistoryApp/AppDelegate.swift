@@ -677,9 +677,23 @@ import AppleScreenTime
             alert.accessoryView = field
             alert.addButton(withTitle: "Quitter")
             alert.addButton(withTitle: "Annuler")
+            // Mathis (2026-11-21): the password ends a block « Mot de passe », not only this quit.
+            let braise = BraiseRuntime.shared.controller
+            let offersEnd = PasswordDisengagement.hasSomething(blocking: controller, braise: braise)
+            if offersEnd { alert.addButton(withTitle: "Arrêter le blocage") }
             alert.window.initialFirstResponder = field
             NSApplication.shared.activate(ignoringOtherApps: true)
-            guard alert.runModal() == .alertFirstButtonReturn else { field.stringValue = ""; return false }
+            let answer = alert.runModal()
+            if offersEnd, answer == .alertThirdButtonReturn {
+                let refusal = PasswordDisengagement.end(password: field.stringValue, blocking: controller, braise: braise)
+                field.stringValue = ""
+                let done = NSAlert()
+                done.messageText = refusal == nil ? "Blocage arrêté" : "Le blocage continue"
+                done.informativeText = refusal ?? "Les blocages protégés par mot de passe sont arrêtés. Goalong reste ouvert."
+                done.addButton(withTitle: "OK"); NSApplication.shared.activate(ignoringOtherApps: true); done.runModal()
+                return false
+            }
+            guard answer == .alertFirstButtonReturn else { field.stringValue = ""; return false }
             let result = controller.authorizeQuit(password: field.stringValue)
             field.stringValue = ""
             guard result == .ok else {

@@ -510,6 +510,15 @@ private struct RedScreenChallenge: Identifiable {
         case .password(let answer): message = Self.text(answer)
         }
     }
+    /// Nil = stopped; otherwise the words of the refusal.
+    static func stopWords(_ result: RedScreenStopResult) -> String? {
+        switch result {
+        case .stopped: return nil
+        case .wrongText: return "Texte différent."
+        case .locked(let until): return BraiseController.lockedText(until: until, now: GoalongToday.now)
+        case .password(let answer): return text(answer)
+        }
+    }
     static func text(_ answer: BlockingPasswordResult) -> String {
         switch answer {
         case .ok: return ""

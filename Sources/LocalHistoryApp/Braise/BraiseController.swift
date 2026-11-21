@@ -315,6 +315,27 @@ struct RedScreenRefusal: LocalizedError, Equatable {
     }
     func cancelStop() { pendingStop = nil; stateChanged?() }
 
+    /// Ends the window in progress of one range once its stop is passed (Mathis, 2026-11-21: a « Mot de passe » range
+    /// ends when the blocking password is entered). Other ranges in progress keep running; « Verrouillé » refuses.
+    func stopRange(_ id: UUID, password: String) -> RedScreenStopResult {
+        guard running else { return .stopped }
+        refreshWindows(clock())
+        let mine = windows.filter { $0.rangeID == id }
+        if let strong = RedScreenRules.strongest(mine) {
+            switch strong.lock {
+            case .locked: return .locked(until: strong.end)
+            case .typing: return .wrongText
+            case .password:
+                let result = checkPassword(password)
+                guard result == .ok else { return .password(result) }
+            case .free: break
+            }
+        }
+        guard !mine.isEmpty else { return .stopped }
+        skip(mine); saveRangesNow(); evaluate()
+        return .stopped
+    }
+
     private func skip(_ list: [RedScreenWindow]) {
         for window in list {
             ranges.skips[window.rangeID] = max(window.end, ranges.skips[window.rangeID] ?? window.end)

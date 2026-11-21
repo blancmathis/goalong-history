@@ -18,7 +18,8 @@ enum BlockRuleSwitch: Equatable {
         if rule.lists.isEmpty, let red = rule.red {
             if !red.enabled { return .off }
             // A protected red range in progress refuses any weakening until its end: « En cours » has its stop.
-            if case .running = red.state, stop != .free { return .hidden }
+            // « Mot de passe » is the exception (Mathis, 2026-11-21): the password ends the range, then turns it off.
+            if case .running = red.state, stop != .free, stop != .password { return .hidden }
         } else if rule.red != nil {
             return .hidden
         } else if case .running = rule.state {
@@ -82,6 +83,10 @@ enum BlockRuleSwitchAction {
             }
             defer { grant.revoke() }
             guard let braise else { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
+            if case .running = red.state, stop == .password, case .password(let password) = proof {
+                // The window in progress ends first: then switching the range off is no longer a running weakening.
+                if let refusal = RedScreenPasswordSheet.stopWords(braise.stopRange(red.rangeID, password: password)) { return refusal }
+            }
             do { try braise.setRangeEnabled(red.rangeID, false, asking: false) } catch { return words(error) }
             return nil
         }
@@ -232,6 +237,29 @@ extension BlockingNowPlan {
         return lock == .password
             ? "Sans le mot de passe, la surveillance reste active \(BlockingFormat.untilPhrase(deadline))."
             : "Personne ne pourra arrêter la surveillance avant \(deadline). Goalong reste ouvert jusqu’à sa fin."
+    }
+}
+/// Mathis' rule (2026-11-21): a block protected by the password is a commitment until that password is entered; then it
+/// ends — lists blocks « Mot de passe » and the red-screen ranges « Mot de passe » in progress, with their guard.
+/// « Verrouillé » and « Difficile » are left as they are. Nil = everything ended; otherwise the words of the refusal.
+enum PasswordDisengagement {
+    @MainActor static func hasSomething(blocking: BlockingController?, braise: BraiseController?) -> Bool {
+        (blocking?.activeBlocks.contains { $0.lock == .password } ?? false) || braise?.protectedWindow?.lock == .password
+    }
+
+    @MainActor static func end(password: String, blocking: BlockingController?, braise: BraiseController?) -> String? {
+        guard let blocking else { return "Le mot de passe vient du module Garde-fous." }
+        if password.isEmpty { return BlockingController.emptyPasswordText }
+        var ended = false
+        for block in blocking.activeBlocks where block.lock == .password {
+            if let refusal = BlockRuleSwitchAction.passwordWords(blocking.unlockWithPassword(password, blockID: block.id)) { return refusal }
+            ended = true
+        }
+        if let braise, braise.protectedWindow?.lock == .password {
+            if let refusal = RedScreenPasswordSheet.stopWords(braise.stopActiveRanges(password: password)) { return refusal }
+            ended = true
+        }
+        return ended ? nil : "Aucun blocage par mot de passe n’est en cours."
     }
 }
 #endif
