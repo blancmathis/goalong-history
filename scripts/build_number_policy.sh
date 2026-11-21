@@ -38,7 +38,7 @@ localhistory_local_try_build_number() {
 
 # make local trusts the public manifest only as a base: a forged far-future build would otherwise
 # pin the try above every real release. Its run slot (high part) must stay near the installed build
-# and below a generous ceiling from a known point (high 4266167 on 2026-11-10, +5000 per day).
+# and below a generous ceiling from a known point (high 4266167 on 2026-11-10, +20000 per day: run ids grew ~9600 per day in November 2026).
 LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH=4266167
 LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH=1794268800
 localhistory_manifest_base_plausible() { # BUILD [INSTALLED_BUILD] [NOW_EPOCH]
@@ -47,7 +47,7 @@ localhistory_manifest_base_plausible() { # BUILD [INSTALLED_BUILD] [NOW_EPOCH]
   [[ "$build" =~ $re ]] || return 1
   local high="${BASH_REMATCH[1]}" days=$(( (now - LOCALHISTORY_PLAUSIBLE_ANCHOR_EPOCH) / 86400 ))
   (( days < 0 )) && days=0
-  local ceiling=$(( LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH + days * 5000 + 1000 ))
+  local ceiling=$(( LOCALHISTORY_PLAUSIBLE_ANCHOR_HIGH + days * 20000 + 1000 ))
   if [[ "$installed" =~ $re ]]; then
     local near=$(( BASH_REMATCH[1] + 3000 ))
     (( near < ceiling )) && ceiling=$near

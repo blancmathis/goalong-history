@@ -74,6 +74,8 @@ reject localhistory_manifest_base_plausible 30000000.4290000.101 30000000.426616
 accept localhistory_manifest_base_plausible 30000000.4268000.101 "" "$now"
 reject localhistory_manifest_base_plausible 30000000.9999999.101 "" "$now"
 reject localhistory_manifest_base_plausible 20260929.123456 "" "$now"
+# 2026-11-22: the perso try of release 4362254.1811 and that release (run ids grow ~9600 per day).
+accept localhistory_manifest_base_plausible 30000000.4362254.181101 30000000.4362254.181199 1795305600
 # Sparkle (numeric per component) orders: release < its try < the next run's release.
 sorted="$(printf '%s\n' 30000000.4266168.1 30000000.4266167.303799 30000000.4266167.303702 \
   | sort -t. -k1,1n -k2,2n -k3,3n | tr '\n' ' ')"
