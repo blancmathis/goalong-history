@@ -178,7 +178,7 @@ VERBOSE=0
 # the rejection checks below into a real install (and a recursive safety test).
 CLEAN_INSTALL_ENV=(env -u LOCALHISTORY_PREBUILT_APP -u GOALONG_LOCAL_TRY -u LOCALHISTORY_RUN_TESTS
   -u LOCALHISTORY_LOCAL_TRY_BASE -u GOALONG_LOCAL_PERSO -u GOALONG_LOCAL_NO_INSTALL -u GOALONG_LOCAL_OUT
-  -u GOALONG_INSTALL_DURING_LOCK -u GOALONG_QUIT_WAIT_TENTHS)
+  -u GOALONG_INSTALL_DURING_LOCK -u GOALONG_QUIT_WAIT_TENTHS -u GOALONG_QUIT_PROMPT_WAIT_TENTHS)
 
 set +e
 test_override_output="$("${CLEAN_INSTALL_ENV[@]}" LOCALHISTORY_RUN_TESTS=0 "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
@@ -213,7 +213,7 @@ write_build "$TARGET_DIR/$APP_NAME.app" 30000000.4266167.303702
 GOALONG_LOCAL_TRY=1 refuse_local_try_downgrade "$TEST_ROOT/downgrade-src.app"
 # make local never force-quits and never installs over a scheduled lock.
 set +e
-sigkill_output="$(GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 /bin/bash -c '
+sigkill_output="$(GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 /bin/bash -c '
   source "$1"; /usr/bin/pgrep() { return 0; }; /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
   quit_running_goalong goalong-test-never' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 sigkill_status=$?
@@ -225,6 +225,10 @@ lock_status=$?
 set -e
 if [[ "$sigkill_status" -ne 1 ]] || [[ "$sigkill_output" == *KILLED* ]] || ! grep -Fq 'never force-quits' <<<"$sigkill_output"; then
   echo "make local quit path force-killed or did not stop: $sigkill_output" >&2
+  exit 1
+fi
+if ! grep -Fq 'blocking password to quit' <<<"$sigkill_output"; then
+  echo "make local did not say Goalong asks its password to quit: $sigkill_output" >&2
   exit 1
 fi
 if [[ "$lock_status" -ne 3 ]] || ! grep -Fq 'scheduled' <<<"$lock_output"; then

@@ -422,6 +422,13 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                                 .padding(28)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            // Out of the scroll (Mathis, 2026-11-21): a refused « Supprimer » or « Enregistrer » is
+                            // always in view, never below the fold.
+                            if let refusal {
+                                GoalongNote(refusal, tone: .warning).accessibilityIdentifier("block-rule-refusal")
+                                    .padding(.horizontal, 28).padding(.vertical, 10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             sentence(now: now)
                             footer(now: now)
                         }
@@ -1184,9 +1191,6 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     }
 
     @ViewBuilder private var notes: some View {
-        if let refusal {
-            GoalongNote(refusal, tone: .warning).accessibilityIdentifier("block-rule-refusal")
-        }
         if trigger == .session {
             if usesFocus, let error = focus?.error {
                 GoalongNote(FocusUIError.message(raw: error), tone: .warning).accessibilityIdentifier("block-rule-session-error")

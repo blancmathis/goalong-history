@@ -564,7 +564,20 @@ quit_running_goalong() {
     waited=$((waited + 1))
   done
   if [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]]; then
-    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Quit Goalong in the app, then run make local again. Nothing was replaced." >&2
+    # A protection the member can pass (a « Mot de passe » rule, even idle) makes Goalong ignore SIGTERM and show
+    # its own « Quitter » prompt instead (Mathis, 2026-11-21): wait for that password, never force-quit.
+    echo "Goalong asks for its blocking password to quit for this install: type it in Goalong's window (waiting up to $(( ${GOALONG_QUIT_PROMPT_WAIT_TENTHS:-1200} / 10 )) s)." >&2
+    waited=0 limit="${GOALONG_QUIT_PROMPT_WAIT_TENTHS:-1200}"
+    while (( waited < limit )); do
+      running=0
+      for name in "$@"; do
+        if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
+      done
+      (( running == 0 )) && return 0
+      /bin/sleep 0.1
+      waited=$((waited + 1))
+    done
+    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Quit Goalong in the app (or type its password in the prompt), then run make local again. Nothing was replaced." >&2
     exit 1
   fi
   for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done

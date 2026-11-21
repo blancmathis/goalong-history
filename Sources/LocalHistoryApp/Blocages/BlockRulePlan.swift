@@ -166,11 +166,28 @@ enum BlockRulePlan {
     @MainActor static func apply(_ writes: Writes, blocking: BlockingController?, braise: BraiseController?,
                                  surveillance: JevSurveillanceStore? = nil, now: Date = Date(),
                                  grant: RuleStopGrant = .shared,
-                                 confirmStop: ((BlockLock) -> Bool)? = nil) -> String? {
+                                 confirmStop: ((BlockLock) -> Bool)? = nil,
+                                 askPassword: ((String) -> String?)? = nil) -> String? {
         let confirmStop = confirmStop ?? { RuleStopGrant.confirm($0, grant: grant) }
         if !writes.jev.isEmpty, surveillance == nil { return "La surveillance n’a pas pu être enregistrée." }
         if !writes.lists.isEmpty, blocking == nil { return "Le blocage est désactivé. Activez-le dans Réglages › Modules." }
         if writes.touchesRed, braise == nil { return "L’écran rouge n’est pas disponible sur ce Mac pour l’instant." }
+        var asked = false
+        defer { if asked { grant.revoke() } }
+        // Mathis (2026-11-21): a running « Mot de passe » range ends with the password. Deleting or weakening its rule
+        // asks it, stops the window in progress, then goes on; the same password passes the rule's stop below.
+        if writes.touchesRed, let braise {
+            let running = braise.runningPasswordRanges(writes.red, deleting: writes.deleting)
+            if !running.isEmpty {
+                let action = writes.red.isEmpty ? "Supprimer la règle" : "Modifier la règle"
+                guard let password = (askPassword ?? { RuleStopGrant.askPassword(action: $0) })(action) else { return RuleStopGrant.keptText }
+                if password.isEmpty { return BlockingController.emptyPasswordText }
+                for id in running.sorted(by: { $0.uuidString < $1.uuidString }) {
+                    if let refusal = RedScreenPasswordSheet.stopWords(braise.stopRange(id, password: password)) { return refusal }
+                }
+                if grant.pass(.password, proof: .password(password)) == nil { asked = true }
+            }
+        }
         var stop = BlockLock.free
         func raise(_ lock: BlockLock?) { if let lock, lock.strength > stop.strength { stop = lock } }
         for write in writes.jev {
@@ -184,8 +201,6 @@ enum BlockRulePlan {
         if writes.touchesRed { raise(braise?.weakeningStop(writes.red, deleting: writes.deleting)) }
         if stop == .locked { return RuleStopGrant.lockedText }
         // The stop is passed before the checks: each engine then reads the same grant, used for this change only.
-        var asked = false
-        defer { if asked { grant.revoke() } }
         if stop != .free, !grant.covers(stop) {
             guard confirmStop(stop), grant.covers(stop) else { return RuleStopGrant.keptText }
             asked = true

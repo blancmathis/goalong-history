@@ -95,6 +95,54 @@ import XCTest
         XCTAssertTrue(c.ranges.disabled.contains(night))
     }
 
+    /// Bug of 2026-11-21: « Supprimer » on the running night rule did nothing. Now the password ends the range and the
+    /// same password passes the rule's stop: one prompt, then the rule is gone.
+    func testDeletingARunningPasswordRuleAsksThePasswordThenDeletes() throws {
+        let (c, _) = try braise()
+        let grant = RuleStopGrant(uptime: { 1_000 }, verifyPassword: { [password] in $0 == password ? .ok : .wrong(remaining: 3) })
+        c.stopGrant = grant
+        let writes = BlockRulePlan.writes(nil, replacing: try nightRule(c), lists: [], red: c.ranges)
+        XCTAssertEqual(c.runningPasswordRanges(writes.red, deleting: writes.deleting), [night])
+        var asked = 0
+        let noSecondPrompt: (BlockLock) -> Bool = { _ in XCTFail("the password was already given"); return false }
+
+        XCTAssertEqual(BlockRulePlan.apply(writes, blocking: nil, braise: c, grant: grant, confirmStop: noSecondPrompt,
+                                           askPassword: { _ in asked += 1; return nil }), RuleStopGrant.keptText)
+        XCTAssertNotNil(BlockRulePlan.apply(writes, blocking: nil, braise: c, grant: grant, confirmStop: noSecondPrompt,
+                                            askPassword: { _ in asked += 1; return "faux" }))
+        XCTAssertEqual(c.guardUntil, end, "cancel or a wrong password change nothing")
+        XCTAssertTrue(c.ranges.program.ranges.contains { $0.id == night })
+
+        XCTAssertNil(BlockRulePlan.apply(writes, blocking: nil, braise: c, grant: grant, confirmStop: noSecondPrompt,
+                                         askPassword: { _ in asked += 1; return self.password }))
+        XCTAssertEqual(asked, 3)
+        XCTAssertNil(c.guardUntil); XCTAssertFalse(c.ranges.program.ranges.contains { $0.id == night })
+        XCTAssertFalse(grant.covers(.password), "the grant ends with the change")
+    }
+
+    func testARunningLockedRuleIsNotOfferedThePassword() throws {
+        let (c, _) = try braise(lock: "locked")
+        let writes = BlockRulePlan.writes(nil, replacing: try nightRule(c), lists: [], red: c.ranges)
+        XCTAssertTrue(c.runningPasswordRanges(writes.red, deleting: writes.deleting).isEmpty)
+        XCTAssertNotNil(BlockRulePlan.apply(writes, blocking: nil, braise: c, confirmStop: { _ in false },
+                                            askPassword: { _ in XCTFail("no password for « Verrouillé »"); return nil }))
+        XCTAssertEqual(c.guardUntil, end)
+    }
+
+    /// Bug 2 of 2026-11-21: an installer's SIGTERM, refused by a protection, opens the « Quitter » prompt only when
+    /// the member can pass it; « Verrouillé » keeps it ignored, and nothing to ask means nothing quits.
+    func testAnInstallSignalAsksOnlyAPassableStop() {
+        typealias D = AppDelegate
+        XCTAssertTrue(D.signalQuitAsks(prompt: .password, ruleStop: nil, jevStep: .allow))
+        XCTAssertTrue(D.signalQuitAsks(prompt: .quit, ruleStop: .password, jevStep: .allow), "an idle « Mot de passe » rule")
+        XCTAssertTrue(D.signalQuitAsks(prompt: .quit, ruleStop: nil, jevStep: .password))
+        XCTAssertFalse(D.signalQuitAsks(prompt: .quit, ruleStop: nil, jevStep: .allow), "nothing to ask: no quit")
+        XCTAssertFalse(D.signalQuitAsks(prompt: .password, ruleStop: .locked, jevStep: .allow))
+        XCTAssertFalse(D.signalQuitAsks(prompt: .locked(redScreen: true), ruleStop: .password, jevStep: .allow))
+        XCTAssertFalse(D.signalQuitAsks(prompt: .redScreenPage, ruleStop: nil, jevStep: .password))
+        XCTAssertFalse(D.signalQuitAsks(prompt: .password, ruleStop: nil, jevStep: .refused("verrouillé")))
+    }
+
     func testOtherStopsKeepTheirRules() throws {
         for (lock, name) in [("locked", "Verrouillé"), ("typing", "Difficile")] {
             let (c, _) = try braise(lock: lock)

@@ -75,6 +75,23 @@ import LocalHistoryCore
 
     func revoke() { granted = nil; challenge = nil }
 
+    /// Asks the blocking password to end a running « Mot de passe » range first (Mathis, 2026-11-21). Nil = cancelled.
+    static func askPassword(action: String) -> String? {
+        if NSClassFromString("XCTestCase") != nil { return nil }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = action
+        alert.informativeText = "Une plage « \(BlockLock.password.title) » de cette règle est en cours. Le mot de passe de blocage l’arrête, puis la règle change."
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Continuer")
+        alert.addButton(withTitle: "Annuler").keyEquivalent = "\u{1b}"
+        alert.window.initialFirstResponder = field
+        alert.layout()
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
+    }
+
     /// Asks the stop of `lock` in a modal alert and passes it. True = the grant covers `lock`.
     static func confirm(_ lock: BlockLock, action: String = "Affaiblir la règle", grant: RuleStopGrant = .shared) -> Bool {
         if grant.covers(lock) { return true }

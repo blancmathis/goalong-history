@@ -336,6 +336,20 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         return .stopped
     }
 
+    /// The ranges of this change whose window in progress refuses it and ends with the blocking password (Mathis,
+    /// 2026-11-21): deleting or weakening a running « Mot de passe » rule asks the password, stops it, then writes.
+    /// Empty = no such window (nothing runs, the change is no weakening, or a stronger window refuses it anyway).
+    func runningPasswordRanges(_ writes: [RangeWrite], deleting removed: Set<UUID> = []) -> Set<UUID> {
+        guard running, let next = try? staged(writes, deleting: removed), runningRefusal(for: next) != nil else { return [] }
+        let windows = brought(clock()).windows
+        let touched = removed.union(writes.map(\.range.id))
+        let mine = windows.filter { touched.contains($0.rangeID) }
+        // Another protected window keeps refusing: stopping these alone would not let the change through.
+        guard RedScreenRules.strongest(mine)?.lock == .password,
+              RedScreenRules.strongest(windows.filter { !touched.contains($0.rangeID) }) == nil else { return [] }
+        return Set(mine.map(\.rangeID))
+    }
+
     private func skip(_ list: [RedScreenWindow]) {
         for window in list {
             ranges.skips[window.rangeID] = max(window.end, ranges.skips[window.rangeID] ?? window.end)

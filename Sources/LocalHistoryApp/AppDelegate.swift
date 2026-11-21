@@ -163,6 +163,9 @@ import AppleScreenTime
         /// T-050 B1: the menu's quit passed the stop of a protected « Surveillance »; the terminate call consumes it.
         private var jevQuitAuthorized = false
         private var ruleQuitAuthorized = false
+        /// An installer's SIGTERM was refused by a protection the member can pass: its prompt is open (Mathis, 2026-11-21).
+        private var quitForInstall = false
+        private var quitAction: String { quitForInstall ? "Quitter Goalong pour l’installation" : "Quitter Goalong" }
         private var protectedSurveillanceObserver: NSObjectProtocol?
         private let continuityPreferences = BackgroundContinuityPreferences()
 
@@ -601,7 +604,7 @@ import AppleScreenTime
                 guard !quitAlertIsVisible else { return false }
                 quitAlertIsVisible = true
                 defer { quitAlertIsVisible = false }
-                guard RuleStopGrant.confirm(lock, action: "Quitter Goalong") else { return false }
+                guard RuleStopGrant.confirm(lock, action: quitAction) else { return false }
                 RuleStopGrant.shared.revoke()
                 ruleQuitAuthorized = !consumeAuthorization
                 return true
@@ -633,7 +636,7 @@ import AppleScreenTime
                 guard !quitAlertIsVisible else { return false }
                 quitAlertIsVisible = true
                 defer { quitAlertIsVisible = false }
-                guard JevStopGate.confirm(action: "Quitter Goalong", step: step) else { return false }
+                guard JevStopGate.confirm(action: quitAction, step: step) else { return false }
                 jevQuitAuthorized = !consumeAuthorization
                 return true
             }
@@ -670,8 +673,9 @@ import AppleScreenTime
             quitAlertIsVisible = true
             defer { quitAlertIsVisible = false }
             let alert = NSAlert()
-            alert.messageText = "Mot de passe de blocage exigé"
-            alert.informativeText = "Quitter Goalong suspend le blocage jusqu’au prochain lancement. Le mot de passe choisi pour le blocage est nécessaire."
+            alert.messageText = quitForInstall ? "Une installation demande de quitter Goalong" : "Mot de passe de blocage exigé"
+            alert.informativeText = (quitForInstall ? "Goalong se rouvre à la fin de l’installation. " : "")
+                + "Quitter Goalong suspend le blocage jusqu’au prochain lancement. Le mot de passe choisi pour le blocage est nécessaire."
             let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
             field.placeholderString = "Mot de passe de blocage"
             alert.accessoryView = field
@@ -735,6 +739,7 @@ import AppleScreenTime
                     }
                     guard honoured else {
                         Diagnostics.write("SIGTERM ignored during a severe block or a protected red-screen range")
+                        self.askQuitForInstall()
                         return
                     }
                     self.terminatingForSignal = true
@@ -743,6 +748,44 @@ import AppleScreenTime
             }
             source.resume()
             terminationSignalSource = source
+        }
+
+        /// Mathis (2026-11-21): `make perso` / `make local` stop Goalong with SIGTERM, refused while a protection runs (a
+        /// « Mot de passe » rule, even idle). Sparkle is never refused because Goalong quits itself for it. A source
+        /// install gets the same prompt as « Quitter »: the member's password (or stop) quits, exactly like the menu;
+        /// nothing quits without it, and a « Verrouillé » protection keeps ignoring the signal without a window.
+        private func askQuitForInstall() {
+            let asks = MainActor.assumeIsolated {
+                Self.signalQuitAsks(prompt: Self.quitPrompt(runtime: BlockingRuntime.shared),
+                                    ruleStop: BlockingRuntime.shared.protectedRuleStop(),
+                                    jevStep: JevStopGate.quitStep(JevStopGate.protectedStep()))
+            }
+            guard asks, !quitForInstall, !quitAlertIsVisible else { return }
+            quitForInstall = true
+            defer { quitForInstall = false }
+            guard confirmBlockingQuitIfNeeded(consumeAuthorization: false) else {
+                jevQuitAuthorized = false; ruleQuitAuthorized = false
+                MainActor.assumeIsolated { BlockingRuntime.shared.controller?.revokeQuitAuthorization() }
+                Diagnostics.write("SIGTERM: the install quit was not confirmed")
+                return
+            }
+            userQuitConfirmed = true
+            NSApplication.shared.terminate(nil)
+        }
+
+        /// True when an installer's refused SIGTERM may open the quit prompt: something the member can pass is asked
+        /// (password or retyped text), and nothing « Verrouillé » refuses. Otherwise the signal stays ignored. Pure.
+        static func signalQuitAsks(prompt: QuitPrompt, ruleStop: BlockLock?, jevStep: JevStopGate.Step) -> Bool {
+            if case .refused = jevStep { return false }
+            if ruleStop == .locked { return false }
+            switch prompt {
+            case .locked, .redScreenPage: return false
+            case .password: return true
+            case .quit:
+                if ruleStop == .password || ruleStop == .typing { return true }
+                if case .allow = jevStep { return false }
+                return true
+            }
         }
 
         /// The blocking-quit confirmation protects the user's own Quit. It never applies to logout,
