@@ -173,8 +173,15 @@ run_step "Checking verbose state preservation" mutate_run_step_state \
 /usr/bin/grep -Fq 'verbose state preservation fixture' "$LOG_FILE"
 VERBOSE=0
 
+# make local / make perso export these to install_from_source.sh, which runs this test.
+# Child installers must not inherit them: a leaked prebuilt app or local-try flag turns
+# the rejection checks below into a real install (and a recursive safety test).
+CLEAN_INSTALL_ENV=(env -u LOCALHISTORY_PREBUILT_APP -u GOALONG_LOCAL_TRY -u LOCALHISTORY_RUN_TESTS
+  -u LOCALHISTORY_LOCAL_TRY_BASE -u GOALONG_LOCAL_PERSO -u GOALONG_LOCAL_NO_INSTALL -u GOALONG_LOCAL_OUT
+  -u GOALONG_INSTALL_DURING_LOCK -u GOALONG_QUIT_WAIT_TENTHS)
+
 set +e
-test_override_output="$(LOCALHISTORY_RUN_TESTS=0 "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+test_override_output="$("${CLEAN_INSTALL_ENV[@]}" LOCALHISTORY_RUN_TESTS=0 "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 test_override_status=$?
 set -e
 if [[ "$test_override_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'Source installation requires the full test suite' <<<"$test_override_output"; then
@@ -182,7 +189,7 @@ if [[ "$test_override_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'Source installat
   exit 1
 fi
 set +e
-prebuilt_output="$(LOCALHISTORY_PREBUILT_APP=/nonexistent.app "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+prebuilt_output="$("${CLEAN_INSTALL_ENV[@]}" LOCALHISTORY_PREBUILT_APP=/nonexistent.app "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 prebuilt_status=$?
 set -e
 if [[ "$prebuilt_status" -ne 64 ]] || ! /usr/bin/grep -Fq 'only accepted from make local' <<<"$prebuilt_output"; then
@@ -213,7 +220,7 @@ sigkill_status=$?
 HOME_LOCK="$TEST_ROOT/home-lock"
 /bin/mkdir -p "$HOME_LOCK/Library/Application Support/LocalHistory/Blocking"
 /bin/date -v+1H +%s >"$HOME_LOCK/Library/Application Support/LocalHistory/Blocking/locked-until"
-lock_output="$(HOME="$HOME_LOCK" GOALONG_LOCAL_TRY=1 /bin/bash -c 'source "$1"; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+lock_output="$("${CLEAN_INSTALL_ENV[@]}" HOME="$HOME_LOCK" GOALONG_LOCAL_TRY=1 /bin/bash -c 'source "$1"; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 lock_status=$?
 set -e
 if [[ "$sigkill_status" -ne 1 ]] || [[ "$sigkill_output" == *KILLED* ]] || ! grep -Fq 'never force-quits' <<<"$sigkill_output"; then
