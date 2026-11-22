@@ -10,11 +10,18 @@
     /// Here the popover size is set by `PanelHeightTween`, on the same curve and duration as the content, so the
     /// edge and the rows move together (a frame of margin keeps the window on the safe side: ahead when it
     /// grows, behind when it shrinks).
+    ///
+    /// The SwiftUI view never changes size. A hosting view resized while a SwiftUI animation runs gets its root
+    /// size animated too, and NSHostingView centres that smaller root in its new bounds: every row moved by half
+    /// the step (header and player shook by up to 24 pt on each opening, 83 pt for one jump of 166 pt).
+    /// So the SwiftUI view is as tall as the screen, pinned to the top of a clipping container the size of the
+    /// window (`PanelClipController`). The window edge only uncovers; nothing inside moves with it.
     final class MenuBarPanelPresenter {
         let popover = NSPopover()
         /// Test probe: every height the content reports.
         @MainActor var heightObserver: ((CGFloat) -> Void)?
         @MainActor private(set) var host: NSHostingController<MenuBarPanelView>?
+        @MainActor private var clip: PanelClipController?
         @MainActor private var tween: PanelHeightTween?
         @MainActor private var timer: Timer?
         /// The height the window has now (it moves while a tween runs).
@@ -26,13 +33,17 @@
             })
             // The presenter drives the popover size itself (see resize), on the content's own curve.
             host.sizingOptions = []
-            popover.contentViewController = host
+            let clip = PanelClipController(host: host)
+            popover.contentViewController = clip
             self.host = host
+            self.clip = clip
         }
 
         @MainActor private func resize(to height: CGFloat) {
             guard height > 0 else { return }
             let target = ceil(height)
+            // Only for a panel taller than the screen (never seen): the hosting view must hold the content.
+            clip?.ensureHostHeight(target)
             if let tween, tween.target == target { return }
             if tween == nil, target == shownHeight { return }
             guard popover.isShown, !GoalongMotionPreference.reduced() else {
@@ -82,6 +93,48 @@
             // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
             let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
             if ideal.height > 0 { apply(ceil(ideal.height)) }
+        }
+    }
+
+    /// The popover content: a clipping view the size of the window, with the SwiftUI view pinned to its top.
+    /// The SwiftUI view keeps one height (the tallest screen): a window resize moves nothing in it.
+    final class PanelClipController: NSViewController {
+        let host: NSHostingController<MenuBarPanelView>
+
+        init(host: NSHostingController<MenuBarPanelView>) {
+            self.host = host
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        override func loadView() {
+            let view = NSView(frame: NSRect(x: 0, y: 0, width: MenuBarPanelView.width, height: 100))
+            view.wantsLayer = true
+            view.layer?.masksToBounds = true
+            addChild(host)
+            let hosted = host.view
+            let tallest = NSScreen.screens.map(\.frame.height).max() ?? 0
+            let height = max(1200, ceil(tallest))
+            hosted.frame = NSRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
+            // Width follows; the top margin stays fixed (non-flipped view: the bottom margin is the flexible one).
+            hosted.autoresizingMask = [.width, .minYMargin]
+            view.addSubview(hosted)
+            self.view = view
+        }
+
+        var hostHeight: CGFloat { host.view.frame.height }
+
+        func ensureHostHeight(_ height: CGFloat) {
+            if height > hostHeight { setHostHeight(height) }
+        }
+
+        func setHostHeight(_ height: CGFloat) {
+            let bounds = view.bounds
+            let frame = NSRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
+            guard host.view.frame != frame else { return }
+            host.view.frame = frame
         }
     }
 

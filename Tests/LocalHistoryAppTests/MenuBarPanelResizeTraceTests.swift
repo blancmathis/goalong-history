@@ -165,6 +165,131 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
         harness.close()
     }
 
+    /// Opt-in: what the eye sees while the sounds open and close. Per sample, the on-screen y (AppKit, bottom-left)
+    /// of the header top, the shift of the header + player band against the first sample, and the footer bottom,
+    /// from a bitmap of the content placed with the window frame. Any back-and-forth of header or player = tremble.
+    /// `GOALONG_PANEL_TREMBLE=<file> make check FILTER=MenuBarPanelResizeTraceTests`
+    @MainActor func testProbeTremble() throws {
+        guard let out = ProcessInfo.processInfo.environment["GOALONG_PANEL_TREMBLE"] else { throw XCTSkip("opt-in") }
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory); app.finishLaunching()
+        let suite = "menubar-tremble-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let root = URL(fileURLWithPath: "/private/tmp/" + suite)
+        let model = MenuBarPanelModel(
+            state: CaptureState(isGloballyPaused: { false }), modules: GoalongModuleStore(defaults: defaults),
+            concentration: { nil }, ambianceModule: AmbianceModule(settings: AmbianceSettings(defaults: defaults), supportDirectory: { root }),
+            blocking: { nil }, onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
+        var sources: [AmbianceSource] = []
+        for (kind, count) in [(AmbianceSource.Kind.focus, 9), (.relax, 6), (.texture, 8)] {
+            for i in 0..<count { sources.append(AmbianceSource(id: "\(kind)\(i)", title: "Sonar \(i)", kind: kind, isAvailable: i % 4 != 3)) }
+        }
+        model.tracking = .active; model.trackingDetail = "Enregistrement local actif"
+        model.focusAvailable = true; model.focusKind = .free; model.focusMinutes = 25; model.focusRun = nil
+        model.concentrationEnabled = true
+        model.ambianceEnabled = true; model.ambianceSources = sources; model.ambianceCurrent = sources[0]
+        let harness = PanelPopoverHarness(model: model)
+        harness.show()
+        pump(0.6)
+        var report = ""
+        var worst: [String: (back: Int, span: Double)] = [:]
+
+        struct Sample { let t: Double; let winY: Double; let winH: Double; let wsY: Double; let headerY: Double; let bandShift: Int; let footerY: Double }
+        func ink(_ rep: NSBitmapImageRep) -> [Int] {
+            let w = rep.pixelsWide, h = rep.pixelsHigh
+            guard let data = rep.bitmapData else { return [] }
+            let bpr = rep.bytesPerRow, bpp = rep.bitsPerPixel / 8
+            func px(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+                let o = y * bpr + x * bpp; return (Int(data[o]), Int(data[o + 1]), Int(data[o + 2]))
+            }
+            var rows = [Int](repeating: 0, count: h)
+            for y in 0..<h {
+                let bg = px(2, y)
+                var n = 0
+                var x = 8
+                while x < w - 8 {
+                    let c = px(x, y)
+                    n += abs(c.0 - bg.0) + abs(c.1 - bg.1) + abs(c.2 - bg.2)
+                    x += 2
+                }
+                rows[y] = n
+            }
+            return rows
+        }
+        func wsY(_ window: NSWindow) -> Double {
+            guard let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]],
+                  let b = list.first?[kCGWindowBounds as String] as? [String: Any],
+                  let y = b["Y"] as? Double, let h = b["Height"] as? Double,
+                  let screenH = NSScreen.screens.first?.frame.height else { return -1 }
+            return screenH - y - h
+        }
+        func run(_ name: String, _ change: () -> Void) {
+            let view = harness.host.view
+            guard let window = view.window else { return }
+            let scale = window.backingScaleFactor
+            var samples: [Sample] = []
+            var refBand: [Int] = []
+            // The fixed part: everything above the sounds (window height closed, minus player and footer).
+            let bandRows = Int((min(harness.popoverHeight, 433) - 120) * scale)
+            var raw: [(Double, NSRect, NSRect, Double, NSBitmapImageRep)] = []
+            let start = ProcessInfo.processInfo.systemUptime
+            change()
+            while ProcessInfo.processInfo.systemUptime - start < 0.4 {
+                pump(0.002)
+                // Only what the window shows (the hosting view can be taller than the window).
+                let visible = view.visibleRect
+                guard let rep = view.bitmapImageRepForCachingDisplay(in: visible) else { continue }
+                view.cacheDisplay(in: visible, to: rep)
+                raw.append(((ProcessInfo.processInfo.systemUptime - start) * 1000, window.frame,
+                            window.convertToScreen(view.convert(visible, to: nil)), wsY(window), rep))
+            }
+            for (t, frame, rect, ws, rep) in raw {
+                let rows = ink(rep)
+                guard rows.count > bandRows else { continue }
+                let top = rows.firstIndex { $0 > 200 } ?? -1
+                let bottom = rows.lastIndex { $0 > 200 } ?? -1
+                let band = Array(rows[0..<bandRows])
+                if refBand.isEmpty { refBand = band }
+                var best = 0, bestErr = Int.max
+                for s in -24...24 {
+                    var err = 0
+                    for y in 30..<(bandRows - 30) { err += abs(band[y] - refBand[y - s]) }
+                    if err < bestErr { bestErr = err; best = s }
+                }
+                let headerY = rect.maxY - Double(top) / scale
+                let footerY = rect.maxY - Double(bottom + 1) / scale
+                samples.append(Sample(t: t, winY: frame.minY, winH: frame.height, wsY: ws, headerY: headerY,
+                                      bandShift: best, footerY: footerY - frame.minY))
+            }
+            // Back-and-forth: a sign change in the step of the header y or the band shift.
+            var back = 0, lastStep = 0.0
+            for i in 1..<samples.count {
+                let step = samples[i].headerY - samples[i - 1].headerY + Double(samples[i].bandShift - samples[i - 1].bandShift)
+                if step != 0 { if lastStep != 0, (step > 0) != (lastStep > 0) { back += 1 }; lastStep = step }
+            }
+            let ys = samples.map(\.headerY)
+            let span = (ys.max() ?? 0) - (ys.min() ?? 0)
+            let shifts = samples.map(\.bandShift)
+            worst[name] = (back, span)
+            report += "\(name): samples \(samples.count); header y span \(span) pt; band shift min \(shifts.min() ?? 0) max \(shifts.max() ?? 0) px; reversals \(back)\n"
+            report += "  t_ms winY winH wsY headerY bandShift footerAboveWinBottom\n"
+            for s in samples {
+                report += String(format: "  %5.1f %7.1f %6.1f %7.1f %7.1f %3d %6.1f\n", s.t, s.winY, s.winH, s.wsY, s.headerY, s.bandShift, s.footerY)
+            }
+        }
+        run("open", { harness.toggleMusic(model) }); pump(0.3)
+        run("close", { harness.toggleMusic(model) }); pump(0.3)
+        run("open again", { harness.toggleMusic(model) }); pump(0.3)
+        run("close again", { harness.toggleMusic(model) }); pump(0.3)
+        run("pomodoro", { withAnimation(LHTheme.settle) { model.focusKind = .pomodoro } }); pump(0.3)
+        run("libre", { withAnimation(LHTheme.settle) { model.focusKind = .free } }); pump(0.3)
+        print("PANEL_TREMBLE\n" + report)
+        // Before the fix (hosting view resized with the window): the header moved by up to 37 pt on opening.
+        for (name, result) in worst { XCTAssertEqual(result.span, 0, "\(name): the header moves on screen") }
+        try? report.write(toFile: out, atomically: true, encoding: .utf8)
+        harness.close()
+    }
+
     @MainActor private func pump(_ s: TimeInterval) { RunLoop.current.run(until: Date().addingTimeInterval(s)) }
 }
 
@@ -185,6 +310,10 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
     }
 
     func show() {
+        // Like the status item: the anchor at the top of the screen, the popover below it with room to grow.
+        if let screen = NSScreen.main {
+            window.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY))
+        }
         window.orderFront(nil)
         presenter.prepareToShow()
         presenter.popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)

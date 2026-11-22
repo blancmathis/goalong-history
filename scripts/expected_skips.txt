@@ -50,6 +50,7 @@ LocalHistoryAppTests.JevSemanticEvaluationTests/testExplicitSyntheticSemanticEva
 LocalHistoryAppTests.MenuBarPanelRenderingTests/testRenderPanelStates  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.MenuBarPanelResizeTraceTests/testTraceResize  # other: Opt-in frame trace of the panel resize (GOALONG_PANEL_TRACE)
 LocalHistoryAppTests.MenuBarPanelResizeTraceTests/testProbeMusicOpen  # other: Opt-in timing probe of opening the panel sounds (GOALONG_PANEL_PROBE)
+LocalHistoryAppTests.MenuBarPanelResizeTraceTests/testProbeTremble  # other: Opt-in on-screen tremble probe of the panel header (GOALONG_PANEL_TREMBLE)
 LocalHistoryAppTests.PerformanceProbeTests/testActivityCachedDaysMatchFullRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.PerformanceProbeTests/testActivityDayRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.PerformanceProbeTests/testActivityMemory  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
