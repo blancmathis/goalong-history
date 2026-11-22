@@ -117,7 +117,7 @@ case "$mode" in
       args+=(--filter "$filter")
       echo "make check: tests matching '$filter'"
     else
-      targets=(); fast=0
+      targets=(); script_checks=(); fast=0
       # The loop looks at what you are changing now (uncommitted + untracked). With a clean tree it
       # looks at the commits since a base: GOALONG_CHECK_BASE, else the commit of the installed perso
       # build (GoalongPersoSourceCommit, already tested and installed) when HEAD descends from it,
@@ -140,6 +140,21 @@ case "$mode" in
         changed="$(git diff --name-only "$base...HEAD" 2>/dev/null | sort -u)"; scope="files changed since $base_name"
       fi
       add() { [[ " ${targets[*]-} " == *" $1 "* ]] || targets+=("$1"); }
+      add_script() { [[ " ${script_checks[*]-} " == *" $1 "* ]] || script_checks+=("$1"); }
+      # A script change runs its own shell tests (scripts/test_<name>*.sh|py), not the Swift suite.
+      # No test of its own: a syntax check. The PR to main still runs everything in CI.
+      map_script() { # path
+        local f="$1" name stem t found=0
+        [[ -e "$f" ]] || return 0   # deleted
+        name="${f##*/}"
+        case "$name" in test_*.sh|test_*.py) add_script "$f"; return ;; esac
+        stem="${name%.*}"; stem="${stem#test_}"
+        [[ "$stem" == window_guard ]] && stem=run_swift_tests
+        for t in scripts/test_"$stem"*.sh scripts/test_"$stem"*.py; do
+          [[ -f "$t" ]] && { add_script "$t"; found=1; }
+        done
+        [[ $found -eq 1 ]] || add_script "syntax:$f"
+      }
       while IFS= read -r file; do
         case "$file" in
           Tests/LocalHistoryCoreTests/*Tests.swift|Tests/LocalHistoryAppTests/*Tests.swift|Tests/LocalHistoryQueryCLITests/*Tests.swift|Features/*/Tests/*Tests.swift)
@@ -161,7 +176,12 @@ case "$mode" in
           # A source change runs its own tests and the tests of every target that imports it
           # (Package.swift graph: Core <- AgentActivity <- QueryCLI <- App; features <- App).
           Sources/LocalHistoryCore/*) add LocalHistoryCoreTests; add AgentActivityTests; add LocalHistoryAppTests; add LocalHistoryQueryCLITests ;;
-          Package.swift|Package.resolved|Makefile|scripts/*) fast=1 ;;
+          Package.swift|Package.resolved) fast=1 ;;
+          Makefile) add_script "make:Makefile" ;;
+          scripts/expected_skips.txt) ;;   # data of make test (skip allowlist)
+          scripts/*) map_script "$file" ;;
+          Sources/GoalongGuardCore/*) add GoalongGuardCoreTests; add LocalHistoryAppTests ;;
+          Sources/GoalongRelauncher/*|Sources/GoalongGuard/*|Sources/GoalongGuardTestHost/*) add GoalongGuardCoreTests ;;
           Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
           Tests/LocalHistoryAppTests/*|Sources/LocalHistoryApp/*) add LocalHistoryAppTests ;;
           Tests/LocalHistoryQueryCLITests/*) add LocalHistoryQueryCLITests ;;
@@ -171,21 +191,46 @@ case "$mode" in
           Features/AppleSystemScreenTime/*) add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
           Features/Ambiance/*) add AmbianceTests; add LocalHistoryAppTests ;;
           Features/Braise/*) add BraiseCoreTests; add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
+          Tests/GoalongGuardCoreTests/*) add GoalongGuardCoreTests ;;
+          Sources/*|Tests/*|Features/*) fast=1 ;;   # not mapped: the fast Core and App tests
         esac
       done <<< "$changed"
       if [[ $fast -eq 1 ]]; then add LocalHistoryCoreTests; add LocalHistoryAppTests; fi
       patterns=()
       [[ ${#targets[@]} -gt 0 ]] && patterns+=("^($(IFS='|'; echo "${targets[*]}"))\\.")
       [[ ${#classes[@]} -gt 0 ]] && patterns+=("\\.($(IFS='|'; echo "${classes[*]}"))/")
-      if [[ ${#patterns[@]} -eq 0 ]]; then
+      if [[ ${#patterns[@]} -eq 0 && ${#script_checks[@]} -eq 0 ]]; then
         patterns=('^(LocalHistoryCoreTests|LocalHistoryAppTests)\.')
         echo "make check: no mapped change, running the fast Core and App tests"
       else
-        echo "make check: from the $scope. targets: ${targets[*]-none}; test classes: ${classes[*]-none}"
+        echo "make check: from the $scope. targets: ${targets[*]-none}; test classes: ${classes[*]-none}; script checks: ${script_checks[*]-none}"
       fi
-      regex="$(IFS='|'; echo "${patterns[*]}")"
-      args+=(--filter "$regex")
-      if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then echo "filter-regex: $regex"; exit 0; fi
+      regex=""
+      if [[ ${#patterns[@]} -gt 0 ]]; then regex="$(IFS='|'; echo "${patterns[*]}")"; args+=(--filter "$regex"); fi
+      if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then echo "filter-regex: $regex"; echo "script-checks: ${script_checks[*]-}"; exit 0; fi
+      if [[ ${#script_checks[@]} -gt 0 ]]; then
+        echo "Full log: $check_log"
+        sstatus=0
+        for chk in "${script_checks[@]}"; do
+          echo "---- script check $chk" >>"$check_log"
+          case "$chk" in
+            make:*) make -n -f "${chk#make:}" check test perso >>"$check_log" 2>&1 ;;
+            syntax:*.sh) bash -n "${chk#syntax:}" >>"$check_log" 2>&1 ;;
+            syntax:*.py) python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "${chk#syntax:}" >>"$check_log" 2>&1 ;;
+            syntax:*) echo "not checked (no test, no syntax check): ${chk#syntax:}"; continue ;;
+            # Like make test: the real environment, not the throwaway test home of the Swift run.
+            *.py) env -u GOALONG_TEST_HOME -u CFFIXED_USER_HOME python3 "$chk" >>"$check_log" 2>&1 ;;
+            *) env -u GOALONG_TEST_HOME -u CFFIXED_USER_HOME bash "$chk" >>"$check_log" 2>&1 ;;
+          esac
+          if [[ $? -eq 0 ]]; then echo "script check ok: $chk"; else echo "script check FAILED: $chk" >&2; sstatus=1; fi
+        done
+        if [[ -z "$regex" ]]; then
+          elapsed
+          [[ $sstatus -ne 0 ]] && { echo "make check FAILED. Full log: $check_log" >&2; exit 1; }
+          exit 0
+        fi
+        [[ $sstatus -ne 0 ]] && { elapsed; echo "make check FAILED. Full log: $check_log" >&2; exit 1; }
+      fi
     fi
     for slow in "${SLOW_TESTS[@]}"; do args+=(--skip "$slow"); done
     budget_out=()

@@ -10,9 +10,23 @@ expect_match() { # changed-files sample-test-id
   if [[ -n "$re" ]] && echo "$2" | grep -Eq "$re"; then echo "ok: '$1' selects $2"
   else echo "FAIL: '$1' (regex '$re') does not select $2" >&2; fail=1; fi
 }
+scripts_for() { GOALONG_CHECK_DRY_RUN=1 GOALONG_CHECK_CHANGED="$1" ./scripts/run_swift_tests.sh check 2>&1 | sed -n 's/^script-checks: //p'; }
+expect_scripts() { # changed-files expected-script-checks (and no Swift filter)
+  local got re; got="$(scripts_for "$1")"; re="$(regex_for "$1")"
+  if [[ "$got" == "$2" && -z "$re" ]]; then echo "ok: '$1' runs $2 only"
+  else echo "FAIL: '$1' runs scripts '$got', Swift filter '$re' (want '$2' only)" >&2; fail=1; fi
+}
 # Unmapped change: the fallback must really select Core and App tests.
-expect_match "Makefile" "LocalHistoryAppTests.Foo/testBar"
-expect_match "scripts/x.sh" "LocalHistoryCoreTests.Foo/testBar"
+expect_match "Sources/GoalongMenuBarHelper/X.swift" "LocalHistoryAppTests.Foo/testBar"
+expect_match "Sources/GoalongMenuBarHelper/X.swift" "LocalHistoryCoreTests.Foo/testBar"
+# A script runs its own shell tests, not the Swift suite; no test of its own: a syntax check.
+expect_scripts "scripts/local_try.sh" "scripts/test_local_try.sh"
+expect_scripts "scripts/install_from_source.sh" "scripts/test_install_from_source_safety.sh"
+expect_scripts "scripts/window_guard.swift" "scripts/test_run_swift_tests.sh"
+expect_scripts "scripts/test_dev_app.sh" "scripts/test_dev_app.sh"
+expect_scripts "scripts/audit_privacy_boundaries.sh" "syntax:scripts/audit_privacy_boundaries.sh"
+expect_scripts "Makefile" "make:Makefile"
+expect_scripts "scripts/expected_skips.txt scripts/local_try.sh" "scripts/test_local_try.sh"
 # A test file whose name differs from its classes runs those classes.
 expect_match "Tests/LocalHistoryAppTests/GoalongQualityRegressionTests.swift" "LocalHistoryAppTests.GoalongAnalyticsLoadRequestTests/testX"
 # A test file that declares no class of its own (extension only) runs its whole target.
