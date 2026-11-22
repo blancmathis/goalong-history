@@ -84,6 +84,10 @@
         let label: String
         var quiet = false
         var prominent = false
+        /// Turns the symbol (the chevron points up when its section is open). A turn is a cheap transform; swapping
+        /// the symbol inside an animation plays the system symbol transition, which held the main thread 20 to 40 ms
+        /// a frame for the whole 240 ms and made the sounds open in jumps.
+        var rotation: Angle = .zero
         let action: () -> Void
         @State private var hovered = false
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -92,6 +96,7 @@
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
+                    .rotationEffect(rotation)
                     .frame(width: 28, height: 28)
                     .foregroundStyle(prominent ? LHTheme.onAccent : (quiet ? LHTheme.secondaryText : LHTheme.text))
                     .background(
@@ -586,6 +591,7 @@
                 }
             } else {
                 // S5: one line, play and name. The volume and the sounds open on the chevron.
+                VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 10) {
                     player
                     if let error = model.ambianceError {
@@ -599,12 +605,20 @@
                             }
                         }
                     }
-                    if expanded {
+                }
+                    if model.ambianceSoundsBuilt {
+                        // Built before the reveal (see MenuBarPanelModel.toggleAmbianceExpanded); closed = zero height,
+                        // clipped, invisible, out of reach. The top gap lives inside, so a closed section adds nothing.
                         VStack(alignment: .leading, spacing: 10) {
                             volume
                             grid
                         }
-                        .transition(.opacity)
+                        .padding(.top, 10)
+                        .frame(height: expanded ? nil : 0, alignment: .top)
+                        .clipped()
+                        .opacity(expanded ? 1 : 0)
+                        .allowsHitTesting(expanded)
+                        .accessibilityHidden(!expanded)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
@@ -646,8 +660,9 @@
                 if model.ambiancePlaying {
                     PanelIconButton(symbol: "forward.fill", label: "Son suivant", quiet: true, action: model.playNext)
                 }
-                PanelIconButton(symbol: expanded ? "chevron.up" : "chevron.down",
-                                label: expanded ? "Masquer les sons" : "Choisir un son", quiet: true, action: toggleExpanded)
+                // One symbol, turned: never swap a symbol inside the opening animation (see PanelIconButton.rotation).
+                PanelIconButton(symbol: "chevron.down", label: expanded ? "Masquer les sons" : "Choisir un son", quiet: true,
+                                rotation: .degrees(expanded ? 180 : 0), action: toggleExpanded)
                     .accessibilityIdentifier("menubar-ambiance-expand")
             }
         }

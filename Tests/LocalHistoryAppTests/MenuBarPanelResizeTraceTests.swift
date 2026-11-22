@@ -76,6 +76,95 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
         harness.close()
     }
 
+
+    /// Opt-in timing probe of opening the sounds: main-thread stalls per frame, window height per frame,
+    /// cost of one resize with the sounds open vs closed. `GOALONG_PANEL_PROBE=1 make check FILTER=MenuBarPanelResizeTraceTests`
+    @MainActor func testProbeMusicOpen() throws {
+        guard ProcessInfo.processInfo.environment["GOALONG_PANEL_PROBE"] != nil else { throw XCTSkip("opt-in") }
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory); app.finishLaunching()
+        let suite = "menubar-probe-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let root = URL(fileURLWithPath: "/private/tmp/" + suite)
+        let model = MenuBarPanelModel(
+            state: CaptureState(isGloballyPaused: { false }), modules: GoalongModuleStore(defaults: defaults),
+            concentration: { nil }, ambianceModule: AmbianceModule(settings: AmbianceSettings(defaults: defaults), supportDirectory: { root }),
+            blocking: { nil }, onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
+        var sources: [AmbianceSource] = []
+        for (kind, count) in [(AmbianceSource.Kind.focus, 9), (.relax, 6), (.texture, 8)] {
+            for i in 0..<count { sources.append(AmbianceSource(id: "\(kind)\(i)", title: "Sonar \(i)", kind: kind, isAvailable: i % 4 != 3)) }
+        }
+        model.tracking = .active; model.trackingDetail = "Enregistrement local actif"
+        model.focusAvailable = true; model.focusKind = .free; model.focusMinutes = 25; model.focusRun = nil
+        model.concentrationEnabled = true
+        model.ambianceEnabled = true; model.ambianceSources = sources; model.ambianceCurrent = sources[0]
+        let harness = PanelPopoverHarness(model: model)
+        harness.show()
+        pump(0.6)
+        var report = ""
+        var stallTotals: [String: Double] = [:]
+        func frames(_ name: String, _ change: () -> Void) {
+            var ticks: [(Double, CGFloat)] = []
+            let start = ProcessInfo.processInfo.systemUptime
+            let timer = Timer(timeInterval: 1.0 / 240.0, repeats: true) { _ in
+                ticks.append(((ProcessInfo.processInfo.systemUptime - start) * 1000, harness.popoverHeight))
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            change()
+            let changeCost = (ProcessInfo.processInfo.systemUptime - start) * 1000
+            pump(0.45)
+            timer.invalidate()
+            var gaps: [Double] = []
+            var prev = changeCost
+            for t in ticks { gaps.append(t.0 - prev); prev = t.0 }
+            let stalls = gaps.filter { $0 > 12 }
+            stallTotals[name] = stalls.reduce(0, +)
+            report += "\(name): change() \(Int(changeCost)) ms; first tick \(Int(ticks.first?.0 ?? -1)) ms; stalls>12ms \(stalls.count) max \(Int(gaps.max() ?? 0)) ms; total stall \(Int(stalls.reduce(0, +))) ms\n"
+            var line = ""
+            var last: CGFloat = -1
+            for t in ticks where t.0 < 330 && t.1 != last { line += "\(Int(t.0)):\(Int(t.1)) "; last = t.1 }
+            var maxStep: CGFloat = 0
+            for i in 1..<max(1, ticks.count) { maxStep = max(maxStep, abs(ticks[i].1 - ticks[i - 1].1)) }
+            report += "  max step \(Int(maxStep)) px; heights " + line + "\n"
+        }
+        func resizeCost(_ label: String) {
+            let base = harness.presenter.popover.contentSize
+            let start = ProcessInfo.processInfo.systemUptime
+            for i in 0..<40 {
+                harness.presenter.popover.animates = false
+                harness.presenter.popover.contentSize = NSSize(width: base.width, height: base.height - CGFloat(i % 2) * 7)
+                harness.host.view.layoutSubtreeIfNeeded()
+                harness.host.view.displayIfNeeded()
+            }
+            harness.presenter.popover.contentSize = base
+            report += "\(label): \(String(format: "%.2f", (ProcessInfo.processInfo.systemUptime - start) * 1000 / 40)) ms per resize\n"
+        }
+        resizeCost("resize, sounds closed")
+        frames("pomodoro", { withAnimation(LHTheme.settle) { model.focusKind = .pomodoro } })
+        pump(0.3)
+        frames("libre", { withAnimation(LHTheme.settle) { model.focusKind = .free } })
+        pump(0.3)
+        frames("open", { harness.toggleMusic(model) })
+        pump(0.3)
+        resizeCost("resize, sounds open")
+        frames("close", { harness.toggleMusic(model) })
+        pump(0.3)
+        frames("open again", { harness.toggleMusic(model) })
+        pump(0.3)
+        frames("close again", { harness.toggleMusic(model) })
+        pump(0.3)
+        if ProcessInfo.processInfo.environment["GOALONG_PANEL_PROBE_LOOP"] != nil {
+            for _ in 0..<12 { harness.toggleMusic(model); pump(0.4) }
+        }
+        print("PANEL_PROBE\n" + report)
+        // Before the fix (chevron symbol swapped inside the animation): 230 to 300 ms of stalls per opening or closing.
+        for name in ["open", "close", "open again", "close again"] {
+            XCTAssertLessThan(stallTotals[name] ?? .infinity, 100, "\(name): the main thread stalls during the sounds animation")
+        }
+        try? report.write(toFile: "/private/tmp/goalong-panel-motion/probe.txt", atomically: true, encoding: .utf8)
+        harness.close()
+    }
+
     @MainActor private func pump(_ s: TimeInterval) { RunLoop.current.run(until: Date().addingTimeInterval(s)) }
 }
 

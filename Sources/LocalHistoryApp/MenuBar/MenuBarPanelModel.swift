@@ -75,6 +75,9 @@ import LocalHistoryCore
     @Published var concentrationEnabled = false
     /// The Ambiance sounds are open under the player (the chevron).
     @Published var ambianceExpanded = false
+    /// The sounds' views exist (hidden at zero height while closed). Building them costs one long frame (~25 to 50 ms):
+    /// it is paid before the opening animation starts, never inside it (see toggleAmbianceExpanded).
+    @Published var ambianceSoundsBuilt = false
     @Published var focusUnavailableReason: String?
     @Published var focusKind: FocusKind = .pomodoro
     @Published var focusMinutes = 25
@@ -204,11 +207,28 @@ import LocalHistoryCore
         }
     }
 
-    /// Called on opening, then once a second only while the popover is visible.
+    /// Opens or closes the sounds. Opening first builds them hidden, with no animation; the reveal starts on the
+    /// next turn of the main loop, once that long first frame is drawn. Otherwise the window and the rows start
+    /// their 240 ms curve during it and show it already 40 % done: the first jerk of the opening.
     func toggleAmbianceExpanded(animated: Bool) {
-        if animated { withAnimation(LHTheme.settle) { ambianceExpanded.toggle() } } else { ambianceExpanded.toggle() }
+        guard animated else {
+            ambianceSoundsBuilt = true
+            ambianceExpanded.toggle()
+            return
+        }
+        guard !ambianceExpanded, !ambianceSoundsBuilt else {
+            withAnimation(LHTheme.settle) { ambianceExpanded.toggle() }
+            return
+        }
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { ambianceSoundsBuilt = true }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.ambianceSoundsBuilt, !self.ambianceExpanded else { return }
+            withAnimation(LHTheme.settle) { self.ambianceExpanded = true }
+        }
     }
 
+    /// Called on opening, then once a second only while the popover is visible.
     func refresh() {
         refreshRuntimeState()
         let now = clock(), day = calendar.startOfDay(for: now)
@@ -237,6 +257,8 @@ import LocalHistoryCore
 
     func stopRefreshing() {
         dayTask?.cancel(); dayTask = nil; dayGeneration = UUID()
+        // Closed sounds are not kept built between two openings of the panel (the once-a-second refresh would redo them).
+        if !ambianceExpanded { ambianceSoundsBuilt = false }
     }
 
     func refreshRuntimeState() {
