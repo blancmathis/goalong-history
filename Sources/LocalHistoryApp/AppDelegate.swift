@@ -745,7 +745,7 @@ import AppleScreenTime
                         return
                     }
                     self.terminatingForSignal = true
-                    NSApplication.shared.terminate(nil)
+                    Self.terminateFromRunLoop()
                 }
             }
             source.resume()
@@ -772,7 +772,20 @@ import AppleScreenTime
                 return
             }
             userQuitConfirmed = true
-            NSApplication.shared.terminate(nil)
+            Self.terminateFromRunLoop()
+        }
+
+        /// AppKit's `.terminateLater` waits for its reply in a nested run loop. Started from inside a main-queue block (the
+        /// SIGTERM source, a `DispatchQueue.main.async`), that loop can never drain the main queue: a reply sent through it
+        /// never comes and Goalong hangs in `terminate` with no window (seen 2026-11-22 with `make perso`). So programmatic
+        /// quits and the replies go through the main run loop, never through the main queue.
+        nonisolated static func onMainRunLoop(_ block: @escaping () -> Void) {
+            let modes = [CFRunLoopMode.commonModes.rawValue, RunLoop.Mode.modalPanel.rawValue as CFString] as CFArray
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), modes, block)
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+        }
+        nonisolated static func terminateFromRunLoop() {
+            onMainRunLoop { NSApplication.shared.terminate(nil) }
         }
 
         /// True when an installer's refused SIGTERM may open the quit prompt: something the member can pass is asked
@@ -863,7 +876,7 @@ import AppleScreenTime
                     pendingSetup: PermissionRecovery.pendingSetup() != nil, alreadyRestarting: PermissionRecovery.isRestarting) else {
                 guard runtimeStarted, let eventTapMonitor else { return .terminateNow }
                 eventTapMonitor.stop {
-                    DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) }
+                    Self.onMainRunLoop { sender.reply(toApplicationShouldTerminate: true) }
                 }
                 return .terminateLater
             }
@@ -872,7 +885,7 @@ import AppleScreenTime
             PermissionRecovery.prepareRelaunch { error in
                 if let error { Diagnostics.write("Permission relaunch preparation failed: \(error)") }
                 if error == nil, self.runtimeStarted, let eventTapMonitor = self.eventTapMonitor {
-                    eventTapMonitor.stop { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
+                    eventTapMonitor.stop { Self.onMainRunLoop { sender.reply(toApplicationShouldTerminate: true) } }
                 } else { sender.reply(toApplicationShouldTerminate: error == nil) }
             }
             return .terminateLater

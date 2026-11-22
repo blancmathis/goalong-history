@@ -116,7 +116,8 @@ import GoalongGuardCore
             // The guard waits while the relauncher (now at the installed path) lives (spec K §8).
             GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
             SoftwareUpdateManager.shared.markRelaunchingForPersoUpdate()
-            NSApplication.shared.terminate(nil)
+            // `finish` runs inside a main-queue block: quitting from there would hang in `terminate` (2026-11-22).
+            AppDelegate.terminateFromRunLoop()
         }
         return nil
     }

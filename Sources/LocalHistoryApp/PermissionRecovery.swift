@@ -121,7 +121,7 @@ import AppleScreenTime
             prepareRelaunch(permission: permission) { error in
                 completion(error)
                 guard error == nil else { return }
-                NSApplication.shared.terminate(nil)
+                AppDelegate.terminateFromRunLoop() // its completion may run in a main-queue block (2026-11-22)
             }
         }
     }

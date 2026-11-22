@@ -566,7 +566,9 @@ quit_running_goalong() {
   if [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]]; then
     # A protection the member can pass (a « Mot de passe » rule, even idle) makes Goalong ignore SIGTERM and show
     # its own « Quitter » prompt instead (Mathis, 2026-11-21): wait for that password, never force-quit.
-    echo "Goalong asks for its blocking password to quit for this install: type it in Goalong's window (waiting up to $(( ${GOALONG_QUIT_PROMPT_WAIT_TENTHS:-1200} / 10 )) s)." >&2
+    # Without a protection Goalong quits by itself; a window shows only for a « Mot de passe » protection. Builds before
+    # the run-loop quit fix (2026-11-22) can also hang in their quit without any window: then only quitting by hand helps.
+    echo "Goalong has not quit yet. If Goalong shows its blocking password to quit for this install, type it there (waiting up to $(( ${GOALONG_QUIT_PROMPT_WAIT_TENTHS:-1200} / 10 )) s)." >&2
     waited=0 limit="${GOALONG_QUIT_PROMPT_WAIT_TENTHS:-1200}"
     while (( waited < limit )); do
       running=0
