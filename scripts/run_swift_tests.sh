@@ -119,13 +119,25 @@ case "$mode" in
     else
       targets=(); fast=0
       # The loop looks at what you are changing now (uncommitted + untracked). With a clean tree it
-      # falls back to the whole branch vs origin/main (large on a long branch: then use FILTER=).
+      # looks at the commits since a base: GOALONG_CHECK_BASE, else the commit of the installed perso
+      # build (GoalongPersoSourceCommit, already tested and installed) when HEAD descends from it,
+      # else origin/main.
       changed="$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u)"
       scope="uncommitted files"
       if [[ -n "${GOALONG_CHECK_CHANGED+x}" ]]; then   # test hook: a fixed list of changed files
         changed="$(printf '%s\n' $GOALONG_CHECK_CHANGED)"; scope="GOALONG_CHECK_CHANGED"
       elif [[ -z "$changed" ]]; then
-        changed="$(git diff --name-only origin/main...HEAD 2>/dev/null | sort -u)"; scope="files changed vs origin/main"
+        base="${GOALONG_CHECK_BASE:-}" base_name="GOALONG_CHECK_BASE"
+        if [[ -z "$base" ]]; then
+          base="origin/main" base_name="origin/main"
+          for app in "/Applications/Goalong History.app" "$HOME/Applications/Goalong History.app"; do
+            installed="$(/usr/libexec/PlistBuddy -c 'Print :GoalongPersoSourceCommit' "$app/Contents/Info.plist" 2>/dev/null || true)"
+            if [[ -n "$installed" ]] && git merge-base --is-ancestor "$installed" HEAD 2>/dev/null; then
+              base="$installed" base_name="installed perso build ${installed:0:8}"; break
+            fi
+          done
+        fi
+        changed="$(git diff --name-only "$base...HEAD" 2>/dev/null | sort -u)"; scope="files changed since $base_name"
       fi
       add() { [[ " ${targets[*]-} " == *" $1 "* ]] || targets+=("$1"); }
       while IFS= read -r file; do
