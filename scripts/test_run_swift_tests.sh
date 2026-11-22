@@ -46,6 +46,17 @@ expect_match "Sources/LocalHistoryQueryCLI/X.swift" "LocalHistoryAppTests.Foo/te
 expect_match "Sources/LocalHistoryCore/X.swift" "AgentActivityTests.Foo/testBar"
 # A class declared with @MainActor stays selected by name, not by its whole target.
 expect_match "Tests/LocalHistoryAppTests/GoalongProfileStudioTests.swift" "LocalHistoryAppTests.GoalongProfileStudioTests/testX"
+# C1: an app source runs the test classes that name its types, plus the smoke set; not the whole target.
+expect_match "Sources/LocalHistoryApp/MenuBar/MenuBarPanelPresenter.swift" "LocalHistoryAppTests.MenuBarPanelHeightTweenTests/testX"
+expect_match "Sources/LocalHistoryApp/MenuBar/MenuBarPanelPresenter.swift" "LocalHistoryAppTests.GallerySmokeTests/testX"
+expect_match "Sources/LocalHistoryApp/MenuBar/MenuBarPanelPresenter.swift" "LocalHistoryAppTests.BlockingGuardTests/testX"
+re="$(regex_for "Sources/LocalHistoryApp/MenuBar/MenuBarPanelPresenter.swift")"
+if echo "LocalHistoryAppTests.GoalongProfileStudioTests/testX" | grep -Eq "$re"; then echo "FAIL: app source widened to its whole target" >&2; fail=1; else echo "ok: app source keeps unrelated classes out"; fi
+# Deleted app file: whole App target. Docs only: smoke set only.
+expect_match "Sources/LocalHistoryApp/NoSuchFileForTest.swift" "LocalHistoryAppTests.Anything/testX"
+expect_match "README.md" "LocalHistoryAppTests.GallerySmokeTests/testX"
+re="$(regex_for "README.md")"
+if echo "LocalHistoryCoreTests.Foo/testX" | grep -Eq "$re"; then echo "FAIL: docs change runs Core tests" >&2; fail=1; else echo "ok: docs change runs the smoke set only"; fi
 re="$(regex_for "Tests/LocalHistoryAppTests/GoalongProfileStudioTests.swift")"
 if echo "LocalHistoryAppTests.Unrelated/testX" | grep -Eq "$re"; then echo "FAIL: @MainActor class widened to its whole target" >&2; fail=1; fi
 # classes_in understands attributes and access modifiers.

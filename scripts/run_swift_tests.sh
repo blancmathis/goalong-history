@@ -23,6 +23,10 @@ SLOW_TESTS=(
 # Elapsed-time budgets: they fail under load (a busy Mac, a parallel build) and also on main. `make test` and the
 # CI run them; `make check` runs them only when named (FILTER or a changed test file), so its green means green.
 BUDGET_TESTS=(ViewSwitchBudgetTests)
+# Always run when make check picks App test classes by type (C1): screens still render, blocking still holds.
+SMOKE_TESTS=(GallerySmokeTests BlockingGuardTests)
+# More App classes than this for a change: run the whole App target instead.
+APP_CLASS_LIMIT=60
 
 screen_state() {
   local locked
@@ -86,6 +90,31 @@ classes_in() {
 }
 # The last verdict of `make test-ui`: skips on a locked screen are not a pass (exit 1), they only
 # explain themselves. Skips on an unlocked screen are a failure too. 0 skips: pass.
+# Top-level types a Swift file declares for other files (private and nested types left out).
+declared_types() {
+  grep -oE '^[[:space:]]*(@[A-Za-z0-9_]+(\([^)]*\))?[[:space:]]+)*((public|internal|package|final|open|indirect|nonisolated)[[:space:]]+)*(class|struct|enum|actor|protocol)[[:space:]]+[A-Z][A-Za-z0-9_]*' \
+    | sed -E 's/.*(class|struct|enum|actor|protocol)[[:space:]]+//'
+}
+# App test classes for changed app sources: the tests that name a type the file declares (or extends,
+# when the type is ours) or the file's own name. Exit 1 = cannot map (deleted file, no type): whole target.
+app_test_classes() { # source files...
+  local f t tf ours types=() re
+  ours="$(cat Sources/LocalHistoryApp/*.swift Sources/LocalHistoryApp/*/*.swift Sources/LocalHistoryApp/*/*/*.swift Sources/GoalongGuardCore/*.swift 2>/dev/null | declared_types | sort -u)"
+  for f in "$@"; do
+    [[ -f "$f" ]] || return 1
+    local found
+    found="$( { declared_types <"$f"; grep -oE '^[[:space:]]*((public|internal)[[:space:]]+)?extension[[:space:]]+[A-Z][A-Za-z0-9_]*' "$f" | sed -E 's/.*extension[[:space:]]+//' | grep -Fx "$ours"; } | sort -u)"
+    [[ -n "$found" ]] || return 1
+    while IFS= read -r t; do types+=("$t"); done <<<"$found"
+    t="${f##*/}"; types+=("${t%.swift}")
+  done
+  re="$(printf '%s\n' "${types[@]}" | sort -u | paste -sd'|' -)"
+  grep -rlwE --include='*.swift' "($re)" Tests/LocalHistoryAppTests | while IFS= read -r tf; do
+    classes_in "$tf"
+    grep -oE '^extension [A-Za-z0-9_]+Tests\b' "$tf" | awk '{print $2}'
+  done | sort -u
+  return 0 # a grep without match in the loop is not a failure
+}
 ui_verdict() { # skips screen-state
   local skips="$1" state="$2"
   if [[ "$skips" -gt 0 ]]; then
@@ -117,7 +146,7 @@ case "$mode" in
       args+=(--filter "$filter")
       echo "make check: tests matching '$filter'"
     else
-      targets=(); script_checks=(); fast=0
+      targets=(); script_checks=(); app_sources=(); fast=0
       # The loop looks at what you are changing now (uncommitted + untracked). With a clean tree it
       # looks at the commits since a base: GOALONG_CHECK_BASE, else the commit of the installed perso
       # build (GoalongPersoSourceCommit, already tested and installed) when HEAD descends from it,
@@ -180,9 +209,10 @@ case "$mode" in
           Makefile) add_script "make:Makefile" ;;
           scripts/expected_skips.txt) ;;   # data of make test (skip allowlist)
           scripts/*) map_script "$file" ;;
-          Sources/GoalongGuardCore/*) add GoalongGuardCoreTests; add LocalHistoryAppTests ;;
+          Sources/GoalongGuardCore/*.swift) add GoalongGuardCoreTests; app_sources+=("$file") ;;
           Sources/GoalongRelauncher/*|Sources/GoalongGuard/*|Sources/GoalongGuardTestHost/*) add GoalongGuardCoreTests ;;
           Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
+          Sources/LocalHistoryApp/*.swift) app_sources+=("$file") ;;   # App classes by type, below
           Tests/LocalHistoryAppTests/*|Sources/LocalHistoryApp/*) add LocalHistoryAppTests ;;
           Tests/LocalHistoryQueryCLITests/*) add LocalHistoryQueryCLITests ;;
           Sources/LocalHistoryQueryCLI/*) add LocalHistoryQueryCLITests; add LocalHistoryAppTests ;;
@@ -196,12 +226,30 @@ case "$mode" in
         esac
       done <<< "$changed"
       if [[ $fast -eq 1 ]]; then add LocalHistoryCoreTests; add LocalHistoryAppTests; fi
+      if [[ ${#app_sources[@]} -gt 0 && " ${targets[*]-} " != *" LocalHistoryAppTests "* ]]; then
+        if mapped="$(app_test_classes "${app_sources[@]}")"; then
+          count="$(grep -c . <<<"$mapped")"
+          if [[ "$count" -gt "$APP_CLASS_LIMIT" ]]; then
+            echo "make check: $count App test classes name the changed types (> $APP_CLASS_LIMIT): whole App target"
+            add LocalHistoryAppTests
+          else
+            while IFS= read -r cls; do [[ -n "$cls" ]] && classes+=("$cls"); done <<<"$mapped"
+            classes+=("${SMOKE_TESTS[@]}")
+          fi
+        else
+          echo "make check: a changed App source is deleted or declares no type: whole App target"
+          add LocalHistoryAppTests
+        fi
+      fi
+      [[ ${#classes[@]} -gt 0 ]] && classes=($(printf '%s\n' "${classes[@]}" | sort -u))
       patterns=()
       [[ ${#targets[@]} -gt 0 ]] && patterns+=("^($(IFS='|'; echo "${targets[*]}"))\\.")
       [[ ${#classes[@]} -gt 0 ]] && patterns+=("\\.($(IFS='|'; echo "${classes[*]}"))/")
       if [[ ${#patterns[@]} -eq 0 && ${#script_checks[@]} -eq 0 ]]; then
-        patterns=('^(LocalHistoryCoreTests|LocalHistoryAppTests)\.')
-        echo "make check: no mapped change, running the fast Core and App tests"
+        # Nothing that builds into the app changed (docs, notes, or nothing since the installed build).
+        classes=("${SMOKE_TESTS[@]}")
+        patterns=("\\.($(IFS='|'; echo "${classes[*]}"))/")
+        echo "make check: no code change in the $scope: smoke tests only (${classes[*]})"
       else
         echo "make check: from the $scope. targets: ${targets[*]-none}; test classes: ${classes[*]-none}; script checks: ${script_checks[*]-none}"
       fi
