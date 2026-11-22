@@ -12,7 +12,7 @@
 4. **Release** : une PR `perso` → `main` qui regroupe tout → CI → merge → Sparkle. **Merge = publication publique** : seulement quand le propriétaire dit « déploie » (ou « envoie aux clients »).
 
 ## Boucle quotidienne
-Branche longue `perso`. Une demande du propriétaire = `make dev` (essayer à côté, si utile) → commit sur `perso` → **`make perso`** lancé par l’agent lui-même : une seule commande, qui teste, construit, pousse et installe (~2–3 min pour un petit changement). Pas de PR par changement, pas d’attente de CI. Publier : sur « déploie », une PR `perso` → `main`, CI, merge.
+Branche longue `perso`. Une demande du propriétaire = `make dev` (essayer à côté, si utile) → commit sur `perso` → **`make perso`** lancé par l’agent lui-même : une seule commande, qui teste, construit, pousse et installe (~1–2 min pour un petit changement ; échec de test = rien installé). Pas de PR par changement, pas d’attente de CI. Publier : sur « déploie », une PR `perso` → `main`, CI, merge.
 - Avant `make perso`, fusionner `origin/main` dans `perso` si `main` a avancé : le build perso ne doit pas être plus ancien que la release installée (sinon l’installation est refusée).
 - Une PR normale reste pour une mise en place unique (outillage, le canal perso lui-même).
 
