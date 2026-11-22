@@ -183,6 +183,8 @@ import AppleScreenTime
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
         private(set) var isRelaunchingForUpdate = false
+        /// `make perso` self-update: the new build is already in place; quit like a Sparkle relaunch (no password).
+        func markRelaunchingForPersoUpdate() { isRelaunchingForUpdate = true }
         private var lastBackgroundCheck: Date?
         private var checkQueue = SoftwareUpdateCheckQueue()
         private var sparkleObservations: [NSKeyValueObservation] = []

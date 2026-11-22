@@ -224,6 +224,8 @@ import AppleScreenTime
             // Goalong Dev: no daily send unless make dev SERVER=on.
             if GoalongBuildChannel.current.allowsServerTraffic { GoalongWebsiteAutoSender.shared.start() }
             SoftwareUpdateManager.shared.start()
+            // Perso builds: `make perso` hands its signed build to this instance (installs during a locked block).
+            PersoSelfUpdate.start()
             // Checked every 15 minutes; calls the agent only with the background consent, 2 times a day at most.
             GoalongWorkAgent.shared.startBackgroundSchedule()
 

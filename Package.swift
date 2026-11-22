@@ -61,7 +61,7 @@ let package = Package(
                 exclude: ["GenerativeRenderer.swift", "TransitionRenderer.swift", "PlaybackSelection.swift"]),
         .target(name: "Ambiance", dependencies: ["OndeCore", "OndeDSP", "AppleScreenTime"], path: "Features/Ambiance/Sources"),
         .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore", "GoalongHeadlessTestSupport"], path: "Features/Ambiance/Tests"),
-        .executableTarget(name: "GoalongRelauncher", path: "Sources/GoalongRelauncher"),
+        .executableTarget(name: "GoalongRelauncher", dependencies: ["GoalongGuardCore"], path: "Sources/GoalongRelauncher"),
         // Kill protection during a severe block (spec K): pure logic shared by the guard and the app.
         .target(name: "GoalongGuardCore", path: "Sources/GoalongGuardCore"),
         .executableTarget(

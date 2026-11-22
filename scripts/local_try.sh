@@ -111,6 +111,7 @@ export LOCALHISTORY_LOCAL_TRY_BASE="$BASE_BUILD"
 if ! env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" \
     LOCALHISTORY_PERSO_SOURCE_COMMIT="$PERSO_COMMIT" LOCALHISTORY_PERSO_SOURCE_BRANCH="$PERSO_BRANCH" \
     LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_BUILD_CONFIGURATION=release \
+    LOCALHISTORY_BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-$(sysctl -n hw.ncpu)}" \
     LOCALHISTORY_RUN_TESTS=0 LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 \
     LOCALHISTORY_APP_ENTITLEMENTS="$ROOT/Distribution/GoalongHistory.entitlements" \
     LOCALHISTORY_OUTPUT_DIR="$OUT" LOCALHISTORY_SCRATCH_ROOT="$WORK/scratch" \
@@ -136,6 +137,52 @@ if [[ "$NO_INSTALL" == 1 ]]; then
   step "Total" "$started_all"
   echo "NO_INSTALL=1: stopped before install. App: $APP"
   exit 0
+fi
+
+# make perso with a running perso Goalong that reported health: hand the bundle to it (it installs itself, also
+# during a locked block, at most once per 10 minutes then). It re-checks the signature against its own, swaps in
+# a few seconds and rolls back unless the new build starts. Any other case uses the installer below.
+perso_handoff() {
+  local root="$HOME/Library/Application Support/LocalHistory/PersoUpdate" installed="/Applications/$APP_NAME.app"
+  local exe pid id tmp request state="" reason="" t0
+  exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$installed/Contents/Info.plist" 2>/dev/null)" || return 10
+  /usr/libexec/PlistBuddy -c 'Print :GoalongPersoBuiltAt' "$installed/Contents/Info.plist" >/dev/null 2>&1 || return 10
+  pid="$(pgrep -x "$exe" | head -1)"; [[ -n "$pid" ]] || return 10
+  [[ "$(ps -o comm= -p "$pid")" == "$installed/Contents/MacOS/$exe" ]] || return 10
+  # Only a build with self-update writes health.json with its pid (older perso builds lack it).
+  [[ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$root/health.json" 2>/dev/null)" == "$pid" ]] || return 10
+  [[ -d "$root/inbox" ]] || return 10
+  id="$(date -u +%Y%m%d-%H%M%S)-$$"; tmp="$root/inbox/.tmp-$id"; request="$root/inbox/$id"
+  mkdir -m 700 "$tmp" && cp -c -R "$APP" "$tmp/" && echo '{}' >"$tmp/request.json" && mv "$tmp" "$request" \
+    || { rm -rf "$tmp"; return 10; }
+  t0="$(date +%s)"
+  read_state() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["state"]+"\t"+(d.get("reason") or ""))' "$request/result.json" 2>/dev/null || true; }
+  local deadline=$((t0 + 20)) accepted=""
+  while :; do
+    IFS=$'\t' read -r state reason <<<"$(read_state)"
+    case "$state" in
+      refused|installed|rolled_back) break ;;
+      # Accepted: the swap, the restart and the health check (the relauncher gives up after 120 s).
+      accepted) [[ -n "$accepted" ]] || { accepted=1; step "Hand-off checks (Goalong)" "$t0"; deadline=$(( $(date +%s) + 150 )); } ;;
+    esac
+    if (( $(date +%s) >= deadline )); then
+      [[ -n "$accepted" ]] && break
+      rm -rf "$request"; echo "Goalong did not answer the hand-off; using the installer." >&2; return 10
+    fi
+    sleep 0.2
+  done
+  rm -rf "$request"
+  case "$state" in
+    installed) step "Self-update (swap, restart)" "$t0"; return 0 ;;
+    refused) echo "Goalong refused this build: $reason" >&2; return 3 ;;
+    rolled_back) echo "The new build did not start; Goalong rolled back: $reason" >&2; return 1 ;;
+    *) echo "No result from Goalong after the swap; check /Applications/$APP_NAME.app." >&2; return 1 ;;
+  esac
+}
+if [[ "$PERSO" == 1 ]]; then
+  started="$(date +%s)"
+  set +e; perso_handoff; handoff=$?; set -e
+  if [[ "$handoff" != 10 ]]; then step "Total" "$started_all"; exit "$handoff"; fi
 fi
 
 # The installer re-verifies the bundle, refuses a different signing identity, a newer installed build

@@ -82,7 +82,7 @@ if [[ -n "$PERSO_SOURCE_COMMIT$PERSO_SOURCE_BRANCH" ]]; then
     echo "LOCALHISTORY_PERSO_* is reserved for make perso (release configuration, a make local try base, outside CI)." >&2
     exit 1
   fi
-  PERSO_SWIFT_FLAGS=(-Xswiftc -DGOALONG_PERSO)
+  PERSO_SWIFT_FLAGS=(-Xswiftc -DGOALONG_PERSO --build-system native -Xswiftc -no-whole-module-optimization)
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -198,7 +198,7 @@ build_arch() {
   fi
   cp "$binary" "$WORK_DIR/$PRODUCT_NAME-$arch"
 
-  local cli_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch")
+  local cli_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product "$CLI_PRODUCT_NAME" --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"})
   if ! (cd "$ROOT_DIR" && "${cli_command[@]}") >"$cli_log" 2>&1; then
     cat "$cli_log" >&2
     return 1
@@ -209,13 +209,13 @@ build_arch() {
     return 1
   fi
   cp "$cli_binary" "$WORK_DIR/$CLI_PRODUCT_NAME-$arch"
-  local helper_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch")
+  local helper_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-relauncher --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"})
   (cd "$ROOT_DIR" && "${helper_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-relauncher" "$WORK_DIR/goalong-relauncher-$arch"
-  local guard_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-blocking-guard --arch "$arch" --scratch-path "$scratch")
+  local guard_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-blocking-guard --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"})
   (cd "$ROOT_DIR" && "${guard_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-blocking-guard" "$WORK_DIR/goalong-blocking-guard-$arch"
-  local menubar_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-menubar-helper --arch "$arch" --scratch-path "$scratch")
+  local menubar_command=(xcrun swift build -c "$BUILD_CONFIGURATION" -j "$BUILD_JOBS" --product goalong-menubar-helper --arch "$arch" --scratch-path "$scratch" ${PERSO_SWIFT_FLAGS[@]+"${PERSO_SWIFT_FLAGS[@]}"})
   (cd "$ROOT_DIR" && "${menubar_command[@]}") >>"$cli_log" 2>&1 || { cat "$cli_log" >&2; return 1; }
   cp "$bin_dir/goalong-menubar-helper" "$WORK_DIR/goalong-menubar-helper-$arch"
   python3 - "$OUTPUT_DIR/build-$arch-timing.json" "$started" "$arch" <<'PY'

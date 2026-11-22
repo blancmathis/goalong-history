@@ -22,6 +22,7 @@ MICROPHONE_FORBIDDEN='inputNode|AVAudioInputNode|installTap|AVAudioRecorder|AVCa
 SHELL_EXECUTION_FORBIDDEN='NSAppleScript|osascript|NSTask|/bin/sh|/bin/bash'
 CODEX_BRIDGE="$ROOT_DIR/Sources/LocalHistoryApp/ChatGPT/CodexAppServerClient.swift"
 BRAISE_GAMMA="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BraiseGammaController.swift"
+PERSO_SELF_UPDATE="$ROOT_DIR/Sources/LocalHistoryApp/PersoSelfUpdate.swift"
 BRAISE_RUNTIME="$ROOT_DIR/Sources/LocalHistoryApp/Braise/BraiseRuntime.swift"
 CLIPBOARD_WRITER="$ROOT_DIR/Sources/LocalHistoryApp/GoalongClipboardWriter.swift"
 CLI_CONTRACT="$ROOT_DIR/Sources/LocalHistoryQueryCLI/GoalongCLIContract.swift"
@@ -153,7 +154,7 @@ fi
 # argument. No shell, arbitrary command, or user-provided argument vector is allowed.
 while IFS= read -r match; do
   file="${match%%:*}"
-  if [[ "$file" != "$BRAISE_GAMMA" && "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift" ]]; then
+  if [[ "$file" != "$BRAISE_GAMMA" && "$file" != "$CODEX_BRIDGE" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRecovery.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/PermissionRepair.swift" && "$file" != "$ROOT_DIR/Sources/LocalHistoryApp/Blocking/GoalongGuardClient.swift" && "$file" != "$PERSO_SELF_UPDATE" ]]; then
     echo "Unexpected Process API outside the fixed Codex, self-relaunch, Braise restoration guardian and user-confirmed TCC reset boundaries: $match" >&2
     failed=true
   fi
@@ -496,7 +497,17 @@ if [[ -f "$GUARD_CLIENT" ]]; then
     echo "The guard client may only run /bin/launchctl kickstart (without -k) on its own agent." >&2; failed=true
   fi
 fi
-if grep -nE 'Process\(|URLSession|AppPaths|NSApplication\.shared|capability-consent' "$RELAUNCHER"; then
+if [[ -f "$PERSO_SELF_UPDATE" ]]; then
+  # make perso self-update: one Process, only the staged bundle's own relauncher, perso builds only.
+  if [[ "$(grep -c 'Process()' "$PERSO_SELF_UPDATE")" != 1 ]] \
+    || ! grep -Fq 'let helper = staged.appendingPathComponent("Contents/MacOS/goalong-relauncher")' "$PERSO_SELF_UPDATE" \
+    || ! grep -Fq 'PersoSignature.check(candidate: staged, reference: reference)' "$PERSO_SELF_UPDATE" \
+    || ! grep -Fq '#if GOALONG_PERSO' "$PERSO_SELF_UPDATE" \
+    || grep -nE 'URLSession|NSWorkspace|openApplication|/bin/' "$PERSO_SELF_UPDATE"; then
+    echo "The perso self-update may only start the verified staged relauncher, in perso builds." >&2; failed=true
+  fi
+fi
+if grep -R -nE 'Process\(|URLSession|AppPaths|NSApplication\.shared|capability-consent' "$ROOT_DIR/Sources/GoalongRelauncher"; then
   echo "The one-shot relauncher must not execute commands, open history, or become the app." >&2
   failed=true
 fi
