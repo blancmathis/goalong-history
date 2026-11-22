@@ -7,8 +7,12 @@
 #   NO_INSTALL=1      build, sign and verify only; stop before any install or quit (agents, dry runs)
 #   OUT=/abs/dir      output folder (default .build/goalong-local/out)
 #   PERSO=1           make perso: also record this commit; the app then installs only a release that
-#                     contains it (PersoReleaseGate). Needs a committed tree; push it so GitHub knows it.
-# Tests are not run here: make check / make test before, CI on the PR.
+#                     contains it (PersoReleaseGate). Needs a committed tree. It runs make check (tests
+#                     of the files changed since the installed build, throwaway HOME, window guard) in
+#                     parallel with the build: a failure stops before install. Then it pushes the branch
+#                     `perso` if GitHub lacks the commit, and hands the build to Goalong.
+#   GOALONG_PERSO_TEST_FILTER=Regex   with PERSO=1: passed to make check as FILTER.
+# make local runs no tests: make check / make test before, CI on the PR.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,7 +37,7 @@ source "$ROOT/scripts/build_number_policy.sh"
 [[ "${GITHUB_ACTIONS:-}" != true ]] || { echo "make local is for the owner's Mac, not CI." >&2; exit 1; }
 [[ "$PERSO" == 0 || "$PERSO" == 1 ]] || { echo "PERSO must be 0 or 1." >&2; exit 2; }
 MODE="make local"
-PERSO_COMMIT="" PERSO_BRANCH=""
+PERSO_COMMIT="" PERSO_BRANCH="" ON_REMOTE=1
 if [[ "$PERSO" == 1 ]]; then
   MODE="make perso"
   # The recorded commit must be exactly what is built: a release "contains this build" only then.
@@ -47,7 +51,7 @@ if [[ "$PERSO" == 1 ]]; then
   # Remote-tracking refs may cover main only (narrow fetch refspec): also accept a pushed branch tip.
   if [[ -z "$(git -C "$ROOT" branch -r --contains "$PERSO_COMMIT" 2>/dev/null)" ]] \
     && ! git -C "$ROOT" ls-remote --heads origin 2>/dev/null | grep -q "^${PERSO_COMMIT}[[:space:]]"; then
-    echo "Note: commit ${PERSO_COMMIT:0:8} is on no remote branch yet. Push it: until GitHub knows it, every release is skipped." >&2
+    ON_REMOTE=0
   fi
 fi
 
@@ -59,7 +63,17 @@ if ! mkdir "$WORK/lock" 2>/dev/null; then
   echo "Another make local or make perso runs in this checkout. If interrupted, remove $WORK/lock after checking it." >&2
   exit 1
 fi
-trap 'rmdir "$WORK/lock" 2>/dev/null || true' EXIT
+tests_pid=""
+# The tests run in their own process group: an early exit stops them (swift test and its window guard).
+trap '[[ -z "$tests_pid" ]] || kill -TERM -- "-$tests_pid" 2>/dev/null || true; rmdir "$WORK/lock" 2>/dev/null || true' EXIT
+if [[ "$PERSO" == 1 ]]; then
+  set -m
+  GOALONG_CHECK_LOG="$WORK/tests.log" "$ROOT/scripts/run_swift_tests.sh" check "${GOALONG_PERSO_TEST_FILTER:-}" \
+    </dev/null >"$WORK/tests.out" 2>&1 &
+  tests_pid=$!
+  set +m
+  echo "Tests (make check) run beside the build; summary: $WORK/tests.out"
+fi
 
 # Base: the newest release build among the installed app and the public manifest (best effort,
 # plain HTTPS). Offline, only the installed app counts; a newer public release then replaces the try.
@@ -133,6 +147,21 @@ recorded="$(/usr/libexec/PlistBuddy -c 'Print :GoalongPersoSourceCommit' "$APP/C
 [[ "$recorded" == "$PERSO_COMMIT" ]] || { echo "Perso commit in the bundle ($recorded) differs from $PERSO_COMMIT." >&2; exit 1; }
 step "Verify (identity, Sparkle)" "$started"
 
+if [[ "$PERSO" == 1 ]]; then
+  started="$(date +%s)"
+  set +e; wait "$tests_pid"; tests_rc=$?; set -e; tests_pid=""
+  if [[ "$tests_rc" != 0 ]]; then
+    grep -vE '^ok: ' "$WORK/tests.out" | tail -40 >&2
+    echo "Tests failed (exit $tests_rc): nothing installed. Full log: $WORK/tests.log" >&2
+    exit 1
+  fi
+  echo "Tests: $(sed -n 's/^Tests executed: //p' "$WORK/tests.out" | tail -1) passed in $(sed -n 's/^Duration: //p' "$WORK/tests.out" | tail -1) ($(grep -m1 -oE 'from the [^.]*' "$WORK/tests.out" || echo 'see summary'))"
+  step "Wait for tests" "$started"
+  # The delivered commit must be the tested one.
+  [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$PERSO_COMMIT" && -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]] \
+    || { echo "The checkout changed during make perso (HEAD or files): nothing installed. Run it again." >&2; exit 1; }
+fi
+
 if [[ "$NO_INSTALL" == 1 ]]; then
   step "Total" "$started_all"
   echo "NO_INSTALL=1: stopped before install. App: $APP"
@@ -179,6 +208,14 @@ perso_handoff() {
     *) echo "No result from Goalong after the swap; check /Applications/$APP_NAME.app." >&2; return 1 ;;
   esac
 }
+if [[ "$PERSO" == 1 && "$ON_REMOTE" == 0 ]]; then
+  started="$(date +%s)"
+  if [[ "$PERSO_BRANCH" == perso ]] && git -C "$ROOT" push -q origin "$PERSO_COMMIT:refs/heads/perso"; then
+    step "Push perso" "$started"
+  else
+    echo "Note: commit ${PERSO_COMMIT:0:8} is on no remote branch. Push it: until GitHub knows it, every release is skipped." >&2
+  fi
+fi
 if [[ "$PERSO" == 1 ]]; then
   started="$(date +%s)"
   set +e; perso_handoff; handoff=$?; set -e

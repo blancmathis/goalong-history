@@ -87,11 +87,14 @@ local:
 	GOALONG_LOCAL_NO_INSTALL="$(call goalong_dev_setting,NO_INSTALL)" \
 	GOALONG_LOCAL_OUT="$(call goalong_dev_setting,OUT)" ./scripts/local_try.sh
 
-# make perso: make local of this commit, recorded in the app. The owner's daily build: Sparkle then
-# installs only a release that contains this commit (merged into main), so a newer release without it
-# never replaces the build. Committed tree only. NO_INSTALL=1 OUT=/abs/dir as for make local.
+# make perso: the owner's daily build of this commit, in one command. make check (tests of the files
+# changed since the installed build) runs beside the release build; a failure installs nothing. Then it
+# pushes `perso` if needed and hands the build to Goalong (self-update, rollback). Sparkle installs only
+# a release that contains this commit. Committed tree only. FILTER=Regex as for make check;
+# NO_INSTALL=1 OUT=/abs/dir as for make local (no push, no install).
 perso:
 	GOALONG_LOCAL_PERSO=1 GOALONG_LOCAL_NO_INSTALL="$(call goalong_dev_setting,NO_INSTALL)" \
+	GOALONG_PERSO_TEST_FILTER="$(call goalong_dev_setting,FILTER)" \
 	GOALONG_LOCAL_OUT="$(call goalong_dev_setting,OUT)" ./scripts/local_try.sh
 
 dmg: app
