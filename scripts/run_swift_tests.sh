@@ -141,7 +141,8 @@ case "$mode" in
     args=(); classes=()
     # The whole log stays on disk (make perso passes its own path); the screen gets a short summary.
     check_log="${GOALONG_CHECK_LOG:-$ROOT/.build/goalong-check/last.log}"
-    mkdir -p "${check_log%/*}" && : >"$check_log" || exit 2
+    # A dry run (the selector self-test calls this script many times) never touches the log.
+    [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]] || { mkdir -p "${check_log%/*}" && : >"$check_log"; } || exit 2
     if [[ -n "$filter" ]]; then
       args+=(--filter "$filter")
       echo "make check: tests matching '$filter'"
@@ -259,18 +260,26 @@ case "$mode" in
       if [[ ${#script_checks[@]} -gt 0 ]]; then
         echo "Full log: $check_log"
         sstatus=0
+        # Like make test: the real environment, not the throwaway test home of the Swift run, and none of
+        # the settings of this run or of make perso (a nested make local fixture would inherit them).
+        clean_env=(env -u GOALONG_TEST_HOME -u CFFIXED_USER_HOME -u GOALONG_CHECK_LOG -u GOALONG_CHECK_BASE
+          -u GOALONG_CHECK_CHANGED -u GOALONG_LOCAL_PERSO -u GOALONG_LOCAL_NO_INSTALL -u GOALONG_LOCAL_OUT
+          -u GOALONG_PERSO_TEST_FILTER -u LOCALHISTORY_LOCAL_TRY_BASE)
         for chk in "${script_checks[@]}"; do
-          echo "---- script check $chk" >>"$check_log"
+          echo "---- script check $chk" >>"$check_log"; from_line="$(wc -l <"$check_log")"
           case "$chk" in
             make:*) make -n -f "${chk#make:}" check test perso >>"$check_log" 2>&1 ;;
             syntax:*.sh) bash -n "${chk#syntax:}" >>"$check_log" 2>&1 ;;
             syntax:*.py) python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "${chk#syntax:}" >>"$check_log" 2>&1 ;;
             syntax:*) echo "not checked (no test, no syntax check): ${chk#syntax:}"; continue ;;
-            # Like make test: the real environment, not the throwaway test home of the Swift run.
-            *.py) env -u GOALONG_TEST_HOME -u CFFIXED_USER_HOME python3 "$chk" >>"$check_log" 2>&1 ;;
-            *) env -u GOALONG_TEST_HOME -u CFFIXED_USER_HOME bash "$chk" >>"$check_log" 2>&1 ;;
+            *.py) "${clean_env[@]}" python3 "$chk" >>"$check_log" 2>&1 ;;
+            *) "${clean_env[@]}" bash "$chk" >>"$check_log" 2>&1 ;;
           esac
-          if [[ $? -eq 0 ]]; then echo "script check ok: $chk"; else echo "script check FAILED: $chk" >&2; sstatus=1; fi
+          if [[ $? -eq 0 ]]; then echo "script check ok: $chk"
+          else
+            echo "script check FAILED: $chk" >&2; sstatus=1
+            tail -n "+$((from_line + 1))" "$check_log" | grep -vE '^ok: ' | tail -15 >&2
+          fi
         done
         if [[ -z "$regex" ]]; then
           elapsed

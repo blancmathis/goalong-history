@@ -63,13 +63,24 @@ if ! mkdir "$WORK/lock" 2>/dev/null; then
   echo "Another make local or make perso runs in this checkout. If interrupted, remove $WORK/lock after checking it." >&2
   exit 1
 fi
-tests_pid=""
-# The tests run in their own process group: an early exit stops them (swift test and its window guard).
-trap '[[ -z "$tests_pid" ]] || kill -TERM -- "-$tests_pid" 2>/dev/null || true; rmdir "$WORK/lock" 2>/dev/null || true' EXIT
+tests_pid="" build_pid=""
+# Tests and build run in their own process groups: an early exit stops them (swift test, its window guard,
+# swift build).
+stop_jobs() { local g; for g in "$tests_pid" "$build_pid"; do [[ -z "$g" ]] || kill -TERM -- "-$g" 2>/dev/null || true; done; }
+trap 'stop_jobs; rmdir "$WORK/lock" 2>/dev/null || true' EXIT
+tests_done() { # wait for make check (perso), stop at once if it failed
+  local rc; set +e; wait "$tests_pid"; rc=$?; set -e; tests_pid=""
+  if [[ "$rc" != 0 ]]; then
+    grep -vE '^ok: ' "$WORK/tests.out" | tail -40 >&2
+    echo "Tests failed (exit $rc): nothing installed. Full log: $WORK/tests.log" >&2
+    exit 1
+  fi
+  echo "Tests: $(sed -n 's/^Tests executed: //p' "$WORK/tests.out" | tail -1) passed in $(sed -n 's/^Duration: //p' "$WORK/tests.out" | tail -1); summary: $WORK/tests.out"
+}
 if [[ "$PERSO" == 1 ]]; then
   set -m
-  GOALONG_CHECK_LOG="$WORK/tests.log" "$ROOT/scripts/run_swift_tests.sh" check "${GOALONG_PERSO_TEST_FILTER:-}" \
-    </dev/null >"$WORK/tests.out" 2>&1 &
+  env -u GOALONG_LOCAL_PERSO -u GOALONG_LOCAL_NO_INSTALL -u GOALONG_LOCAL_OUT GOALONG_CHECK_LOG="$WORK/tests.log" \
+    "$ROOT/scripts/run_swift_tests.sh" check "${GOALONG_PERSO_TEST_FILTER:-}" </dev/null >"$WORK/tests.out" 2>&1 &
   tests_pid=$!
   set +m
   echo "Tests (make check) run beside the build; summary: $WORK/tests.out"
@@ -122,14 +133,24 @@ started="$(date +%s)"
 rm -rf "$OUT"
 mkdir -p "$OUT" "$WORK/scratch"
 export LOCALHISTORY_LOCAL_TRY_BASE="$BASE_BUILD"
-if ! env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" \
+set -m
+env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" \
     LOCALHISTORY_PERSO_SOURCE_COMMIT="$PERSO_COMMIT" LOCALHISTORY_PERSO_SOURCE_BRANCH="$PERSO_BRANCH" \
     LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_BUILD_CONFIGURATION=release \
     LOCALHISTORY_BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-$(sysctl -n hw.ncpu)}" \
     LOCALHISTORY_RUN_TESTS=0 LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 LOCALHISTORY_FINAL_VERIFY_ONLY=1 \
     LOCALHISTORY_APP_ENTITLEMENTS="$ROOT/Distribution/GoalongHistory.entitlements" \
     LOCALHISTORY_OUTPUT_DIR="$OUT" LOCALHISTORY_SCRATCH_ROOT="$WORK/scratch" \
-    "$ROOT/scripts/build_app.sh" >"$WORK/build.log" 2>&1; then
+    "$ROOT/scripts/build_app.sh" </dev/null >"$WORK/build.log" 2>&1 &
+build_pid=$!
+set +m
+# A failing test stops the build at once; otherwise wait for the build.
+while kill -0 "$build_pid" 2>/dev/null; do
+  if [[ -n "$tests_pid" ]] && ! kill -0 "$tests_pid" 2>/dev/null; then tests_done; fi
+  sleep 0.5
+done
+set +e; wait "$build_pid"; build_rc=$?; set -e; build_pid=""
+if [[ "$build_rc" != 0 ]]; then
   tail -20 "$WORK/build.log" >&2
   echo "Build failed; full log: $WORK/build.log" >&2
   exit 1
@@ -148,14 +169,7 @@ step "Verify (identity, commit)" "$started"
 
 if [[ "$PERSO" == 1 ]]; then
   started="$(date +%s)"
-  set +e; wait "$tests_pid"; tests_rc=$?; set -e; tests_pid=""
-  if [[ "$tests_rc" != 0 ]]; then
-    grep -vE '^ok: ' "$WORK/tests.out" | tail -40 >&2
-    echo "Tests failed (exit $tests_rc): nothing installed. Full log: $WORK/tests.log" >&2
-    exit 1
-  fi
-  echo "Tests: $(sed -n 's/^Tests executed: //p' "$WORK/tests.out" | tail -1) passed in $(sed -n 's/^Duration: //p' "$WORK/tests.out" | tail -1); summary: $WORK/tests.out"
-  step "Wait for tests" "$started"
+  [[ -z "$tests_pid" ]] || { tests_done; step "Wait for tests" "$started"; }
   # The delivered commit must be the tested one.
   [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$PERSO_COMMIT" && -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]] \
     || { echo "The checkout changed during make perso (HEAD or files): nothing installed. Run it again." >&2; exit 1; }
