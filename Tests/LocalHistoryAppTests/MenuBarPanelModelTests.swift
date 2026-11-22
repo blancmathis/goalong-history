@@ -261,6 +261,43 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertNil(f.focus?.currentSession); XCTAssertEqual(asked, 2)
     }
 
+    /// A session stopped from the popover asks « C’est fait ? » inside the popover, with no floating panel; once answered
+    /// or closed, the popover's content comes back. A session ended anywhere else keeps the floating panel.
+    @MainActor func testStopFromPopoverAsksTheReviewInline() throws {
+        let f = fixture(); try f.startFocusController()
+        let model = f.model(); model.focusKind = .free; model.startFocus()
+        let id = try XCTUnwrap(f.focus?.currentSession?.id)
+        f.now = f.now.addingTimeInterval(600)
+        model.stopFocus()
+        let panel = try XCTUnwrap(f.focus?.panel)
+        XCTAssertEqual(panel.kind, .sessionReview); XCTAssertEqual(panel.sessionID, id)
+        XCTAssertFalse(f.focus!.presentsFloating(panel), "a stop from the popover opens no floating window")
+        XCTAssertEqual(model.review?.sessionID, id); XCTAssertEqual(model.review?.intent, "Concentration")
+        XCTAssertEqual(model.review?.seconds ?? 0, 600, accuracy: 1)
+        f.now = f.now.addingTimeInterval(5); model.refreshRuntimeState()
+        XCTAssertEqual(model.review?.sessionID, id, "still asked while pending (popover reopened)")
+        model.answerReview(.partly, note: "Presque")
+        XCTAssertNil(model.review); XCTAssertNil(f.focus?.panel); XCTAssertNil(f.focus?.inlineReviewSessionID)
+        f.focus!.refresh()
+        let saved = try XCTUnwrap(f.focus?.sessions.first { $0.id == id })
+        XCTAssertEqual(saved.outcome, .partly); XCTAssertEqual(saved.note, "Presque")
+
+        // « Fermer sans répondre »: the question goes, nothing is recorded.
+        f.now = f.now.addingTimeInterval(60); model.startFocus()
+        let second = try XCTUnwrap(f.focus?.currentSession?.id)
+        f.now = f.now.addingTimeInterval(300); model.stopFocus()
+        XCTAssertEqual(model.review?.sessionID, second)
+        model.closeReview()
+        XCTAssertNil(model.review); XCTAssertNil(f.focus?.panel)
+        f.focus!.refresh(); XCTAssertNil(f.focus?.sessions.first { $0.id == second }?.outcome)
+
+        // Ended elsewhere (main window, CLI, timer): the floating panel, as before.
+        f.now = f.now.addingTimeInterval(60); model.startFocus()
+        f.now = f.now.addingTimeInterval(300); try f.focus!.stopSession()
+        XCTAssertTrue(f.focus!.presentsFloating(try XCTUnwrap(f.focus?.panel)))
+        model.refreshRuntimeState(); XCTAssertNil(model.review)
+    }
+
     @MainActor func testLockedSessionStopCannotBypassController() throws {
         let f = fixture(), list = LocalHistoryApp.BlockList(name: "Protégée")
         f.blocking = BlockingController(document: BlockingDocument(lists: [list]), clock: { f.now },

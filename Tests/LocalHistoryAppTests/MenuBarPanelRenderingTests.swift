@@ -78,6 +78,9 @@ final class MenuBarPanelRenderingTests: XCTestCase {
             let suffix = dark ? "dark" : "light"
             base()
             try render("idle-\(suffix)")
+            model.review = .init(sessionID: UUID(), intent: "Concentration", seconds: 1500, facts: FocusFacts(), note: nil)
+            try render("review-\(suffix)")
+            model.review = nil
 
             base()
             model.focusRun = .init(phaseTitle: "Travail", remaining: TimeInterval(1122), elapsed: TimeInterval(378), progress: 0.25,

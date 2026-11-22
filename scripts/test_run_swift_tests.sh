@@ -25,6 +25,7 @@ expect_scripts "scripts/install_from_source.sh" "scripts/test_install_from_sourc
 expect_scripts "scripts/window_guard.swift" "scripts/test_run_swift_tests.sh"
 expect_scripts "scripts/test_dev_app.sh" "scripts/test_dev_app.sh"
 expect_scripts "scripts/audit_privacy_boundaries.sh" "syntax:scripts/audit_privacy_boundaries.sh"
+expect_scripts "scripts/build_app_core.sh" "syntax:scripts/build_app_core.sh scripts/test_build_number_policy.sh"
 expect_scripts "Makefile" "make:Makefile"
 expect_scripts "scripts/expected_skips.txt scripts/local_try.sh" "scripts/test_local_try.sh"
 # A test file whose name differs from its classes runs those classes.

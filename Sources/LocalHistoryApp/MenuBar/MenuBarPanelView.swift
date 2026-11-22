@@ -18,16 +18,26 @@
                 GoalongDevBanner()
                 PanelHeader(model: model)
                 PanelDivider()
-                NowSection(model: model)
-                LaunchSection(model: model, store: model.prepared)
-                TodaySection(model: model)
-                PanelDivider()
-                AmbianceSection(model: model)
-                if model.hasRedScreen {
+                if let review = model.review {
+                    // A session stopped here asks its question here, then the panel comes back. The swap is not
+                    // animated: the presenter moves the window edge on LHTheme.settle, the content stays pinned.
+                    FocusReviewPanelView(intent: review.intent, seconds: review.seconds, facts: review.facts,
+                                         initialNote: review.note, inline: true,
+                                         onAnswer: { outcome, note in model.answerReview(outcome, note: note) },
+                                         onClose: model.closeReview)
+                        .id(review.sessionID)
+                } else {
+                    NowSection(model: model)
+                    LaunchSection(model: model, store: model.prepared)
+                    TodaySection(model: model)
                     PanelDivider()
-                    RedScreenSection(model: model)
+                    AmbianceSection(model: model)
+                    if model.hasRedScreen {
+                        PanelDivider()
+                        RedScreenSection(model: model)
+                    }
+                    PanelFooter(model: model)
                 }
-                PanelFooter(model: model)
             }
             .frame(width: Self.width)
             .fixedSize(horizontal: false, vertical: true)

@@ -156,52 +156,67 @@ struct FocusReviewPanelView: View {
     let facts: FocusFacts
     var onAnswer: (FocusSession.Outcome?, String?) -> Void
     var onClose: () -> Void
+    /// Inside the menu bar popover: no raised surface of its own, the popover's margins.
+    let inline: Bool
     @State private var note: String
 
     /// Starts from the note already saved (for example by `goalong session stop --note`), so an answer keeps it.
-    init(intent: String, seconds: TimeInterval, facts: FocusFacts, initialNote: String? = nil,
+    init(intent: String, seconds: TimeInterval, facts: FocusFacts, initialNote: String? = nil, inline: Bool = false,
          onAnswer: @escaping (FocusSession.Outcome?, String?) -> Void, onClose: @escaping () -> Void) {
         self.intent = intent; self.seconds = seconds; self.facts = facts; self.onAnswer = onAnswer; self.onClose = onClose
+        self.inline = inline
         _note = State(initialValue: initialNote ?? "")
     }
 
     var body: some View {
-        FocusPanelSurface {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("C’est fait ?").font(LHTheme.cardTitleFont)
-                        Text(seconds >= 60 ? "\(intent), \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded())))" : intent)
-                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    Button(action: onClose) {
-                        Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(LHTheme.secondaryText)
-                            .frame(width: 22, height: 22).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Fermer sans répondre")
-                    .accessibilityLabel("Fermer sans répondre")
+        if inline {
+            content
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .foregroundStyle(LHTheme.text)
+                .font(.system(size: 13))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("menubar-review-panel")
+        } else {
+            FocusPanelSurface { content }
+                .accessibilityIdentifier("concentration-review-panel")
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("C’est fait ?").font(LHTheme.cardTitleFont)
+                    Text(seconds >= 60 ? "\(intent), \(BlockingFormat.duration(minutes: Int((seconds / 60).rounded())))" : intent)
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                 }
-                FocusFactsView(facts: facts)
-                GoalongFormField(title: "Note") {
-                    TextField("", text: $note)
-                        .textFieldStyle(GoalongFieldStyle())
-                        .goalongPlaceholder("Si vous voulez", isEmpty: note.isEmpty)
-                        .accessibilityLabel("Note")
-                        .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
-                        .accessibilityIdentifier("concentration-review-note")
+                Spacer(minLength: 8)
+                Button(action: onClose) {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(LHTheme.secondaryText)
+                        .frame(width: 22, height: 22).contentShape(Rectangle())
                 }
-                HStack(spacing: 8) {
-                    Spacer()
-                    Button("Pas fait") { answer(.notDone) }
-                    Button("En partie") { answer(.partly) }
-                    Button("Fait") { answer(.done) }.buttonStyle(LHPrimaryButtonStyle())
-                        .keyboardShortcut(.defaultAction)
-                }
+                .buttonStyle(.plain)
+                .help("Fermer sans répondre")
+                .accessibilityLabel("Fermer sans répondre")
+            }
+            FocusFactsView(facts: facts)
+            GoalongFormField(title: "Note") {
+                TextField("", text: $note)
+                    .textFieldStyle(GoalongFieldStyle())
+                    .goalongPlaceholder("Si vous voulez", isEmpty: note.isEmpty)
+                    .accessibilityLabel("Note")
+                    .onChange(of: note) { value in if value.count > 140 { note = String(value.prefix(140)) } }
+                    .accessibilityIdentifier("concentration-review-note")
+            }
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Pas fait") { answer(.notDone) }
+                Button("En partie") { answer(.partly) }
+                Button("Fait") { answer(.done) }.buttonStyle(LHPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }
-        .accessibilityIdentifier("concentration-review-panel")
     }
 
     private func answer(_ outcome: FocusSession.Outcome) {

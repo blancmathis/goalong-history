@@ -44,6 +44,13 @@ struct FocusPanel: Equatable {
     @Published private(set) var sessionFacts = FocusFacts()
     /// The session the « C’est fait ? » panel asks about; cleared when another panel or none replaces it.
     @Published private(set) var reviewedSession: FocusSession?
+    /// The session stopped from the menu bar popover: the popover asks its « C’est fait ? » itself, in place of
+    /// its content, and no floating panel opens for it. Set by the popover before its stop; any other end keeps the panel.
+    var inlineReviewSessionID: UUID?
+    /// False for the « C’est fait ? » of the session the popover asks about itself.
+    func presentsFloating(_ value: FocusPanel) -> Bool {
+        !(value.kind == .sessionReview && value.sessionID != nil && value.sessionID == inlineReviewSessionID)
+    }
     @Published private(set) var limitMarks: [FocusLimitMark] = []
     @Published private(set) var requestedEditor: FocusPanel.Kind?
     @Published private(set) var panel: FocusPanel?
@@ -680,6 +687,8 @@ struct FocusPanel: Equatable {
     }
     private func showPanel(_ value: FocusPanel?) {
         if value?.kind != .sessionReview { reviewedSession = nil }
+        // The claim ends with its question (answered, closed, or another session's question). A phase notice in between keeps it.
+        if value == nil || (value?.kind == .sessionReview && value?.sessionID != inlineReviewSessionID) { inlineReviewSessionID = nil }
         if panel != value { panel = value; onPanelChange?(value) }
     }
     private func scheduleTimer() {

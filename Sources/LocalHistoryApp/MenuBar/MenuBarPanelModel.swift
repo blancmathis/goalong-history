@@ -83,6 +83,17 @@ import LocalHistoryCore
     @Published var focusMinutes = 25
     let focusMinuteChoices = [25, 50, 90]
     @Published var focusRun: FocusRun?
+    /// The « C’est fait ? » of a session stopped from this popover: it takes the place of the popover's content until it
+    /// is answered or closed (same data as the floating panel). A session ended anywhere else keeps the floating panel.
+    struct InlineReview: Equatable {
+        let sessionID: UUID
+        let intent: String
+        let seconds: TimeInterval
+        let facts: FocusFacts
+        let note: String?
+    }
+    /// Set by `syncReview` (renders set it directly).
+    @Published var review: InlineReview?
 
     enum AmbianceTab: String, CaseIterable { case focus, relax, texture, ownFile }
     @Published var ambianceEnabled = false
@@ -350,8 +361,9 @@ import LocalHistoryCore
             : controller == nil ? "Concentration indisponible. Ouvrez l’app." : nil
         focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
             : (observing && controller == nil) ? .app : nil
-        guard let controller else { focusRun = nil; return }
+        guard let controller else { focusRun = nil; syncReview(nil); return }
         controller.refresh()
+        syncReview(controller)
         guard let session = controller.currentSession, let phase = controller.phase, phase.kind != .ended else {
             focusRun = nil; return
         }
@@ -408,9 +420,46 @@ import LocalHistoryCore
         guard modules.isEnabled(.concentration), let controller = concentration() else { return }
         // T-050 B1 correction 2: a session that carries a protected « Surveillance » asks its stop.
         guard confirmSurveillanceStop() else { return }
+        // Claimed before the stop: the controller announces the question during it, and no floating panel must open.
+        controller.inlineReviewSessionID = controller.currentSession?.id
         do { try controller.stopSession(surveillanceConfirmed: true) }
-        catch { controller.error = String(describing: error); onOpenSection(.concentration) }
+        catch {
+            if controller.panel?.kind != .sessionReview { controller.inlineReviewSessionID = nil }
+            controller.error = String(describing: error); onOpenSection(.concentration)
+        }
         refreshFocus(); refreshBlocking()
+    }
+
+    /// Follows the controller: the question shows while it is pending for the claimed session, and goes once it is
+    /// answered, closed or replaced (also from the CLI or another panel).
+    private func syncReview(_ controller: ConcentrationController?) {
+        guard let controller, let panel = controller.panel, panel.kind == .sessionReview, let id = panel.sessionID,
+              id == controller.inlineReviewSessionID else {
+            if review != nil { review = nil }
+            return
+        }
+        guard review?.sessionID != id else { return }
+        // The finished session may sit in yesterday's file after midnight: keep the value `finish` saw.
+        let session = controller.reviewedSession.flatMap { $0.id == id ? $0 : nil } ?? controller.sessions.first { $0.id == id }
+        review = InlineReview(sessionID: id, intent: session?.intent ?? "",
+                              seconds: session.map { FocusPanelMath.workSeconds($0) } ?? 0,
+                              facts: controller.sessionFacts, note: session?.note)
+    }
+
+    /// « Pas fait », « En partie », « Fait »: the floating panel's own call. A refused write keeps the question and
+    /// opens the Concentration page, where the error shows.
+    func answerReview(_ outcome: FocusSession.Outcome?, note: String?) {
+        guard let review, let controller = concentration() else { self.review = nil; return }
+        do { try controller.recordOutcome(sessionID: review.sessionID, outcome: outcome, note: note) }
+        catch { controller.error = FocusUIError.message(error); onOpenSection(.concentration) }
+        syncReview(controller)
+    }
+
+    /// « Fermer sans répondre »: as the floating panel's cross.
+    func closeReview() {
+        guard let review, let controller = concentration() else { self.review = nil; return }
+        if controller.panel?.sessionID == review.sessionID { controller.dismissPanel() }
+        syncReview(controller)
     }
 
     private func refreshAmbiance() {

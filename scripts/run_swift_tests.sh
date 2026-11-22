@@ -183,6 +183,10 @@ case "$mode" in
         for t in scripts/test_"$stem"*.sh scripts/test_"$stem"*.py; do
           [[ -f "$t" ]] && { add_script "$t"; found=1; }
         done
+        # Tests named after another script that cover this one too.
+        case "$stem" in
+          build_app_core) add_script "syntax:$f"; add_script scripts/test_build_number_policy.sh; found=1 ;;
+        esac
         [[ $found -eq 1 ]] || add_script "syntax:$f"
       }
       while IFS= read -r file; do

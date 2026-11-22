@@ -75,7 +75,8 @@ import LocalHistoryQueryCLI
                 statusHub.publish(try FocusJSON.encode(value.status))
                 value.onPanelChange = { [weak self, weak value] panel in
                     guard let self, let value, self.presentsPanels else { return }
-                    if let panel { let p = self.presenter ?? ConcentrationPanelPresenter(); p.show(panel, controller: value); self.presenter = p }
+                    // A session stopped from the menu bar popover gets its question there, not in a floating panel.
+                    if let panel, value.presentsFloating(panel) { let p = self.presenter ?? ConcentrationPanelPresenter(); p.show(panel, controller: value); self.presenter = p }
                     else { self.presenter?.close(); self.presenter = nil }
                 }
                 value.onPhaseSound = { NSSound(named: "Glass")?.play() }
