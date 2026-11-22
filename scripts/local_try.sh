@@ -66,7 +66,7 @@ fi
 tests_pid="" build_pid=""
 # Tests and build run in their own process groups: an early exit stops them (swift test, its window guard,
 # swift build).
-stop_jobs() { local g; for g in "$tests_pid" "$build_pid"; do [[ -z "$g" ]] || kill -TERM -- "-$g" 2>/dev/null || true; done; }
+stop_jobs() { local g; for g in "$tests_pid" "$build_pid"; do [[ -z "$g" ]] || { kill -TERM -- "-$g" && wait "$g"; } 2>/dev/null || true; done; }
 trap 'stop_jobs; rmdir "$WORK/lock" 2>/dev/null || true' EXIT
 tests_done() { # wait for make check (perso), stop at once if it failed
   local rc; set +e; wait "$tests_pid"; rc=$?; set -e; tests_pid=""
