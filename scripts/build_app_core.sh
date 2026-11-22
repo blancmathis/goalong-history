@@ -82,7 +82,12 @@ if [[ -n "$PERSO_SOURCE_COMMIT$PERSO_SOURCE_BRANCH" ]]; then
     echo "LOCALHISTORY_PERSO_* is reserved for make perso (release configuration, a make local try base, outside CI)." >&2
     exit 1
   fi
-  PERSO_SWIFT_FLAGS=(-Xswiftc -DGOALONG_PERSO --build-system native -Xswiftc -no-whole-module-optimization)
+  # Incremental -O build in the perso scratch (.build/goalong-local/scratch, same flags every run): SwiftPM
+  # adds -incremental only in debug and drops a bare -Xswiftc -incremental, so a one-line change recompiled
+  # all of LocalHistoryApp (287 files, 45-120 s). The response file reaches swiftc: 1 file, ~7 s. Same -O,
+  # same toolchain and rpaths. Releases and CI keep whole-module optimization.
+  PERSO_SWIFT_FLAGS=(-Xswiftc -DGOALONG_PERSO --build-system native -Xswiftc -no-whole-module-optimization
+    -Xswiftc "@$ROOT_DIR/scripts/perso_swiftc_incremental.rsp")
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
