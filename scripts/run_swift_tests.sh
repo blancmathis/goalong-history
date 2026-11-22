@@ -20,6 +20,9 @@ SLOW_TESTS=(
   'ComputerHistoryMemoryCompactionTests/testTenThousandActions'
   'ComputerHistoryMemoryCompactionTests/testFragmentedDay'
 )
+# Elapsed-time budgets: they fail under load (a busy Mac, a parallel build) and also on main. `make test` and the
+# CI run them; `make check` runs them only when named (FILTER or a changed test file), so its green means green.
+BUDGET_TESTS=(ViewSwitchBudgetTests)
 
 screen_state() {
   local locked
@@ -96,16 +99,25 @@ ui_verdict() { # skips screen-state
   return 0
 }
 elapsed() { echo "Duration: $((SECONDS - start)) s"; }
+# make check prints only what matters (build errors, failed tests, window guard, totals); the whole log stays on disk.
+summarize_log() { # log
+  grep -E "error:|: error|' failed \(|Fatal error|fatal error|\[headless-tests\] VISIBLE|window guard" "$1" | head -60
+  # The highest total (the last line may be a bundle with 0 tests).
+  grep -E 'Executed [0-9]+ tests?' "$1" | awk '{ n = $2 + 0; if (n >= max) { max = n; line = $0 } } END { if (line != "") print line }'
+}
 
 case "$mode" in
   check)
     filter="${1:-${FILTER:-}}"
-    args=()
+    args=(); classes=()
+    # The whole log stays on disk (make perso passes its own path); the screen gets a short summary.
+    check_log="${GOALONG_CHECK_LOG:-$ROOT/.build/goalong-check/last.log}"
+    mkdir -p "${check_log%/*}" && : >"$check_log" || exit 2
     if [[ -n "$filter" ]]; then
       args+=(--filter "$filter")
       echo "make check: tests matching '$filter'"
     else
-      targets=(); classes=(); fast=0
+      targets=(); fast=0
       # The loop looks at what you are changing now (uncommitted + untracked). With a clean tree it
       # falls back to the whole branch vs origin/main (large on a long branch: then use FILTER=).
       changed="$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u)"
@@ -164,12 +176,19 @@ case "$mode" in
       if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then echo "filter-regex: $regex"; exit 0; fi
     fi
     for slow in "${SLOW_TESTS[@]}"; do args+=(--skip "$slow"); done
-    echo "Slow tests left out (run by make test): ${#SLOW_TESTS[@]}"
+    budget_out=()
+    for cls in "${BUDGET_TESTS[@]}"; do
+      [[ " ${classes[*]-} " == *" $cls "* || "$filter" == *"$cls"* ]] && continue
+      args+=(--skip "$cls"); budget_out+=("$cls")
+    done
+    echo "Left out (run by make test): ${#SLOW_TESTS[@]} slow tests; time budgets: ${budget_out[*]-none}"
     report_screen
-    swift_test "${args[@]}"; status=$?
+    echo "Full log: $check_log"
+    guarded xcrun swift test --disable-keychain "${args[@]}" >>"$check_log" 2>&1; status=$?
+    summarize_log "$check_log"
     elapsed
-    [[ $status -ne 0 ]] && exit "$status"
-    ran="$(executed_count "$log")"
+    [[ $status -ne 0 ]] && { echo "make check FAILED (exit $status). Full log: $check_log" >&2; exit "$status"; }
+    ran="$(executed_count "$check_log")"
     echo "Tests executed: $ran"
     if [[ "$ran" -eq 0 ]]; then
       echo "error: make check ran 0 tests: the filter matched nothing. Use FILTER=<Class> or make test." >&2
