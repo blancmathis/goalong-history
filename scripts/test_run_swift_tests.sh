@@ -26,6 +26,14 @@ expect_scripts "scripts/window_guard.swift" "scripts/test_run_swift_tests.sh"
 expect_scripts "scripts/test_dev_app.sh" "scripts/test_dev_app.sh"
 expect_scripts "scripts/audit_privacy_boundaries.sh" "syntax:scripts/audit_privacy_boundaries.sh"
 expect_scripts "scripts/build_app_core.sh" "syntax:scripts/build_app_core.sh scripts/test_build_number_policy.sh"
+# Time budgets: left out when only picked by type (a changed source), run when their test file changes.
+budget_for() { GOALONG_CHECK_DRY_RUN=1 GOALONG_CHECK_CHANGED="$1" ./scripts/run_swift_tests.sh check 2>&1 | sed -n 's/^budget-skips: //p'; }
+for pair in "Sources/LocalHistoryApp/Concentration/ConcentrationController.swift:ViewSwitchBudgetTests" \
+            "Tests/LocalHistoryAppTests/ViewSwitchBudgetTests.swift:"; do
+  got="$(budget_for "${pair%%:*}")"
+  if [[ "$got" == "${pair#*:}" ]]; then echo "ok: '${pair%%:*}' leaves out budgets '$got'"
+  else echo "FAIL: '${pair%%:*}' leaves out budgets '$got' (want '${pair#*:}')" >&2; fail=1; fi
+done
 expect_scripts "Makefile" "make:Makefile"
 expect_scripts "scripts/expected_skips.txt scripts/local_try.sh" "scripts/test_local_try.sh"
 # A test file whose name differs from its classes runs those classes.

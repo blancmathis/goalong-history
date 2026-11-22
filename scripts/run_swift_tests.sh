@@ -23,6 +23,15 @@ SLOW_TESTS=(
 # Elapsed-time budgets: they fail under load (a busy Mac, a parallel build) and also on main. `make test` and the
 # CI run them; `make check` runs them only when named (FILTER or a changed test file), so its green means green.
 BUDGET_TESTS=(ViewSwitchBudgetTests)
+# The budget classes this run leaves out. Named = a changed test file declares it, or FILTER names it;
+# a class picked by type (C1, a changed source) does not name it.
+budget_skips() {
+  local cls
+  for cls in "${BUDGET_TESTS[@]}"; do
+    [[ " ${named[*]-} " == *" $cls "* || "${filter:-}" == *"$cls"* ]] || echo "$cls"
+  done
+  return 0
+}
 # Always run when make check picks App test classes by type (C1): screens still render, blocking still holds.
 SMOKE_TESTS=(GallerySmokeTests BlockingGuardTests)
 # More App classes than this for a change: run the whole App target instead.
@@ -138,7 +147,7 @@ summarize_log() { # log
 case "$mode" in
   check)
     filter="${1:-${FILTER:-}}"
-    args=(); classes=()
+    args=(); classes=(); named=()
     # The whole log stays on disk (make perso passes its own path); the screen gets a short summary.
     check_log="${GOALONG_CHECK_LOG:-$ROOT/.build/goalong-check/last.log}"
     # A dry run (the selector self-test calls this script many times) never touches the log.
@@ -195,7 +204,7 @@ case "$mode" in
             # A changed test file runs the classes it declares; no class found: its whole target.
             found="$(classes_in "$file")"
             if [[ -n "$found" ]]; then
-              while IFS= read -r cls; do classes+=("$cls"); done <<< "$found"
+              while IFS= read -r cls; do classes+=("$cls"); named+=("$cls"); done <<< "$found"
             else
               case "$file" in
                 Tests/LocalHistoryCoreTests/*) add LocalHistoryCoreTests ;;
@@ -260,7 +269,10 @@ case "$mode" in
       fi
       regex=""
       if [[ ${#patterns[@]} -gt 0 ]]; then regex="$(IFS='|'; echo "${patterns[*]}")"; args+=(--filter "$regex"); fi
-      if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then echo "filter-regex: $regex"; echo "script-checks: ${script_checks[*]-}"; exit 0; fi
+      if [[ -n "${GOALONG_CHECK_DRY_RUN:-}" ]]; then
+        echo "filter-regex: $regex"; echo "script-checks: ${script_checks[*]-}"
+        echo "budget-skips: $(budget_skips | tr '\n' ' ' | sed 's/ $//')"; exit 0
+      fi
       if [[ ${#script_checks[@]} -gt 0 ]]; then
         echo "Full log: $check_log"
         sstatus=0
@@ -295,10 +307,7 @@ case "$mode" in
     fi
     for slow in "${SLOW_TESTS[@]}"; do args+=(--skip "$slow"); done
     budget_out=()
-    for cls in "${BUDGET_TESTS[@]}"; do
-      [[ " ${classes[*]-} " == *" $cls "* || "$filter" == *"$cls"* ]] && continue
-      args+=(--skip "$cls"); budget_out+=("$cls")
-    done
+    while IFS= read -r cls; do [[ -n "$cls" ]] && { args+=(--skip "$cls"); budget_out+=("$cls"); }; done < <(budget_skips)
     echo "Left out (run by make test): ${#SLOW_TESTS[@]} slow tests; time budgets: ${budget_out[*]-none}"
     report_screen
     echo "Full log: $check_log"
