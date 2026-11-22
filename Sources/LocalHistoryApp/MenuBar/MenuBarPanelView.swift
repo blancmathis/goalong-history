@@ -6,8 +6,8 @@
     /// day's figure. Ambiance folds to one line. See docs/MENUBAR-PANEL-20261011.md.
     struct MenuBarPanelView: View {
         @ObservedObject var model: MenuBarPanelModel
-        /// Reports the content's natural height so the popover can animate its own size
-        /// instead of jumping while the content animates.
+        /// Reports the content's natural height (its final one, at once) so the popover can follow it
+        /// with the same curve as the content animations (see MenuBarPanelPresenter).
         var onHeightChange: (CGFloat) -> Void = { _ in }
 
         static let width: CGFloat = 340
@@ -555,7 +555,7 @@
 
     private struct AmbianceSection: View {
         @ObservedObject var model: MenuBarPanelModel
-        @State private var expanded = false
+        private var expanded: Bool { model.ambianceExpanded }
         @State private var tab: MenuBarPanelModel.AmbianceTab = .focus
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         /// The raised pill slides between tabs and between tiles, 240 ms (DESIGN §10, UI-14 M1).
@@ -618,7 +618,7 @@
         }
 
         private func toggleExpanded() {
-            withAnimation(reduceMotion ? nil : LHTheme.settle) { expanded.toggle() }
+            model.toggleAmbianceExpanded(animated: !reduceMotion)
         }
 
         private var player: some View {

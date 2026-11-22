@@ -1,6 +1,7 @@
 #if os(macOS)
 import Ambiance
 import Combine
+import SwiftUI
 import Foundation
 import LocalHistoryCore
 
@@ -72,6 +73,8 @@ import LocalHistoryCore
     }
     @Published var focusAvailable = false
     @Published var concentrationEnabled = false
+    /// The Ambiance sounds are open under the player (the chevron).
+    @Published var ambianceExpanded = false
     @Published var focusUnavailableReason: String?
     @Published var focusKind: FocusKind = .pomodoro
     @Published var focusMinutes = 25
@@ -202,6 +205,10 @@ import LocalHistoryCore
     }
 
     /// Called on opening, then once a second only while the popover is visible.
+    func toggleAmbianceExpanded(animated: Bool) {
+        if animated { withAnimation(LHTheme.settle) { ambianceExpanded.toggle() } } else { ambianceExpanded.toggle() }
+    }
+
     func refresh() {
         refreshRuntimeState()
         let now = clock(), day = calendar.startOfDay(for: now)

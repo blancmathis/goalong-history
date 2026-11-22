@@ -48,6 +48,7 @@ LocalHistoryAppTests.JevObservationSemanticTests/testSyntheticObservationSemanti
 LocalHistoryAppTests.JevProcrastinationRenderingTests/testRenderIsolatedCriteriaWithSyntheticData  # other: Opt-in native rendering with synthetic criteria only
 LocalHistoryAppTests.JevSemanticEvaluationTests/testExplicitSyntheticSemanticEvaluation  # other: Opt-in paid API evaluation with synthetic data only
 LocalHistoryAppTests.MenuBarPanelRenderingTests/testRenderPanelStates  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.MenuBarPanelResizeTraceTests/testTraceResize  # other: Opt-in frame trace of the panel resize (GOALONG_PANEL_TRACE)
 LocalHistoryAppTests.PerformanceProbeTests/testActivityCachedDaysMatchFullRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.PerformanceProbeTests/testActivityDayRead  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY
 LocalHistoryAppTests.PerformanceProbeTests/testActivityMemory  # GOALONG_PERF_ROOT + GOALONG_PERF_DAY

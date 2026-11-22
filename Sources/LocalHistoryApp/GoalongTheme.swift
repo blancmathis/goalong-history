@@ -111,9 +111,13 @@
 
         /// The site's curve for everything that changes state; one short spring for what
         /// answers a press.
-        static func ease(_ duration: Double) -> Animation { .timingCurve(0.2, 0.8, 0.2, 1, duration: duration) }
+        static let easeCurve = (x1: 0.2, y1: 0.8, x2: 0.2, y2: 1.0)
+        static func ease(_ duration: Double) -> Animation {
+            .timingCurve(easeCurve.x1, easeCurve.y1, easeCurve.x2, easeCurve.y2, duration: duration)
+        }
         static let hover = ease(0.12)
-        static let settle = ease(0.24)
+        static let settleDuration = 0.24
+        static let settle = ease(settleDuration)
         static let draw = ease(0.7)
         static let press = Animation.spring(response: 0.24, dampingFraction: 0.8)
 

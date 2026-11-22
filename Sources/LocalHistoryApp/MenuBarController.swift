@@ -8,7 +8,8 @@
     final class MenuBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         private let statusItem: NSStatusItem
         private let menu = NSMenu()
-        private let popover = NSPopover()
+        private let panelPresenter = MenuBarPanelPresenter()
+        private var popover: NSPopover { panelPresenter.popover }
         private var panelModel: MenuBarPanelModel?
         private var panelTimer: Timer?
         private var redScreenMenu: AnyObject?
@@ -134,25 +135,13 @@
             popover.behavior = Self.panelBehavior
             popover.delegate = self
             popover.animates = !GoalongMotionPreference.reduced()
-            let host = NSHostingController(rootView: MenuBarPanelView(model: model) { [weak self] height in
-                self?.resizePanel(to: height)
-            })
-            // The panel drives the popover size itself (see resizePanel), so AppKit animates the
-            // window frame instead of snapping it while SwiftUI animates the content.
-            host.sizingOptions = []
-            popover.contentViewController = host
-        }
-
-        @MainActor private func resizePanel(to height: CGFloat) {
-            guard height > 0 else { return }
-            let size = NSSize(width: MenuBarPanelView.width, height: ceil(height))
-            guard popover.contentSize != size else { return }
-            popover.contentSize = size
+            panelPresenter.install(model: model)
         }
 
         @MainActor func closePanel() {
             panelTimer?.invalidate(); panelTimer = nil
             panelModel?.stopRefreshing()
+            panelPresenter.cancelTween()
             popover.performClose(nil)
         }
 
@@ -160,6 +149,7 @@
             MainActor.assumeIsolated {
                 panelTimer?.invalidate(); panelTimer = nil
                 panelModel?.stopRefreshing()
+                panelPresenter.cancelTween()
                 relayAnchor?.orderOut(nil)
                 panelDismissal.end()
                 panelClosedAt = ProcessInfo.processInfo.systemUptime
@@ -253,14 +243,7 @@
             // The click that just closed the panel (outside-click watch or transient popover) is not a reopen.
             if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
             model.refresh()
-            if let host = popover.contentViewController as? NSHostingController<MenuBarPanelView> {
-                // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
-                // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
-                let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
-                if ideal.height > 0 {
-                    popover.contentSize = NSSize(width: MenuBarPanelView.width, height: ceil(ideal.height))
-                }
-            }
+            panelPresenter.prepareToShow()
             panelDismissal.begin()
             popover.animates = !GoalongMotionPreference.reduced()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
