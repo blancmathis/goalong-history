@@ -126,7 +126,7 @@ if ! env LOCALHISTORY_VERSION="$VERSION" LOCALHISTORY_BUILD_NUMBER="$TRY_BUILD" 
     LOCALHISTORY_PERSO_SOURCE_COMMIT="$PERSO_COMMIT" LOCALHISTORY_PERSO_SOURCE_BRANCH="$PERSO_BRANCH" \
     LOCALHISTORY_ARCHS="$(uname -m)" LOCALHISTORY_BUILD_CONFIGURATION=release \
     LOCALHISTORY_BUILD_JOBS="${LOCALHISTORY_BUILD_JOBS:-$(sysctl -n hw.ncpu)}" \
-    LOCALHISTORY_RUN_TESTS=0 LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 \
+    LOCALHISTORY_RUN_TESTS=0 LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 LOCALHISTORY_FINAL_VERIFY_ONLY=1 \
     LOCALHISTORY_APP_ENTITLEMENTS="$ROOT/Distribution/GoalongHistory.entitlements" \
     LOCALHISTORY_OUTPUT_DIR="$OUT" LOCALHISTORY_SCRATCH_ROOT="$WORK/scratch" \
     "$ROOT/scripts/build_app.sh" >"$WORK/build.log" 2>&1; then
@@ -140,12 +140,11 @@ started="$(date +%s)"
 APP="$OUT/$APP_NAME.app"
 bash "$ROOT/scripts/verify_release_identity.sh" "$APP" >>"$WORK/build.log" 2>&1 \
   || { echo "Release identity check failed; see $WORK/build.log" >&2; exit 1; }
-LOCALHISTORY_APP_PATH="$APP" LOCALHISTORY_REQUIRE_SPARKLE_CONFIGURED=1 bash "$ROOT/scripts/verify_local_bundle.sh" >>"$WORK/build.log" 2>&1 \
-  || { echo "Bundle check failed; see $WORK/build.log" >&2; exit 1; }
+# The bundle check (verify_local_bundle.sh, Sparkle required) already ran on this final bundle in build_app.sh.
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")" == "$TRY_BUILD" ]]
 recorded="$(/usr/libexec/PlistBuddy -c 'Print :GoalongPersoSourceCommit' "$APP/Contents/Info.plist" 2>/dev/null || true)"
 [[ "$recorded" == "$PERSO_COMMIT" ]] || { echo "Perso commit in the bundle ($recorded) differs from $PERSO_COMMIT." >&2; exit 1; }
-step "Verify (identity, Sparkle)" "$started"
+step "Verify (identity, commit)" "$started"
 
 if [[ "$PERSO" == 1 ]]; then
   started="$(date +%s)"
@@ -155,7 +154,7 @@ if [[ "$PERSO" == 1 ]]; then
     echo "Tests failed (exit $tests_rc): nothing installed. Full log: $WORK/tests.log" >&2
     exit 1
   fi
-  echo "Tests: $(sed -n 's/^Tests executed: //p' "$WORK/tests.out" | tail -1) passed in $(sed -n 's/^Duration: //p' "$WORK/tests.out" | tail -1) ($(grep -m1 -oE 'from the [^.]*' "$WORK/tests.out" || echo 'see summary'))"
+  echo "Tests: $(sed -n 's/^Tests executed: //p' "$WORK/tests.out" | tail -1) passed in $(sed -n 's/^Duration: //p' "$WORK/tests.out" | tail -1); summary: $WORK/tests.out"
   step "Wait for tests" "$started"
   # The delivered commit must be the tested one.
   [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$PERSO_COMMIT" && -z "$(git -C "$ROOT" status --porcelain --untracked-files=normal)" ]] \

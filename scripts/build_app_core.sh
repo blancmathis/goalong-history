@@ -522,7 +522,10 @@ rm -rf "$OUTPUT_DIR/$APP_NAME.app"
 ditto "$APP_DIR" "$OUTPUT_DIR/$APP_NAME.app"
 
 if [[ "$DEVELOPMENT_BUILD" == 0 ]]; then
-  LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_local_bundle.sh"
+  # make local / make perso (local_try.sh) skip this pre-signing check: build_app.sh re-signs the app and
+  # verifies the final bundle with the same and stricter settings (10 s saved). Release and CI keep both.
+  [[ "${LOCALHISTORY_FINAL_VERIFY_ONLY:-0}" == 1 ]] \
+    || LOCALHISTORY_APP_PATH="$OUTPUT_DIR/$APP_NAME.app" "$ROOT_DIR/scripts/verify_local_bundle.sh"
   LOCALHISTORY_AUDIT_BINARY="$OUTPUT_DIR/$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" \
     "$ROOT_DIR/scripts/audit_privacy_boundaries.sh"
 fi
