@@ -4,6 +4,7 @@
 
     /// The menu bar panel (T-050 B2c, S5): what runs now with its stop or pause, then launch in one click, then the
     /// day's figure. Ambiance folds to one line. See docs/MENUBAR-PANEL-20261011.md.
+    /// Hosted by MenuBarPanelPresenter, which owns the popover and its height.
     struct MenuBarPanelView: View {
         @ObservedObject var model: MenuBarPanelModel
         /// Reports the content's natural height (its final one, at once) so the popover can follow it
