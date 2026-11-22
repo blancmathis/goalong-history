@@ -905,4 +905,3 @@ extension MenuBarPanelModel {
         return focusUnavailableFix
     }
 }
-// Mesure make perso (T-perso-iter) : ligne d'essai 2.
