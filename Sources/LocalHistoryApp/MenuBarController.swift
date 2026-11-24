@@ -3,6 +3,7 @@
     import Foundation
     import GoalongMenuBarRelay
     import LocalHistoryCore
+    import os
     import SwiftUI
 
     final class MenuBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
@@ -19,6 +20,12 @@
         /// (a click in another process), and the relayed click then arrives: it must not reopen the panel.
         private var panelClosedAt: TimeInterval?
         static let reopenGuard: TimeInterval = 0.3
+        /// True when the panel was on screen, on the Space in front, as it started to close. A panel left behind on
+        /// another Space (Mathis swipes between full-screen Spaces) closes unseen: the click after it is a real click.
+        private var closingWasSeen = false
+        private var spaceObserver: NSObjectProtocol?
+        private static let panelLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory",
+                                                category: "menubar-panel")
         /// T-048 D1: outside click and Esc close the panel even though Goalong was not active.
         @MainActor private lazy var panelDismissal: MenuBarPanelDismissal = {
             var hooks = MenuBarPanelDismissal.Hooks.live
@@ -108,6 +115,25 @@
             NotificationCenter.default.addObserver(
                 forName: DeviceTrustState.didChange, object: nil, queue: .main
             ) { [weak self] _ in self?.updateStatus() }
+            spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in MainActor.assumeIsolated { self?.activeSpaceChanged() } }
+        }
+
+        /// The panel never stays open on a Space the member left: `.applicationDefined` keeps it open on its own
+        /// Space, a swipe sends no mouse down to close it, and the next click on the icon only closed it there.
+        @MainActor private func activeSpaceChanged() {
+            guard popover.isShown, let window = panelWindow, !window.isOnActiveSpace else { return }
+            Self.panelLogger.info("close: left on another space")
+            closePanel(animated: false)
+        }
+
+        @MainActor private var panelWindow: NSWindow? { popover.contentViewController?.view.window }
+
+        /// On screen, on the Space in front.
+        @MainActor private var panelIsSeen: Bool {
+            guard popover.isShown, let window = panelWindow else { return false }
+            return window.isVisible && window.isOnActiveSpace
         }
 
         func menuWillOpen(_ menu: NSMenu) {
@@ -138,11 +164,18 @@
             panelPresenter.install(model: model)
         }
 
-        @MainActor func closePanel() {
+        @MainActor func closePanel() { closePanel(animated: !GoalongMotionPreference.reduced()) }
+
+        @MainActor private func closePanel(animated: Bool) {
             panelTimer?.invalidate(); panelTimer = nil
             panelModel?.stopRefreshing()
             panelPresenter.cancelTween()
+            guard popover.isShown else { return }
+            closingWasSeen = panelIsSeen
+            let animates = popover.animates
+            popover.animates = animated
             popover.performClose(nil)
+            popover.animates = animates
         }
 
         func popoverDidClose(_ notification: Notification) {
@@ -152,7 +185,10 @@
                 panelPresenter.cancelTween()
                 relayAnchor?.orderOut(nil)
                 panelDismissal.end()
-                panelClosedAt = ProcessInfo.processInfo.systemUptime
+                // Only a close the member saw can be the mouse down of a click on the icon.
+                panelClosedAt = closingWasSeen ? ProcessInfo.processInfo.systemUptime : nil
+                Self.panelLogger.info("closed seen=\(self.closingWasSeen, privacy: .public)")
+                closingWasSeen = false
             }
         }
 
@@ -193,6 +229,7 @@
 
         /// T-048 C4: a click on the helper's icon, at its screen frame. Same menu and panel as our own.
         @MainActor func showFromHelper(menu: Bool, frame: CGRect) {
+            Self.panelLogger.info("helper click menu=\(menu, privacy: .public) frame=\(Int(frame.minX), privacy: .public),\(Int(frame.minY), privacy: .public)")
             guard !frame.isEmpty else { return }
             if menu || panelModel == nil { showClassicMenu(helperFrame: frame); return }
             togglePanel(relativeTo: relayAnchorView(at: frame))
@@ -203,6 +240,23 @@
         static func isReopenBounce(closedAt: TimeInterval?, now: TimeInterval) -> Bool {
             guard let closedAt else { return false }
             return now - closedAt < reopenGuard
+        }
+
+        enum PanelClick: Equatable {
+            /// The panel is in front of the member: the click closes it.
+            case close
+            /// The click whose mouse down just closed the panel.
+            case ignoreBounce
+            /// Open the panel (and close at once a panel left open where nobody sees it).
+            case open
+        }
+
+        /// What a click on the icon does. `shown`: AppKit says the popover is open. `seen`: it is on screen, on the
+        /// Space in front. Before this, a popover left open on another Space (or never drawn) took every click as
+        /// « close », and the click after as a bounce: the icon did nothing until the main window was opened.
+        static func panelClick(shown: Bool, seen: Bool, closedAt: TimeInterval?, now: TimeInterval) -> PanelClick {
+            if shown { return seen ? .close : .open }
+            return isReopenBounce(closedAt: closedAt, now: now) ? .ignoreBounce : .open
         }
 
         @MainActor private func relayAnchorView(at frame: CGRect) -> NSView {
@@ -239,15 +293,36 @@
                 showClassicMenu()
                 return
             }
-            if popover.isShown { closePanel(); return }
-            // The click that just closed the panel (outside-click watch or transient popover) is not a reopen.
-            if Self.isReopenBounce(closedAt: panelClosedAt, now: ProcessInfo.processInfo.systemUptime) { return }
+            let shown = popover.isShown
+            let action = Self.panelClick(shown: shown, seen: panelIsSeen, closedAt: panelClosedAt,
+                                         now: ProcessInfo.processInfo.systemUptime)
+            Self.panelLogger.info("click shown=\(shown, privacy: .public) action=\(String(describing: action), privacy: .public)")
+            switch action {
+            case .close: closePanel(); return
+            case .ignoreBounce: return
+            case .open:
+                if shown {
+                    closePanel(animated: false)
+                    // A popover that does not close at once (no window to animate) is forgotten here.
+                    if popover.isShown { popover.close() }
+                }
+            }
             model.refresh()
             panelPresenter.prepareToShow()
             panelDismissal.begin()
             popover.animates = !GoalongMotionPreference.reduced()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            if let window = panelWindow {
+                // Also over a full-screen app's Space, and on the Space in front (the anchor joins all Spaces).
+                window.collectionBehavior.insert(.fullScreenAuxiliary)
+                if !window.collectionBehavior.contains(.canJoinAllSpaces) { window.collectionBehavior.insert(.moveToActiveSpace) }
+                if !window.isOnActiveSpace { window.orderFrontRegardless() }
+                window.makeKey()
+                Self.panelLogger.info("""
+                    shown visible=\(window.isVisible, privacy: .public) onSpace=\(window.isOnActiveSpace, privacy: .public) \
+                    level=\(window.level.rawValue, privacy: .public) front=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?", privacy: .public)
+                    """)
+            }
             let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.popover.isShown else { return }

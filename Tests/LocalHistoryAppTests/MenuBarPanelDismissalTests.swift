@@ -13,6 +13,7 @@ import XCTest
         var activations = 0
         var closes = 0
         var insidePanel = false
+        var fullScreen = false
     }
 
     private func make() -> (MenuBarPanelDismissal, Fake) {
@@ -23,8 +24,20 @@ import XCTest
             removeMonitor: { _ in fake.removed += 1 },
             isInsidePanel: { _ in fake.insidePanel },
             activate: { fake.activations += 1 },
+            frontIsFullScreen: { _ in fake.fullScreen },
             frontmostOther: { nil })
         return (MenuBarPanelDismissal(hooks: hooks) { fake.closes += 1 }, fake)
+    }
+
+    /// 2026-11-24: activating Goalong while a full-screen app is in front makes macOS hide that Space's menu bar.
+    func testOpeningOverAFullScreenAppDoesNotActivateGoalongButStillClosesOnOutsideClicks() {
+        let (dismissal, fake) = make()
+        fake.fullScreen = true
+        dismissal.begin()
+        XCTAssertEqual(fake.activations, 0, "Goalong stays in the back: the menu bar stays visible")
+        XCTAssertTrue(dismissal.isArmed)
+        fake.global[0].handler(click())
+        XCTAssertEqual(fake.closes, 1)
     }
 
     private func key(_ code: UInt16) -> NSEvent {

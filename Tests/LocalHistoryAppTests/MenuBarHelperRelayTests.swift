@@ -264,5 +264,17 @@ final class MenuBarHelperRelayTests: XCTestCase {
         XCTAssertTrue(MenuBarController.isReopenBounce(closedAt: now - 0.05, now: now))
         XCTAssertFalse(MenuBarController.isReopenBounce(closedAt: now - 1, now: now))
     }
+
+    /// Bug of 2026-11-24: a popover left open on another Space (full-screen apps) took each click as « close »,
+    /// and the next as a bounce. The icon did nothing until the main window was opened.
+    func testClickOnIconOpensWhenThePanelIsOpenWhereNobodySeesIt() {
+        let now: TimeInterval = 5_000
+        XCTAssertEqual(MenuBarController.panelClick(shown: true, seen: true, closedAt: nil, now: now), .close)
+        XCTAssertEqual(MenuBarController.panelClick(shown: true, seen: false, closedAt: nil, now: now), .open)
+        XCTAssertEqual(MenuBarController.panelClick(shown: true, seen: false, closedAt: now - 0.05, now: now), .open)
+        XCTAssertEqual(MenuBarController.panelClick(shown: false, seen: false, closedAt: now - 0.05, now: now), .ignoreBounce)
+        XCTAssertEqual(MenuBarController.panelClick(shown: false, seen: false, closedAt: nil, now: now), .open)
+        XCTAssertEqual(MenuBarController.panelClick(shown: false, seen: false, closedAt: now - 1, now: now), .open)
+    }
 }
 #endif

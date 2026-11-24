@@ -22,6 +22,9 @@
             var isInsidePanel: (NSEvent) -> Bool = { _ in false }
             /// Brings Goalong forward so the panel takes the keyboard.
             var activate: () -> Void
+            /// True when the app in front shows a full-screen window. Activating Goalong there makes macOS hide
+            /// the menu bar of that Space (seen 2026-11-24: `hideBackstopMenuBar` 30-40 ms after Goalong comes forward).
+            var frontIsFullScreen: (NSRunningApplication?) -> Bool = { _ in false }
             /// The app that was frontmost before the panel opened; given back when Esc closes the panel.
             var frontmostOther: () -> NSRunningApplication?
 
@@ -30,6 +33,7 @@
                 addLocalMonitor: { NSEvent.addLocalMonitorForEvents(matching: $0, handler: $1) },
                 removeMonitor: { NSEvent.removeMonitor($0) },
                 activate: { NSApplication.shared.activate(ignoringOtherApps: true) },
+                frontIsFullScreen: { app in MainActor.assumeIsolated { MenuBarPanelDismissal.showsFullScreenWindow(app) } },
                 frontmostOther: {
                     let app = NSWorkspace.shared.frontmostApplication
                     return app?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app
@@ -93,7 +97,25 @@
                     return event
                 }
             }) { monitors.append(local) }
-            hooks.activate()
+            // In a full-screen Space, stay in the back: the menu bar stays visible. A click in the panel still
+            // activates Goalong (normal first click); outside clicks close the panel through the global monitor.
+            if !hooks.frontIsFullScreen(previousApp) { hooks.activate() }
+        }
+
+        /// Full-screen check of the front app's focused window (Accessibility, `AXFullScreen`); Goalong itself when
+        /// `app` is nil. Without Accessibility access the answer is false and Goalong activates as before.
+        static func showsFullScreenWindow(_ app: NSRunningApplication?) -> Bool {
+            guard let app else {
+                return NSApplication.shared.windows.contains { $0.isVisible && $0.isOnActiveSpace && $0.styleMask.contains(.fullScreen) }
+            }
+            let element = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(element, 0.1)
+            var window: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
+                  let window, CFGetTypeID(window) == AXUIElementGetTypeID() else { return false }
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(window as! AXUIElement, "AXFullScreen" as CFString, &value) == .success else { return false }
+            return (value as? Bool) ?? false
         }
 
         /// Esc: close and hand the keyboard back to the app the user was in.
