@@ -102,7 +102,7 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
         harness.show()
         pump(0.6)
         var report = ""
-        var stallTotals: [String: Double] = [:]
+        var stallMax: [String: Double] = [:]
         func frames(_ name: String, _ change: () -> Void) {
             var ticks: [(Double, CGFloat)] = []
             let start = ProcessInfo.processInfo.systemUptime
@@ -118,7 +118,7 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
             var prev = changeCost
             for t in ticks { gaps.append(t.0 - prev); prev = t.0 }
             let stalls = gaps.filter { $0 > 12 }
-            stallTotals[name] = stalls.reduce(0, +)
+            stallMax[name] = gaps.max() ?? 0
             report += "\(name): change() \(Int(changeCost)) ms; first tick \(Int(ticks.first?.0 ?? -1)) ms; stalls>12ms \(stalls.count) max \(Int(gaps.max() ?? 0)) ms; total stall \(Int(stalls.reduce(0, +))) ms\n"
             var line = ""
             var last: CGFloat = -1
@@ -144,6 +144,9 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
         pump(0.3)
         frames("libre", { withAnimation(LHTheme.settle) { model.focusKind = .free } })
         pump(0.3)
+        // The real hover builds the sounds before the click (prepareAmbianceSounds): measure the opening after it.
+        model.prepareAmbianceSounds()
+        pump(0.3)
         frames("open", { harness.toggleMusic(model) })
         pump(0.3)
         resizeCost("resize, sounds open")
@@ -157,9 +160,11 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
             for _ in 0..<12 { harness.toggleMusic(model); pump(0.4) }
         }
         print("PANEL_PROBE\n" + report)
-        // Before the fix (chevron symbol swapped inside the animation): 230 to 300 ms of stalls per opening or closing.
+        // One long stall is what the eye sees as a jump (the sounds built at click time: 40 ms; the chevron symbol
+        // swapped inside the animation: 230 to 300 ms in all). The total varies with the machine load, so only the
+        // longest gap between two steps is asserted.
         for name in ["open", "close", "open again", "close again"] {
-            XCTAssertLessThan(stallTotals[name] ?? .infinity, 100, "\(name): the main thread stalls during the sounds animation")
+            XCTAssertLessThan(stallMax[name] ?? .infinity, 30, "\(name): the main thread stalls during the sounds animation")
         }
         try? report.write(toFile: "/private/tmp/goalong-panel-motion/probe.txt", atomically: true, encoding: .utf8)
         harness.close()
@@ -287,6 +292,110 @@ final class MenuBarPanelResizeTraceTests: XCTestCase {
         // Before the fix (hosting view resized with the window): the header moved by up to 37 pt on opening.
         for (name, result) in worst { XCTAssertEqual(result.span, 0, "\(name): the header moves on screen") }
         try? report.write(toFile: out, atomically: true, encoding: .utf8)
+        harness.close()
+    }
+
+    /// Opt-in: what the eye sees at the bottom of the panel while its height changes. Per sample (one per
+    /// capture, about one per display frame): the window edge, the footer's last ink row in the content, and the
+    /// part of the footer the window edge cuts (`cut` > 0 = « Ouvrir Goalong » is clipped). One PNG per sample shows
+    /// exactly the visible part (the hosting view cropped to the window). No visible window, no focus.
+    /// `GOALONG_PANEL_CLIP=<dir> make check FILTER=MenuBarPanelResizeTraceTests`
+    @MainActor func testProbeFooterClip() throws {
+        guard let path = ProcessInfo.processInfo.environment["GOALONG_PANEL_CLIP"] else { throw XCTSkip("opt-in") }
+        let dir = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory); app.finishLaunching()
+        let suite = "menubar-clip-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let root = URL(fileURLWithPath: "/private/tmp/" + suite)
+        let model = MenuBarPanelModel(
+            state: CaptureState(isGloballyPaused: { false }), modules: GoalongModuleStore(defaults: defaults),
+            concentration: { nil }, ambianceModule: AmbianceModule(settings: AmbianceSettings(defaults: defaults), supportDirectory: { root }),
+            blocking: { nil }, onTogglePause: {}, onOpenSection: { _ in }, onOpenDay: {}, onShowClassicMenu: {})
+        var sources: [AmbianceSource] = []
+        for (kind, count) in [(AmbianceSource.Kind.focus, 9), (.relax, 6), (.texture, 8)] {
+            for i in 0..<count { sources.append(AmbianceSource(id: "\(kind)\(i)", title: "Sonar \(i)", kind: kind, isAvailable: i % 4 != 3)) }
+        }
+        model.tracking = .active; model.trackingDetail = "Enregistrement local actif"
+        model.focusAvailable = true; model.focusKind = .free; model.focusMinutes = 25; model.focusRun = nil
+        model.concentrationEnabled = true
+        model.ambianceEnabled = true; model.ambianceSources = sources; model.ambianceCurrent = sources[0]
+        let harness = PanelPopoverHarness(model: model)
+        harness.show()
+        pump(0.6)
+        let view = harness.host.view
+        var report = ""
+        var worstCut: [String: Double] = [:]
+
+        func lastInkBottomPoints(_ rep: NSBitmapImageRep, scale: Double) -> Double {
+            guard let data = rep.bitmapData else { return -1 }
+            let w = rep.pixelsWide, h = rep.pixelsHigh, bpr = rep.bytesPerRow, bpp = rep.bitsPerPixel / 8
+            func px(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+                let o = y * bpr + x * bpp; return (Int(data[o]), Int(data[o + 1]), Int(data[o + 2]))
+            }
+            for y in stride(from: h - 1, through: 0, by: -1) {
+                let bg = px(2, y)
+                var n = 0, x = 8
+                while x < w - 8 {
+                    let c = px(x, y)
+                    n += abs(c.0 - bg.0) + abs(c.1 - bg.1) + abs(c.2 - bg.2)
+                    x += 2
+                }
+                if n > 200 { return Double(y + 1) / scale }
+            }
+            return -1
+        }
+
+        func run(_ name: String, _ change: () -> Void) throws {
+            guard let window = view.window else { return }
+            let scale = Double(window.backingScaleFactor)
+            let frames = dir.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+            // A strip on the left (the footer text and its button), tall enough for every footer position.
+            let region = NSRect(x: 0, y: 330, width: 120, height: 300)
+            let clip = harness.presenter.popover.contentViewController?.view
+            let start = ProcessInfo.processInfo.systemUptime
+            change()
+            var index = 0
+            var cuts: [Double] = []
+            report += "\(name)\n  t_ms  window_h  footer_bottom  cut\n"
+            while ProcessInfo.processInfo.systemUptime - start < 0.5 {
+                pump(0.001)
+                let edge = Double(clip?.bounds.height ?? window.frame.height)
+                let t = (ProcessInfo.processInfo.systemUptime - start) * 1000
+                guard let rep = view.bitmapImageRepForCachingDisplay(in: region) else { continue }
+                view.cacheDisplay(in: region, to: rep)
+                let captureMs = (ProcessInfo.processInfo.systemUptime - start) * 1000 - t
+                // The bitmap is top row first: the strip starts 330 pt below the top of the content.
+                let bottom = lastInkBottomPoints(rep, scale: scale) + 330
+                let cut = max(0, bottom - edge)
+                cuts.append(cut)
+                report += String(format: "  %5.0f  %7.1f  %9.1f  %5.1f  (capture %.0f ms)\n", t, edge, bottom, cut, captureMs)
+                if let cg = rep.cgImage {
+                    let rows = Int(((edge - 330) * scale).rounded())
+                    if let cropped = cg.cropping(to: CGRect(x: 0, y: 0, width: cg.width, height: min(rows, cg.height))) {
+                        let png = NSBitmapImageRep(cgImage: cropped).representation(using: .png, properties: [:])
+                        try png?.write(to: frames.appendingPathComponent(String(format: "f%03d_%04.0fms_h%.0f_cut%.0f.png", index, t, edge, cut)))
+                    }
+                }
+                index += 1
+            }
+            worstCut[name] = cuts.max() ?? 0
+            // Frames over the strip: the window edge never goes above the strip start in these transitions.
+            report += String(format: "  worst cut %.1f pt over %d frames (frames with cut > 0.5: %d)\n", cuts.max() ?? 0, cuts.count, cuts.filter { $0 > 0.5 }.count)
+        }
+        let toPomodoro = { withAnimation(LHTheme.settle) { model.focusKind = .pomodoro } }
+        let toFree = { withAnimation(LHTheme.settle) { model.focusKind = .free } }
+        try run("1-libre-pomodoro", toPomodoro); pump(0.5)
+        try run("2-pomodoro-libre", toFree); pump(0.5)
+        try run("3-music-open", { harness.toggleMusic(model) }); pump(0.5)
+        try run("4-music-close", { harness.toggleMusic(model) }); pump(0.5)
+        print("PANEL_CLIP\n" + report)
+        try report.write(to: dir.appendingPathComponent("clip.txt"), atomically: true, encoding: .utf8)
+        // The footer text must never be cut by the window edge.
+        for (name, cut) in worstCut { XCTAssertLessThan(cut, 0.5, "\(name): the window edge cuts the footer") }
         harness.close()
     }
 

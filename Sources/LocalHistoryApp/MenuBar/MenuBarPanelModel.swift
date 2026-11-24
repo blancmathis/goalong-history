@@ -221,6 +221,15 @@ import LocalHistoryCore
     /// Opens or closes the sounds. Opening first builds them hidden, with no animation; the reveal starts on the
     /// next turn of the main loop, once that long first frame is drawn. Otherwise the window and the rows start
     /// their 240 ms curve during it and show it already 40 % done: the first jerk of the opening.
+    /// Builds the closed sounds before the click (the pointer is over the Ambiance row): the build and the first
+    /// layout of the grid stalled the main thread for 40 ms or more at the start of the opening, so the window
+    /// jumped and the content was cut. Built ahead, the opening starts at once, like the closing.
+    func prepareAmbianceSounds() {
+        guard ambianceEnabled, !ambianceSoundsBuilt else { return }
+        var transaction = Transaction(); transaction.disablesAnimations = true
+        withTransaction(transaction) { ambianceSoundsBuilt = true }
+    }
+
     func toggleAmbianceExpanded(animated: Bool) {
         guard animated else {
             ambianceSoundsBuilt = true

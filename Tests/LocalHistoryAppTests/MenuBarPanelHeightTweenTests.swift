@@ -46,14 +46,16 @@ final class MenuBarPanelHeightTweenTests: XCTestCase {
         }
         XCTAssertEqual(last, 430)
         XCTAssertFalse(tween.isFinished(at: 10.2))
-        XCTAssertTrue(tween.isFinished(at: 10.25))
+        XCTAssertTrue(tween.isFinished(at: 10.26))
     }
 
-    func testGrowthLeadsByOneFrameShrinkStartsOnTime() {
+    func testGrowthLeadsByOneFrameShrinkTrailsByOneFrame() {
         let grow = Tween(from: 400, to: 470, now: 5)
         XCTAssertGreaterThan(grow.height(at: 5), 400)
         let shrink = Tween(from: 470, to: 400, now: 5)
         XCTAssertEqual(shrink.height(at: 5), 470)
+        XCTAssertEqual(shrink.height(at: 5 + Tween.shrinkLag), 470)
+        XCTAssertLessThan(shrink.height(at: 5 + Tween.shrinkLag + 0.01), 470)
     }
 
     func testHeightsLandOnHalfPoints() {

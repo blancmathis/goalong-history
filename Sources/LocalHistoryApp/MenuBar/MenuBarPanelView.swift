@@ -634,6 +634,7 @@
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .animation(reduceMotion ? nil : LHTheme.settle, value: expanded)
+                .onHover { if $0 { model.prepareAmbianceSounds() } }
                 .onAppearWhenShown { if let current = model.ambianceCurrent { tab = tabFor(current.kind) } }
             }
         }

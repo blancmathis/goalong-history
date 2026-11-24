@@ -1,5 +1,6 @@
 #if os(macOS)
     import AppKit
+    import QuartzCore
     import SwiftUI
 
     /// The menu bar panel's popover and its hosted content, and how the popover follows the content's height.
@@ -16,14 +17,19 @@
     /// the step (header and player shook by up to 24 pt on each opening, 83 pt for one jump of 166 pt).
     /// So the SwiftUI view is as tall as the screen, pinned to the top of a clipping container the size of the
     /// window (`PanelClipController`). The window edge only uncovers; nothing inside moves with it.
-    final class MenuBarPanelPresenter {
+    final class MenuBarPanelPresenter: NSObject {
         let popover = NSPopover()
         /// Test probe: every height the content reports.
         @MainActor var heightObserver: ((CGFloat) -> Void)?
         @MainActor private(set) var host: NSHostingController<MenuBarPanelView>?
         @MainActor private var clip: PanelClipController?
         @MainActor private var tween: PanelHeightTween?
+        /// Steps the tween on the display's own frame (macOS 14+), the clock the SwiftUI content renders on:
+        /// a free-running Timer lands at any phase of the frame, so the window edge could reach the screen a frame
+        /// before the rows it must not cut. The Timer only stands in where there is no display link, or when it is silent.
+        @MainActor private var displayLink: AnyObject?
         @MainActor private var timer: Timer?
+        @MainActor private var lastLinkTick: TimeInterval = 0
         /// The height the window has now (it moves while a tween runs).
         @MainActor private(set) var shownHeight: CGFloat = 0
 
@@ -52,12 +58,33 @@
                 return
             }
             tween = PanelHeightTween(from: shownHeight, to: target, now: ProcessInfo.processInfo.systemUptime)
+            startStepping()
+            step()
+        }
+
+        @MainActor private func startStepping() {
+            if displayLink == nil, #available(macOS 14, *), let view = popover.contentViewController?.view, view.window != nil {
+                let link = view.displayLink(target: self, selector: #selector(displayLinkFired))
+                link.add(to: .main, forMode: .common)
+                lastLinkTick = ProcessInfo.processInfo.systemUptime
+                displayLink = link
+            }
             guard timer == nil else { return }
-            let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.step() }
+            // With a display link this Timer is only a watchdog (it steps when the link has been silent for 50 ms).
+            let interval = displayLink == nil ? 1.0 / 120.0 : 1.0 / 30.0
+            let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    if self.displayLink != nil, ProcessInfo.processInfo.systemUptime - self.lastLinkTick < 0.05 { return }
+                    self.step()
+                }
             }
             RunLoop.main.add(timer, forMode: .common)
             self.timer = timer
+        }
+
+        @objc @MainActor private func displayLinkFired() {
+            lastLinkTick = ProcessInfo.processInfo.systemUptime
             step()
         }
 
@@ -82,6 +109,8 @@
         /// Stops following (panel closed, or the size set at once). The window keeps its last size.
         @MainActor func cancelTween() {
             timer?.invalidate(); timer = nil
+            if #available(macOS 14, *), let link = displayLink as? CADisplayLink { link.invalidate() }
+            displayLink = nil
             tween = nil
         }
 
@@ -146,14 +175,18 @@
         let duration: TimeInterval
 
         /// Growing starts one frame in: the edge must not trail the rows (it would cut them).
-        /// Shrinking starts on time: the edge trails the rows by the start latency, which cuts nothing.
+        /// Shrinking starts one frame late: the edge must not lead the rows. The window and the content reach the
+        /// screen on different paths (a window frame is applied at once, a SwiftUI frame one commit later), and the
+        /// curve is steepest at the start (about 10 pt in one frame): an edge ahead of the rows cut « Ouvrir Goalong ».
+        /// Trailing by a frame leaves a few points of empty page under the footer for a moment, which nobody sees.
         static let growthLead: TimeInterval = 1.0 / 60.0
+        static let shrinkLag: TimeInterval = 1.0 / 60.0
 
         init(from: CGFloat, to target: CGFloat, now: TimeInterval, duration: TimeInterval = LHTheme.settleDuration) {
             self.from = from
             self.target = target
             self.duration = duration
-            self.start = target > from ? now - Self.growthLead : now
+            self.start = target > from ? now - Self.growthLead : now + Self.shrinkLag
         }
 
         func progress(at time: TimeInterval) -> Double {
