@@ -203,24 +203,40 @@ public enum GoalongFocusCLI {
             guard let values = raw as? [[String: Any]], values.count <= maximum,
                   values.allSatisfy({ Set($0.keys).isSubset(of: keys) }) else { throw GoalongFocusError.invalidArgument }
         }
+        func bounded(_ object: [String: Any], _ key: String, _ range: ClosedRange<Int>, required: Bool = false) throws {
+            guard let raw = object[key], !(raw is NSNull) else {
+                if required { throw GoalongFocusError.invalidArgument }
+                return
+            }
+            guard let value = raw as? Int, range.contains(value) else { throw GoalongFocusError.invalidArgument }
+        }
         try rows(list["sites"], keys: ["pattern"], maximum: 2000)
         try rows(list["exceptions"], keys: ["pattern"], maximum: 2000)
         try rows(list["apps"], keys: ["bundleIdentifier", "name"], maximum: 500)
         if let raw = list["program"] {
             guard let program = raw as? [String: Any], Set(program.keys).isSubset(of: ["ranges", "lockedUntil"]) else { throw GoalongFocusError.invalidArgument }
-            try rows(program["ranges"], keys: ["id", "weekdays", "startMinute", "endMinute", "lock", "pause"], maximum: 1000)
+            try rows(program["ranges"], keys: ["id", "weekdays", "startMinute", "endMinute", "lock", "pause"], maximum: 128)
             if let ranges = program["ranges"] as? [[String: Any]] {
                 for range in ranges {
-                    guard (range["id"] as? String).flatMap(UUID.init(uuidString:)) != nil else { throw GoalongFocusError.invalidArgument }
+                    guard (range["id"] as? String).flatMap(UUID.init(uuidString:)) != nil,
+                          let days = range["weekdays"] as? [Int], !days.isEmpty, days.count <= 7,
+                          Set(days).count == days.count, days.allSatisfy({ (1...7).contains($0) }) else { throw GoalongFocusError.invalidArgument }
+                    try bounded(range, "startMinute", 0...1440, required: true)
+                    try bounded(range, "endMinute", 0...1440, required: true)
                     if let rawPause = range["pause"], !(rawPause is NSNull) {
                         guard let pause = rawPause as? [String: Any],
                               Set(pause.keys).isSubset(of: ["id", "budgetMinutes", "period", "maxPauseMinutes", "maxPauses", "gate", "extraPerPeriod"]),
                               (pause["id"] as? String).flatMap(UUID.init(uuidString:)) != nil else { throw GoalongFocusError.invalidArgument }
+                        try bounded(pause, "budgetMinutes", 1...1440)
+                        try bounded(pause, "maxPauseMinutes", 1...1440)
+                        try bounded(pause, "maxPauses", 1...1440)
+                        try bounded(pause, "extraPerPeriod", 0...10)
                         if let rawGate = pause["gate"] {
                             guard let gate = rawGate as? [String: Any], gate.count == 1,
                                   Set(gate.keys).isSubset(of: ["none", "wait", "typing", "password"]),
                                   let value = gate.values.first as? [String: Any],
                                   Set(value.keys).isSubset(of: gate["wait"] == nil ? [] : ["minutes"]) else { throw GoalongFocusError.invalidArgument }
+                            if gate["wait"] != nil { try bounded(value, "minutes", 1...1440, required: true) }
                         }
                     }
                 }

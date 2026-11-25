@@ -49,7 +49,7 @@ final class ConcentrationUiCopyTests: XCTestCase {
     }
 
     @MainActor func testActivatingTheGuideDoesNotInventAProgramOrEnableACoach() throws {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("goalong-guide-ui-" + UUID().uuidString)
+        let directory = URL(fileURLWithPath: "/private/tmp/goalong-guide-ui-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let controller = try ConcentrationController(store: FocusStore(directory: directory), runsTimers: false)
         XCTAssertFalse(controller.settings.dayGuideSettings.enabled)

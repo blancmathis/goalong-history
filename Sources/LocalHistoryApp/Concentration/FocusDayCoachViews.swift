@@ -30,7 +30,7 @@ import SwiftUI
             if let error = runtime.error { GoalongNote(error, tone: .warning, onDismiss: runtime.clearError) }
         }
         .onChange(of: controller.settings.coach) { _ in runtime.invalidatePreview(); runtime.refreshUsage(settings: settings) }
-        .onAppear { runtime.refreshUsage(settings: settings) }
+        .onAppearWhenShown { runtime.refreshUsage(settings: settings) }
     }
     private var chatGPTChoices: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -171,7 +171,7 @@ import SwiftUI
                 .accessibilityIdentifier("focus-coach-card")
             }
         }
-        .onAppear { runtime.refreshUsage(settings: settings) }
+        .onAppearWhenShown { runtime.refreshUsage(settings: settings) }
         .onChange(of: note) { _ in runtime.discardPreview() }
         .onChange(of: controller.plan.effectiveRevision) { _ in runtime.discardPreview() }
         .onChange(of: controller.plan.day) { _ in runtime.discardPreview(); runtime.refreshUsage(settings: settings) }

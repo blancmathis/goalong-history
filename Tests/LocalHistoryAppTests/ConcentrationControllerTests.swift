@@ -221,6 +221,8 @@ final class ConcentrationControllerTests: XCTestCase {
     }
     @MainActor func testPromptOneReminderAndStatusChangesOnly() throws {
         let s = store(); var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        var settings = FocusSettings(); settings.morningPrompt = true
+        try s.saveSettings(settings)
         var now = calendar.date(from: .init(year: 2026, month: 10, day: 5, hour: 7))!
         let c = try ConcentrationController(store: s, clock: { now }, calendar: calendar)
         var changes = 0; c.onStatusChange = { _ in changes += 1 }
