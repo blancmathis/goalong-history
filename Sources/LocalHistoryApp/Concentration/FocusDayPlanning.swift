@@ -139,6 +139,8 @@ struct FocusAgenda: Codable, Equatable {
     var startMinute = 480
     var endMinute = 1320
     var bufferMinutes = 10
+    /// Daily prompt budget; a small default, adjustable for a fully guided routine.
+    var reminderLimit = 8
     var guided = false
     var autoAdjust = true
     var slots: [FocusAgendaSlot] = []
@@ -146,7 +148,7 @@ struct FocusAgenda: Codable, Equatable {
     var valid: Bool {
         TimeZone(identifier: timeZoneID) != nil
             && (0..<1440).contains(startMinute) && (1...1440).contains(endMinute) && startMinute < endMinute
-            && (0...60).contains(bufferMinutes)
+            && (0...60).contains(bufferMinutes) && (1...32).contains(reminderLimit)
             && slots.count <= Self.maximumSlots && Set(slots.map(\.id)).count == slots.count
             && slots.allSatisfy(\.valid)
             && slots.filter { $0.state == .active }.count <= 1
@@ -161,11 +163,12 @@ struct FocusAgenda: Codable, Equatable {
                 && FocusDayPlanner.date(day: day, minute: slot.endMinute, timeZoneID: timeZoneID) != nil
         }
     }
-    enum CodingKeys: String, CodingKey { case timeZoneID, startMinute, endMinute, bufferMinutes, guided, autoAdjust, slots }
+    enum CodingKeys: String, CodingKey { case timeZoneID, startMinute, endMinute, bufferMinutes, reminderLimit, guided, autoAdjust, slots }
     init(timeZoneID: String, startMinute: Int = 480, endMinute: Int = 1320,
-         bufferMinutes: Int = 10, guided: Bool = false, autoAdjust: Bool = true, slots: [FocusAgendaSlot] = []) {
+         bufferMinutes: Int = 10, reminderLimit: Int = 8, guided: Bool = false, autoAdjust: Bool = true, slots: [FocusAgendaSlot] = []) {
         self.timeZoneID = timeZoneID; self.startMinute = startMinute; self.endMinute = endMinute
-        self.bufferMinutes = bufferMinutes; self.guided = guided; self.autoAdjust = autoAdjust; self.slots = slots
+        self.bufferMinutes = bufferMinutes; self.reminderLimit = reminderLimit
+        self.guided = guided; self.autoAdjust = autoAdjust; self.slots = slots
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -173,6 +176,7 @@ struct FocusAgenda: Codable, Equatable {
         startMinute = try c.decodeIfPresent(Int.self, forKey: .startMinute) ?? 480
         endMinute = try c.decodeIfPresent(Int.self, forKey: .endMinute) ?? 1320
         bufferMinutes = try c.decodeIfPresent(Int.self, forKey: .bufferMinutes) ?? 10
+        reminderLimit = try c.decodeIfPresent(Int.self, forKey: .reminderLimit) ?? 8
         guided = try c.decodeIfPresent(Bool.self, forKey: .guided) ?? false
         autoAdjust = try c.decodeIfPresent(Bool.self, forKey: .autoAdjust) ?? true
         slots = try c.decodeIfPresent([FocusAgendaSlot].self, forKey: .slots) ?? []

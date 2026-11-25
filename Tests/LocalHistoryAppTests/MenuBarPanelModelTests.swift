@@ -234,7 +234,7 @@ final class MenuBarPanelModelTests: XCTestCase {
         let earlier = FocusPlanItem(title: "Écrire la documentation", project: "A", estimateMinutes: 25)
         var chosen = FocusPlanItem(title: "Enregistrer la vidéo", project: "B", estimateMinutes: 25)
         chosen.nextAction = "Enregistrer l’introduction"
-        let minute = FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC")
+        let minute = try XCTUnwrap(FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC"))
         let slot = FocusAgendaSlot(itemID: chosen.id, title: chosen.title, startMinute: minute, endMinute: minute + 25)
         let waiting = FocusAgentProcess(title: "Export", status: .waitingForYou, question: "Quel format ?")
         let answered = FocusAgentProcess(title: "Tests", status: .waitingForYou, question: "Quelle version ?", answer: "La dernière")
@@ -262,7 +262,7 @@ final class MenuBarPanelModelTests: XCTestCase {
         let f = fixture(); try f.startFocusController()
         let controller = try XCTUnwrap(f.focus)
         let item = FocusPlanItem(title: "Relire le projet", project: nil, estimateMinutes: 25)
-        let minute = FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC")
+        let minute = try XCTUnwrap(FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC"))
         let meal = FocusAgendaSlot(title: "Déjeuner", startMinute: minute, endMinute: minute + 30, fixed: true)
         var plan = controller.plan
         plan.items = [item]

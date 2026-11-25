@@ -48,7 +48,7 @@ python3 /path/to/goalong-day/scripts/goalong_plan.py process \
   --actor "T3 worker" > /private/task-directory/goalong-operation.json
 ```
 
-Use a task-owned private path. A later transition uses the same process ID and a new operation. Optional flags: `--question`, `--answer`, `--context-url`, `--project`, `--clear-question`, `--clear-answer`. Clear obsolete questions explicitly. `process` preserves the other fields of that process and leaves unrelated processes untouched. To record an answer use `--status waitingForYou`; only the worker later reports `running`.
+Use a task-owned private path. A later transition uses the same process ID and a new operation. Optional flags: `--question`, `--answer`, `--context-url`, `--project`, `--clear-question`, `--clear-answer`. For every new or changed question, pass `--clear-answer` together with `--question` and `--status waitingForYou`; a previous answer must never appear to answer a different question. Clear obsolete questions explicitly. `process` preserves the other fields of that process and leaves unrelated processes untouched. To record an answer use `--status waitingForYou`; only the worker later reports `running`.
 
 Apply the saved operation once:
 
@@ -61,7 +61,7 @@ python3 /path/to/goalong-day/scripts/goalong_plan.py apply \
 
 Several projects and agents may run together. The human agenda describes the user's next action: launch a group, edit docs, create a video, answer questions, review results, or ordinary solo work. One human attention lane does not make background processes sequential. Do not impose parallel work on a user who prefers one task.
 
-Group nonurgent questions into coordination windows. Preserve creative work unless a genuinely blocking decision or the user changes the priority. Respect fixed anchors, buffers and the chosen end of day. Work that no longer fits remains visibly unscheduled; do not stretch the day or mark it complete.
+Group nonurgent questions into coordination windows. Preserve creative work unless a genuinely blocking decision or the user changes the priority. Respect fixed anchors, buffers and the chosen end of day. Guided reminders fire once per slot; `reminderLimit` defaults to 8 per day and is adjustable from 1 to 32. Ensure the user's chosen limit covers the intended anchors, especially the evening check-in, without inventing extra reminders. Work that no longer fits remains visibly unscheduled; do not stretch the day or mark it complete.
 
 Human items support `nextAction`, `doneWhen`, `actionKind` (`work`, `launch`, `coordination`, `review`, `routine`), `contextURL`, `processIDs`. Bounds: 10 human items, 64 processes, 64 slots. Use `plan patch`; upserts are complete objects, so merge changed fields into the fresh full object. `agenda` replaces the full agenda: preserve unrelated slots. Do not use legacy `plan set` on a shared live plan.
 

@@ -149,7 +149,7 @@ final class ConcentrationRenderingTests: XCTestCase {
         document.doneWhen = "Un exemple utilisable est relu et enregistré."
         var review = FocusPlanItem(title: "Relire la vidéo de présentation", project: "Goalong", estimateMinutes: 20)
         review.actionKind = .review
-        let minute = FocusDayPlanner.localMinute(at: now, timeZoneID: TimeZone.current.identifier)
+        let minute = try XCTUnwrap(FocusDayPlanner.localMinute(at: now, timeZoneID: TimeZone.current.identifier))
         var plan = controller.plan
         plan.items = [launch, document, review]
         plan.agenda = FocusAgenda(timeZoneID: TimeZone.current.identifier, guided: true, autoAdjust: false, slots: [

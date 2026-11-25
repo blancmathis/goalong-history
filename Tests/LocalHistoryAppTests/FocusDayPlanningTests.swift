@@ -45,6 +45,19 @@ final class FocusDayPlanningTests: XCTestCase {
         XCTAssertEqual(stored, p)
     }
 
+    func testReminderLimitKeepsLegacyDefaultAndAllowsABoundedFullDay() throws {
+        let legacy = try FocusJSON.decode(FocusAgenda.self, from: Data(#"{"timeZoneID":"Europe/Paris"}"#.utf8))
+        XCTAssertEqual(legacy.reminderLimit, 8)
+        var agenda = FocusAgenda(timeZoneID: zone, reminderLimit: 32)
+        XCTAssertTrue(agenda.validTemplate)
+        XCTAssertEqual(try FocusJSON.decode(FocusAgenda.self, from: FocusJSON.encode(agenda)).reminderLimit, 32)
+        agenda.reminderLimit = 1; XCTAssertTrue(agenda.valid)
+        for limit in [0, 33] {
+            agenda.reminderLimit = limit
+            XCTAssertFalse(agenda.valid)
+        }
+    }
+
     func testParallelProcessesDoNotConsumeHumanTime() throws {
         let baseline = plan()
         var parallel = baseline

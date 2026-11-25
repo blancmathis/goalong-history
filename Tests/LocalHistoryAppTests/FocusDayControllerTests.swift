@@ -49,6 +49,11 @@ final class FocusDayControllerTests: XCTestCase {
         XCTAssertEqual(c.plan.processes?.first?.answer, "Une vidéo courte")
         XCTAssertTrue(FocusDayPlanner.waitingProcesses(plan: c.plan).isEmpty)
         XCTAssertEqual(c.status.planRevision, c.plan.effectiveRevision)
+        var nextQuestion = try XCTUnwrap(c.plan.processes?.first)
+        nextQuestion.question = "Quelle durée ?"
+        _ = try c.patchPlan(day: day, expectedRevision: c.plan.effectiveRevision, requestID: "new-question", body: json(["processes": [object(nextQuestion)]]))
+        XCTAssertNil(c.plan.processes?.first?.answer)
+        XCTAssertEqual(FocusDayPlanner.waitingProcesses(plan: c.plan).count, 1)
     }
     @MainActor func testMovingATaskKeepsBothDaysValidAndVersionsBoth() throws {
         let s = try store(), instant = now

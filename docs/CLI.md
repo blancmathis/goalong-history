@@ -404,9 +404,9 @@ A process state is an explicit report, not passive observation of T3. Recording 
 waitingForYou unchanged until the worker explicitly acknowledges running. Ready for review is
 not verified done. Avoid duplicate records when an orchestrator already reports a worker.
 
-An agenda has timeZoneID, startMinute, endMinute, bufferMinutes (0…60), guided, autoAdjust and
+An agenda has timeZoneID, startMinute, endMinute, bufferMinutes (0…60), guided, autoAdjust, reminderLimit and
 slots (at most 64). Times are civil minutes in the named zone. Defaults are 08:00–22:00, ten-minute
-buffers, guided false and autoAdjust true. A slot has stable id, optional itemID, title,
+buffers, guided false, autoAdjust true and reminderLimit 8 (adjustable 1…32). A slot has stable id, optional itemID, title,
 startMinute, endMinute, fixed (default false), state (planned/active/done/skipped/unscheduled),
 and optional earliestMinute/latestEndMinute. Duration must be positive; minute bounds are 0…1440.
 Routine-only fixed anchors can extend past the work agenda's end.
@@ -414,7 +414,7 @@ Routine-only fixed anchors can extend past the work agenda's end.
 Reflow keeps fixed anchors and handled work, adds the requested buffers and respects time bounds.
 Items that cannot fit remain explicitly unscheduled. It does not move fixed appointments, extend
 the chosen workday, mark work done or infer a process resumed. Guided reminders are native,
-opt-in, at most eight spontaneous reminders per day and once per slot, with a 15-minute snooze;
+opt-in, once per slot, with a daily reminderLimit (default 8, configurable 1…32) and a 15-minute snooze;
 there is no wake-up catch-up burst or additional AI polling daemon.
 
 #### Recurring routine

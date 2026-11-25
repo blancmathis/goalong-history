@@ -840,6 +840,16 @@ extension ConcentrationController {
               FocusValidation.text(actor, maximum: 140, required: true),
               FocusValidation.text(reason, maximum: 500, required: true) else { throw FocusFailure.invalidArgument }
         var value = draft
+        if var processes = value.processes {
+            for i in processes.indices {
+                guard let previous = old.processes?.first(where: { $0.id == processes[i].id }),
+                      processes[i].status == .waitingForYou, processes[i].answer == previous.answer,
+                      processes[i].question != previous.question || previous.status != .waitingForYou else { continue }
+                // A full upsert often carries the previous answer. A new question must not be hidden by it.
+                processes[i].answer = nil
+            }
+            value.processes = processes
+        }
         value.revision = old.effectiveRevision + 1
         value.receipts = old.receipts
         if let receipt {
@@ -931,7 +941,7 @@ extension ConcentrationController {
             }) else { throw FocusFailure.invalidArgument }
         }
         if let raw = object["agenda"] {
-            guard let agenda = raw as? [String: Any], Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "slots"]) else { throw FocusFailure.invalidArgument }
+            guard let agenda = raw as? [String: Any], Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "reminderLimit", "slots"]) else { throw FocusFailure.invalidArgument }
             if let rawSlots = agenda["slots"] {
                 let keys: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute"]
                 guard let slots = rawSlots as? [[String: Any]], slots.allSatisfy({
@@ -1094,7 +1104,7 @@ extension ConcentrationController {
     }
     private func checkAgendaPrompt() {
         guard !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda, agenda.guided,
-              (promptState.agendaPromptCount ?? 0) < 8,
+              (promptState.agendaPromptCount ?? 0) < agenda.reminderLimit,
               (promptState.agendaSnoozedUntil ?? .distantPast) <= clock(),
               FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == plan.day,
               TimeZone(identifier: agenda.timeZoneID) == calendar.timeZone else { return }

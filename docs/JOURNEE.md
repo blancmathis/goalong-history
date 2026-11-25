@@ -24,7 +24,7 @@ Les réponses CLI exposent agendaDiagnostics : les conflits et identifiants des 
 
 Le réagencement garde les blocs fixes et les créneaux déjà traités. Il replace les blocs flexibles restants avec la marge choisie et leurs éventuelles bornes earliestMinute/latestEndMinute. Un bloc qui ne tient plus dans la journée reste visible avec state unscheduled. Un chevauchement d'ancrages doit être corrigé explicitement ; l'algorithme ne le résout pas en déplaçant silencieusement un rendez-vous fixe. Le réagencement ne décide ni qu'un travail est terminé ni qu'un agent a repris. Quand autoAdjust est actif, les interactions de début/fin, le report de quinze minutes et la reprise d'une journée tardive peuvent déclencher ce recalage ; reflow le demande explicitement.
 
-Le guidage est volontaire. Les rappels natifs sont bornés à huit notifications spontanées par jour et une par créneau, avec un report de quinze minutes. Il n'y a pas de rafale de rattrapage au réveil. Leur exécution dépend de l'app ; aucun second agent de surveillance n'est lancé.
+Le guidage est volontaire. Les rappels natifs apparaissent aux horaires choisis, une fois par créneau, avec un report de quinze minutes. Le plafond reminderLimit vaut huit par défaut et se règle de un à 32 par jour ; prévoir un budget couvrant les repères souhaités, y compris celui du soir. Il n'y a pas de rafale de rattrapage au réveil. Leur exécution dépend de l'app ; aucun second agent de surveillance n'est lancé.
 
 Les réponses non urgentes peuvent être regroupées dans des créneaux de coordination. Une question bloquante reste visible sans transformer tous les travaux de création en une suite d'interruptions. L'utilisateur garde le choix de changer la priorité.
 

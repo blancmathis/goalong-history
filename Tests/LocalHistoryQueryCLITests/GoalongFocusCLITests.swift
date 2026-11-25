@@ -82,6 +82,7 @@ final class GoalongFocusCLITests: XCTestCase {
         let accepted = [
             #"{"agenda":null}"#,
             #"{"agenda":{"timeZoneID":"Europe/Paris"}}"#,
+            #"{"agenda":{"timeZoneID":"Europe/Paris","reminderLimit":32}}"#,
             #"{"agenda":{"timeZoneID":"Europe/Paris","slots":[{"title":"Déjeuner","startMinute":720,"endMinute":780,"fixed":true}]}}"#,
         ]
         for source in accepted {

@@ -151,7 +151,7 @@ public enum GoalongFocusCLI {
               Set(object.keys) == ["agenda"], let rawAgenda = object["agenda"] else { throw GoalongFocusError.invalidArgument }
         if rawAgenda is NSNull { return }
         guard let agenda = rawAgenda as? [String: Any],
-              Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "slots"]),
+              Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "reminderLimit", "guided", "autoAdjust", "slots"]),
               agenda["timeZoneID"] is String else { throw GoalongFocusError.invalidArgument }
         if let rawSlots = agenda["slots"] {
             guard let slots = rawSlots as? [[String: Any]], slots.count <= 64 else { throw GoalongFocusError.invalidArgument }

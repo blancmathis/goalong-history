@@ -546,7 +546,9 @@ private struct FocusDayAgendaRow: View {
     init(controller: ConcentrationController, plan: FocusPlan) {
         self.controller = controller
         _plan = State(initialValue: plan)
-        _agenda = State(initialValue: plan.agenda ?? FocusAgenda(timeZoneID: TimeZone.current.identifier))
+        var localAgenda = plan.agenda ?? FocusAgenda(timeZoneID: TimeZone.current.identifier)
+        localAgenda.timeZoneID = TimeZone.current.identifier
+        _agenda = State(initialValue: localAgenda)
         _repeatAnchors = State(initialValue: controller.settings.agendaTemplate != nil)
     }
 
@@ -589,6 +591,7 @@ private struct FocusDayAgendaRow: View {
                         }
                     }
                     Toggle("Replacer les actions souples après un changement", isOn: $agenda.autoAdjust)
+                    Stepper("Rappels maximum par jour : \(agenda.reminderLimit)", value: $agenda.reminderLimit, in: 1...32)
                     VStack(alignment: .leading, spacing: 5) {
                         Toggle("Donner à Jev l’action en cours", isOn: planContextBinding)
                         Text("Si vous avez déjà consenti au service Jev, seuls le titre et la première action de la séance choisie lui seront transmis. Les questions des agents et la documentation restent exclues.")
@@ -626,6 +629,7 @@ private struct FocusDayAgendaRow: View {
                                            fixed: item == nil))
     }
     private func save() {
+        agenda.timeZoneID = TimeZone.current.identifier
         guard agenda.valid(forDay: plan.day, items: plan.items) else {
             error = "Vérifiez les titres, les horaires et la plage de travail. L’heure de fin doit suivre l’heure de début."
             return
