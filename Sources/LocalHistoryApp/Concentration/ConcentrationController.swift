@@ -1103,17 +1103,18 @@ extension ConcentrationController {
         return [item.title, item.nextAction].compactMap { $0 }.joined(separator: " — ")
     }
     private func checkAgendaPrompt() {
+        let promptTime = clock() // wall: civil agenda reminder only; never a blocking or stake decision.
         guard !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda, agenda.guided,
               (promptState.agendaPromptCount ?? 0) < agenda.reminderLimit,
-              (promptState.agendaSnoozedUntil ?? .distantPast) <= clock(),
-              FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == plan.day,
+              (promptState.agendaSnoozedUntil ?? .distantPast) <= promptTime,
+              FocusDayPlanner.dayKey(at: promptTime, timeZoneID: agenda.timeZoneID) == plan.day,
               TimeZone(identifier: agenda.timeZoneID) == calendar.timeZone else { return }
         // No replay of the day's missed reminders on wake, and no mid-session work interruption.
         let shown = Set(promptState.agendaShownIDs ?? [])
         let candidates = agenda.slots.filter { slot in
             guard let start = FocusDayPlanner.date(day: plan.day, minute: slot.startMinute, timeZoneID: agenda.timeZoneID),
                   let end = FocusDayPlanner.date(day: plan.day, minute: slot.endMinute, timeZoneID: agenda.timeZoneID) else { return false }
-            return slot.state == .planned && start <= clock() && clock() < end
+            return slot.state == .planned && start <= promptTime && promptTime < end
                 && !shown.contains(slot.id) && (currentSession == nil || slot.fixed)
                 && (FocusDayPlanner.task(for: slot, in: plan).map { $0.status == .open } ?? true)
         }.sorted { $0.startMinute < $1.startMinute }
@@ -1124,7 +1125,7 @@ extension ConcentrationController {
         do { try saving { try store.savePrompts(prompts) } } catch { return }
         promptState = prompts
         let action = FocusDayPlanner.task(for: slot, in: plan)?.nextAction
-        showPanel(.init(kind: .agenda, text: action ?? slot.title, expiresAt: clock().addingTimeInterval(45), slotID: slot.id))
+        showPanel(.init(kind: .agenda, text: action ?? slot.title, expiresAt: promptTime.addingTimeInterval(45), slotID: slot.id))
     }
     func snoozeAgendaPrompt() {
         guard let id = panel?.slotID else { return }

@@ -68,7 +68,7 @@ import AppleScreenTime
                         } else if controller.plan.items.isEmpty && controller.plan.agenda == nil {
                             sessionComposer(now: now)
                         } else {
-                            DisclosureGroup("Séance libre ou réglages du minuteur", isExpanded: $composerOpen) {
+                            GoalongDisclosureGroup("Séance libre ou réglages du minuteur", isExpanded: $composerOpen) {
                                 sessionComposer(now: now).padding(.top, 14)
                             }.font(.system(size: 13))
                         }

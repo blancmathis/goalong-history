@@ -218,7 +218,7 @@ struct FocusStore {
             if touched {
                 guard value.effectiveRevision < 1_000_000_000 else { skipped.append(day); continue }
                 value.revision = value.effectiveRevision + 1
-                value.changes = Array(((value.changes ?? []) + [.init(at: Date(), actor: "member", reason: "Nom du projet mis à jour", revision: value.effectiveRevision)]).suffix(64))
+                value.changes = Array(((value.changes ?? []) + [.init(at: Date(), actor: "member", reason: "Nom du projet mis à jour", revision: value.effectiveRevision)]).suffix(64)) // wall: audit timestamp for a project rename, never a block deadline or stake decision.
                 changed.append(value)
             }
         }

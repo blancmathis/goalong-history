@@ -167,7 +167,7 @@ import SwiftUI
                     }
                 }
                 if plan.items.contains(where: { $0.status != .open }) {
-                    DisclosureGroup("Actions terminées ou reportées", isExpanded: $completedOpen) {
+                    GoalongDisclosureGroup("Actions terminées ou reportées", isExpanded: $completedOpen) {
                         VStack(spacing: 6) {
                             ForEach(plan.items.filter { $0.status != .open }) { item in taskRow(item) }
                         }.padding(.top, 8)
@@ -486,7 +486,7 @@ private struct FocusDayAgendaRow: View {
                 TextField("Ex. Enregistrer une première prise de l’introduction", text: optional(\.nextAction))
                     .textFieldStyle(GoalongFieldStyle())
             }
-            DisclosureGroup("Précisions facultatives", isExpanded: $detailsOpen) {
+            GoalongDisclosureGroup("Précisions facultatives", isExpanded: $detailsOpen) {
                 VStack(alignment: .leading, spacing: 14) {
                     GoalongFormField(title: "Fini quand") {
                         TextField("Un résultat observable", text: optional(\.doneWhen)).textFieldStyle(GoalongFieldStyle())
@@ -581,7 +581,7 @@ private struct FocusDayAgendaRow: View {
                 Button("Ajouter un repère") { append(item: nil) }
                     .buttonStyle(LHSecondaryButtonStyle()).disabled(agenda.slots.count >= FocusAgenda.maximumSlots)
             }
-            DisclosureGroup("Ajustements et répétition", isExpanded: $optionsOpen) {
+            GoalongDisclosureGroup("Ajustements et répétition", isExpanded: $optionsOpen) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 18) {
                         GoalongFormField(title: "Début de la plage de travail") { FocusDayTimeField(minute: $agenda.startMinute) }
@@ -687,10 +687,9 @@ private struct FocusDayTimeField: View {
                 minute = value; invalid = false
             } else { invalid = true; minute = -1 }
         }))
-        .textFieldStyle(GoalongFieldStyle())
-        .font(.system(size: 13).monospacedDigit())
+        .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
         .foregroundStyle(invalid ? LHTheme.warning : LHTheme.text)
-        .onAppear { text = FocusDayUI.time(minute) }
+        .onAppearWhenShown { text = FocusDayUI.time(minute) }
         .onChange(of: minute) { value in
             if !invalid && FocusDayUI.minute(text) != value { text = FocusDayUI.time(value); invalid = false }
         }
