@@ -5,7 +5,7 @@ import XCTest
 @testable import LocalHistoryQueryCLI
 
 final class FocusDayRuntimeTests: XCTestCase {
-    @MainActor private func withRuntime(_ body: (ConcentrationRuntime) throws -> Void) throws {
+    @MainActor private func withRuntime(_ body: @MainActor (ConcentrationRuntime) throws -> Void) throws {
         let directory = URL(fileURLWithPath: "/private/tmp/goalong-day-runtime-" + UUID().uuidString)
         let suite = "goalong-day-runtime-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -84,7 +84,7 @@ final class FocusDayRuntimeTests: XCTestCase {
 
     @MainActor func testRoutineSetClearAndInvalidTemplatesCannotEnableCoachContext() throws {
         try withRuntime { runtime in
-            func set(_ source: String) throws -> Data {
+            @MainActor func set(_ source: String) throws -> Data {
                 try runtime.handle(GoalongFocusCLI.parse(command: "routine", arguments: ["set", "--file", "-"], readFile: { _ in Data(source.utf8) }))
             }
             let original = #"{"agenda":{"timeZoneID":"Europe/Paris","slots":[{"title":"Déjeuner","startMinute":720,"endMinute":780,"fixed":true}]}}"#
