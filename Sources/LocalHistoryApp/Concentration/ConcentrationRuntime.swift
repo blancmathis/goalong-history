@@ -229,6 +229,10 @@ import LocalHistoryQueryCLI
     }
 
     func handle(_ request: GoalongFocusRequest) throws -> Data {
+        if request.command.hasPrefix("block-list ") {
+            guard modules?.isEnabled(.blocking) == true, let blocking = blockingProvider() else { throw GoalongFocusError.moduleDisabled }
+            return try GoalongBlockingConfiguration.handle(request, controller: blocking)
+        }
         if request.command == "block-lists" || request.command == "friction" {
             guard modules?.isEnabled(.blocking) == true, let b = blockingProvider() else { throw GoalongFocusError.moduleDisabled }
             let validated = try request.validated()
@@ -252,6 +256,11 @@ import LocalHistoryQueryCLI
         do {
             switch request.command {
             case "focus status": return try FocusJSON.encode(controller.status)
+            case "guide show": return try guidePayload(controller)
+            case "guide usage": return try FocusJSON.encode(FocusDayCoachRuntime.shared.status(settings: controller.settings.coachSettings))
+            case "guide set":
+                try controller.configureDayGuide(body: request.body!, expectedRevision: Int(o["--if-revision"]!)!)
+                return try guidePayload(controller)
             case "session current": return try FocusJSON.encode(CurrentSession(session: controller.currentSession, phase: controller.phase.map { .init(kind: $0.kind.rawValue, cycle: $0.cycle, endsAt: $0.endsAt) }, facts: controller.sessionFacts))
             case "sessions":
                 let values = try controller.sessions(on: day).map { session -> [String: Any] in
@@ -283,6 +292,7 @@ import LocalHistoryQueryCLI
                 return try planPayload(controller.undoPlan(on: day, expectedRevision: Int(o["--if-revision"]!)!, requestID: o["--request-id"]!), controller: controller)
             case "routine show": return try routinePayload(controller.settings.agendaTemplate)
             case "routine set":
+                if let expected = o["--if-revision"], Int(expected) != controller.settings.effectiveGuideRevision { throw FocusFailure.conflict }
                 guard let object = try JSONSerialization.jsonObject(with: request.body!) as? [String: Any], let rawAgenda = object["agenda"] else { throw FocusFailure.invalidArgument }
                 let agenda: FocusAgenda?
                 if rawAgenda is NSNull { agenda = nil }
@@ -320,6 +330,16 @@ import LocalHistoryQueryCLI
     private func routinePayload(_ agenda: FocusAgenda?) throws -> Data {
         let value = try JSONSerialization.jsonObject(with: FocusJSON.encode(agenda), options: [.fragmentsAllowed])
         return try JSONSerialization.data(withJSONObject: ["agenda": value], options: [.sortedKeys])
+    }
+    private func guidePayload(_ controller: ConcentrationController) throws -> Data {
+        let settings = controller.settings
+        return try JSONSerialization.data(withJSONObject: [
+            "schema": 1, "revision": settings.effectiveGuideRevision,
+            "dayGuide": JSONSerialization.jsonObject(with: FocusJSON.encode(settings.dayGuideSettings)),
+            "coach": JSONSerialization.jsonObject(with: FocusJSON.encode(settings.coachSettings)),
+            "morningPrompt": settings.morningPrompt, "morningMinute": settings.morningMinute,
+            "eveningPrompt": settings.eveningPrompt, "eveningMinute": settings.eveningMinute,
+        ], options: [.sortedKeys])
     }
     private func reviewPayload(_ review: FocusReview, controller: ConcentrationController) throws -> Data {
         var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(review)) as! [String: Any]

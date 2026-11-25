@@ -687,7 +687,7 @@ public enum GoalongQueryCLI {
             }
             FileHandle.standardOutput.write(try statusPayload(rootDirectory: root))
 
-        case "focus", "session", "sessions", "plan", "routine", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise":
+        case "focus", "session", "sessions", "plan", "routine", "guide", "review", "limits", "block-lists", "block-list", "friction", "commitment", "commitments", "braise":
             let request = try GoalongFocusCLI.parse(command: command, arguments: arguments.values)
             if request.command == "focus watch" {
                 try GoalongFocusCLI.watch(root: root) { data in

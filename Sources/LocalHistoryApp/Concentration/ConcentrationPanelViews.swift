@@ -82,7 +82,7 @@ import SwiftUI
                 VStack(alignment: .leading, spacing: 10) {
                     Text(controller.plan.agenda?.slots.first(where: { $0.id == content.slotID })?.title ?? "Votre programme")
                         .font(.system(size: 14, weight: .semibold)).lineLimit(2)
-                    Text(content.text).foregroundStyle(LHTheme.secondaryText).lineLimit(3)
+                    Text(content.text).foregroundStyle(LHTheme.secondaryText).lineLimit(5)
                     HStack {
                         Button(controller.currentSession == nil ? "Commencer" : "Voir le programme") {
                             if controller.currentSession != nil { controller.promptNow() }
@@ -96,6 +96,10 @@ import SwiftUI
                         Button { controller.dismissPanel() } label: { Image(systemName: "xmark") }
                             .accessibilityLabel("Fermer le rappel")
                     }
+                    Button("Voir les consignes et le programme") { controller.promptNow() }
+                        .buttonStyle(.link).font(.system(size: 12))
+                    Text("Fermer ce rappel ne termine pas l’action.")
+                        .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
                 }
             }.accessibilityIdentifier("concentration-agenda-notice")
         case .commitment:

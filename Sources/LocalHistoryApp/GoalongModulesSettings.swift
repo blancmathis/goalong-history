@@ -36,6 +36,10 @@ import SwiftUI
                 GoalongNote(deleteMessage).accessibilityIdentifier("settings-concentration-delete-result")
             }
             GoalongNote("Un module désactivé ne tourne pas, n’installe rien et ne demande aucun accès.")
+            FocusDayGuideModuleSettings(runtime: concentration,
+                                        onEnableModule: { turn(.concentration, true) },
+                                        onOpen: { onOpen(.concentration) })
+                .padding(.top, 14)
         }
         .onChange(of: concentration.error) { if $0 != nil { deleteMessage = nil } }
         .alert("Supprimer les données des séances ?", isPresented: $confirmingDelete) {

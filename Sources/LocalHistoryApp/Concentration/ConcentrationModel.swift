@@ -150,9 +150,9 @@ struct FocusLimits: Codable, Equatable {
 struct FocusSettings: Codable, Equatable {
     var detectionEnabled = true
     var phaseSound = true
-    var morningPrompt = true
+    var morningPrompt = false
     var morningMinute = 360
-    var eveningPrompt = true
+    var eveningPrompt = false
     var eveningMinute = 1110
     var limits = FocusLimits()
     /// Optional for compatibility with settings saved before Engagements.
@@ -163,10 +163,19 @@ struct FocusSettings: Codable, Equatable {
     var agendaTemplate: FocusAgenda? = nil
     /// Consent to send only the explicitly selected personal action to the existing coach.
     var usePlanContext: Bool? = nil
+    /// Guidance is an explicit choice, independent of protected sessions and Blocking.
+    var dayGuide: FocusDayGuideSettings? = nil
+    var coach: FocusDayCoachSettings? = nil
+    /// A compare-and-swap token for agents configuring the guide. Old settings start at zero.
+    var guideRevision: Int? = nil
+    var dayGuideSettings: FocusDayGuideSettings { dayGuide ?? FocusDayGuideSettings() }
+    var coachSettings: FocusDayCoachSettings { coach ?? FocusDayCoachSettings() }
+    var effectiveGuideRevision: Int { guideRevision ?? 0 }
     var jokerSettings: FocusJokerSettings { commitmentJokers ?? FocusJokerSettings() }
     var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid
         && (ignoredDistractionTargets.map { $0.count <= 2000 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true)
-        && (agendaTemplate?.validTemplate ?? true) }
+        && (agendaTemplate?.validTemplate ?? true) && dayGuideSettings.valid && coachSettings.valid
+        && FocusDayValidation.revision(effectiveGuideRevision) }
 }
 enum FocusFailure: String, Error {
     case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning

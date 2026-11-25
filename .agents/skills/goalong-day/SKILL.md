@@ -1,6 +1,6 @@
 ---
 name: goalong-day
-description: "Keep Goalong's guided agenda and parallel agent processes current during explicitly requested project or orchestrated work. Use when a task starts, needs a human answer, is ready for review, finishes or fails, or when preparing an authorized daily plan. Publish compact explicit state through the local CLI; never infer passive tracking or block real work when Goalong is unavailable."
+description: "Keep Goalong's guided agenda and parallel agent processes current during explicitly requested project or orchestrated work. Use when a task starts, needs a human answer, is ready for review, finishes or fails, when preparing an authorized daily plan, or when explicitly configuring the guide, routines, model preferences or blocking rules. Publish compact explicit state through the local CLI; never infer passive tracking or block real work when Goalong is unavailable."
 ---
 
 # Goalong: one human agenda, parallel processes
@@ -63,6 +63,8 @@ Several projects and agents may run together. The human agenda describes the use
 
 Group nonurgent questions into coordination windows. Preserve creative work unless a genuinely blocking decision or the user changes the priority. Respect fixed anchors, buffers and the chosen end of day. Guided reminders fire once per slot; `reminderLimit` defaults to 8 per day and is adjustable from 1 to 32. Ensure the user's chosen limit covers the intended anchors, especially the evening check-in, without inventing extra reminders. Work that no longer fits remains visibly unscheduled; do not stretch the day or mark it complete.
 
+Give each routine anchor a concrete `instructions` value when its title does not explain what to do (up to 1,200 characters, newlines allowed). Keep routines after the work cutoff fixed and, when appropriate, silent; show the full offline sequence before the Mac closes. Set `reminder` to `inherit`, `notify` or `silent`. An explicit notification still obeys the global switches, quiet hours and daily cap. A dismissed reminder is neither a completed action nor evidence of failure. Prefer fewer useful transitions over a popup for every gesture.
+
 Human items support `nextAction`, `doneWhen`, `actionKind` (`work`, `launch`, `coordination`, `review`, `routine`), `contextURL`, `processIDs`. Bounds: 10 human items, 64 processes, 64 slots. Use `plan patch`; upserts are complete objects, so merge changed fields into the fresh full object. `agenda` replaces the full agenda: preserve unrelated slots. Do not use legacy `plan set` on a shared live plan.
 
 ```bash
@@ -72,6 +74,18 @@ python3 /path/to/goalong-day/scripts/goalong_plan.py prepare \
 ```
 
 The same prepare/apply flow supports `--kind reflow` or `--kind undo` without `--file`. Undo requires an appropriate request; it is not conflict recovery. A recurring `routine` has no linked project item and creates no task commitments by itself. Reporting a process never requires replacing the routine.
+
+## Configure only the authorized preferences
+
+Check `goalong capabilities` when the installed version is uncertain. Keep personal schedules and lists in private local configuration, never in the application's public sources. A new user starts without an active guide, schedule or model. Do not install someone else's routine.
+
+Read `goalong guide show`, then use `guide set --if-revision N --file PATH` with only the intended fields. The `dayGuide` and `coach` subobjects merge their supplied keys; explicit whole-object `null` resets that group. Configure `dayGuide.enabled`, `remindersEnabled` and optional `quietStartMinute`/`quietEndMinute` (both null or distinct minutes 0–1439; a later start crosses midnight). Leave `introVersion` unchanged until the person has actually read the explanation. Guided scheduling and reminders use no model.
+
+The optional `coach` chooses `chatGPT` or `externalAgent`, an explicit model and effort, selected context categories and a daily call cap (1–6; default 2). An enabled native ChatGPT coach requires both model and effort. Choose from the account's actual catalogue in Settings, with no silent substitution. Configuration sends no data and grants no capability consent. `guide usage` reads the coach's local usage; it does not include unrelated background classification or external-agent usage. The native preview/send action is explicit, bounded and does not change the plan. For Claude Code/T3, let the external agent own its login, model and subscription; never extract or reuse Claude.ai credentials as an application backend.
+
+Read `routine show` before changing the template. `routine set --if-revision N --file PATH` accepts exactly `{ "agenda": ... }` and uses the same guide revision. It does not rewrite every existing day: explicitly merge a new template into only the authorized days with `plan patch`, preserving unrelated slots, tasks, processes and actual states.
+
+Only for an explicitly requested blocker configuration, read `block-lists` and `block-list show UUID`. Create a stable-ID list through `block-list put --if-match new --file PATH`; update it with the fresh `fingerprint` instead of `new`. The file is exactly `{ "list": ... }` using the native list schema. Preserve existing lists and read the result back. A quota alone activates nothing: a session or programmed range must apply. Protected ranges retain their IDs and exact civil geometry; weakening or reshaping protected rules requires the app's native user flow. Never supply passwords/grants, modify enforcement files, stop a protected block, or bypass an installation refusal. If an outcome is uncertain, inspect the current configuration before another write. Do not treat a planning permission as permission to add blockers.
 
 ## Concurrency and uncertain outcomes
 

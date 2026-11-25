@@ -994,6 +994,52 @@
             return (try GoalongWorkClassification.parse(data), tokens)
         }
 
+        /// Explicit metadata read for a model picker. Does not start a thread or a turn.
+        func focusDayCoachModels() throws -> [FocusDayCoachModel] {
+            guard let account = try readAccount(), account.isManagedChatGPT else {
+                throw CodexAppServerError.signedOut
+            }
+            var cursor: String?
+            var seenCursors = Set<String>()
+            var result: [FocusDayCoachModel] = []
+            var seenModels = Set<String>()
+            repeat {
+                var params: [String: Any] = ["includeHidden": false, "limit": 100]
+                if let cursor { params["cursor"] = cursor }
+                let page = try request(method: "model/list", params: params, timeout: 20,
+                                       operation: "lecture des modèles disponibles")
+                guard let rows = page["data"] as? [[String: Any]], rows.count <= 100 else {
+                    throw CodexAppServerError.malformedResponse("le catalogue des modèles est invalide.")
+                }
+                for row in rows {
+                    guard let value = FocusDayCoachModel.decodeCatalogEntry(row) else { continue }
+                    if seenModels.insert(value.id).inserted { result.append(value) }
+                }
+                cursor = page["nextCursor"] as? String
+                if let cursor, !seenCursors.insert(cursor).inserted || seenCursors.count >= 10 {
+                    throw CodexAppServerError.malformedResponse("le catalogue des modèles dépasse sa limite.")
+                }
+            } while cursor != nil
+            return result
+        }
+
+        /// Independent, short coaching contract. Reuses only the reviewed tool-less transport.
+        func generateFocusDayCoach(preview: FocusDayCoachPreview, workingDirectory: URL,
+                                   beforeSend: @escaping () throws -> Void) throws -> (data: Data, tokens: Int?) {
+            guard preview.settings.valid, preview.settings.enabled, preview.settings.provider == .chatGPT,
+                  let model = preview.settings.model, let effort = preview.settings.reasoningEffort,
+                  preview.characterCount <= FocusDayCoachContext.maximumCharacters else {
+                throw FocusDayCoachFailure.configureModel
+            }
+            return try generateSelectedAnalysis(prompt: preview.prompt,
+                schema: FocusDayCoachAnswer.schema(maximumCharacters: preview.settings.maximumOutputCharacters),
+                workingDirectory: workingDirectory, maximumResponseBytes: 32 * 1024,
+                filteredForPrivacyRevision: preview.privacyRevision,
+                filteredForSelectionRevision: preview.selectionRevision, model: model, reasoningEffort: effort,
+                baseInstructions: preview.instructions, threadStartTimeout: 20, turnStartTimeout: 20,
+                generationTimeout: 90, beforeSend: beforeSend)
+        }
+
         /// The account's usage windows, read without inference (`account/rateLimits/read`).
         /// nil when Codex does not answer: the caller then relies on its own daily cap.
         func readAccountLimits() -> GoalongAccountLimits? {
@@ -1025,7 +1071,11 @@
                                               filteredForSelectionRevision: String? = nil,
                                               model: String = CodexDailyAssessmentContract.model,
                                               reasoningEffort: String = CodexDailyAssessmentContract.reasoningEffort,
-                                              baseInstructions: String? = nil) throws -> (data: Data, tokens: Int?) {
+                                              baseInstructions: String? = nil,
+                                              threadStartTimeout: TimeInterval = CodexDailyAssessmentContract.threadStartTimeout,
+                                              turnStartTimeout: TimeInterval = CodexDailyAssessmentContract.turnStartTimeout,
+                                              generationTimeout: TimeInterval = CodexDailyAssessmentContract.generationTimeout,
+                                              beforeSend: (() throws -> Void)? = nil) throws -> (data: Data, tokens: Int?) {
             let pauseTicket = try GoalongGlobalPause.admit()
             let privacyRevision = GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision
             if let filteredForPrivacyRevision, filteredForPrivacyRevision != privacyRevision {
@@ -1070,7 +1120,7 @@
             let started = try request(
                 method: "thread/start",
                 params: threadParams,
-                timeout: CodexDailyAssessmentContract.threadStartTimeout,
+                timeout: threadStartTimeout,
                 operation: "démarrage de l’analyse des données choisies"
             )
             guard let thread = started["thread"] as? [String: Any],
@@ -1099,6 +1149,7 @@
             }
             try requireSameSelection()
             try GoalongGlobalPause.revalidate(pauseTicket)
+            try beforeSend?()
             let turnResponse = try request(
                 method: "turn/start",
                 params: [
@@ -1111,7 +1162,7 @@
                     "environments": [] as [Any],
                     "outputSchema": schema,
                 ],
-                timeout: CodexDailyAssessmentContract.turnStartTimeout,
+                timeout: turnStartTimeout,
                 operation: "envoi de la sélection vérifiée à ChatGPT"
             )
             guard let initialTurn = turnResponse["turn"] as? [String: Any],
@@ -1120,7 +1171,7 @@
                 throw CodexAppServerError.malformedResponse("L’identifiant du tour d’analyse est absent.")
             }
             try Self.validateSiteAnalysisItems(in: initialTurn)
-            let deadline = Date().addingTimeInterval(CodexDailyAssessmentContract.generationTimeout)
+            let deadline = Date().addingTimeInterval(generationTimeout)
             var finalText: String?
             var streamedBytes = 0
             var totalTokens: Int?
@@ -1419,7 +1470,7 @@
                     method: "model/list",
                     params: params,
                     timeout: 20,
-                    operation: "vérification de la disponibilité de GPT-5.6 Luna"
+                    operation: "vérification de la disponibilité du modèle choisi"
                 )
                 guard let models = result["data"] as? [[String: Any]] else {
                     throw CodexAppServerError.malformedResponse("la liste des modèles est absente.")
@@ -1431,9 +1482,8 @@
                     guard efforts.contains(where: {
                         ($0["reasoningEffort"] as? String) == reasoningEffort
                     }) else {
-                        throw CodexAppServerError.generationFailed(reasoningEffort == "high"
-                            ? "GPT-5.6 Luna est disponible, mais le raisonnement élevé n’est pas activé pour ce compte."
-                            : "GPT-5.6 Luna est disponible, mais le raisonnement « \(reasoningEffort) » n’est pas activé pour ce compte."
+                        throw CodexAppServerError.generationFailed(
+                            "Le modèle \(wanted) ne propose pas l’effort « \(reasoningEffort) ». Choisissez un effort du catalogue."
                         )
                     }
                     return
@@ -1443,7 +1493,7 @@
             } while cursor != nil && pageCount < 10
 
             throw CodexAppServerError.generationFailed(
-                "GPT-5.6 Luna n’est pas disponible pour ce compte ChatGPT. Goalong n’a pas basculé vers un autre modèle."
+                "Le modèle \(wanted) n’est pas disponible pour ce compte ChatGPT. Goalong n’a pas basculé vers un autre modèle."
             )
         }
 

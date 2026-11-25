@@ -140,8 +140,11 @@ final class ConcentrationRenderingTests: XCTestCase {
         let store = FocusStore(directory: temporaryRoot())
         var settings = FocusSettings()
         settings.morningPrompt = false; settings.eveningPrompt = false
+        var guide = settings.dayGuideSettings
+        guide.enabled = true
+        settings.dayGuide = guide
         try store.saveSettings(settings)
-        let controller = try ConcentrationController(store: store, clock: { self.now }, blocking: { nil })
+        let controller = try ConcentrationController(store: store, clock: { self.now }, blocking: { nil }, runsTimers: false)
         var launch = FocusPlanItem(title: "Lancer les deux chantiers", project: "Goalong", estimateMinutes: 15, status: .done)
         launch.actionKind = .launch
         var document = FocusPlanItem(title: "Écrire la documentation d’intégration", project: "Context Room", estimateMinutes: 30)
@@ -156,8 +159,16 @@ final class ConcentrationRenderingTests: XCTestCase {
             FocusAgendaSlot(itemID: launch.id, title: launch.title, startMinute: minute - 30, endMinute: minute - 15, state: .done),
             FocusAgendaSlot(itemID: document.id, title: document.title, startMinute: minute, endMinute: minute + 30),
             FocusAgendaSlot(itemID: review.id, title: review.title, startMinute: minute + 45, endMinute: minute + 65),
-            FocusAgendaSlot(title: "Préparer le dîner", startMinute: 1080, endMinute: 1110, fixed: true)
+            FocusAgendaSlot(title: "Répondre aux retours", startMinute: minute + 75, endMinute: minute + 85),
+            FocusAgendaSlot(title: "Pause", startMinute: minute + 95, endMinute: minute + 110, fixed: true),
+            FocusAgendaSlot(title: "Rassembler les résultats", startMinute: minute + 130, endMinute: minute + 150),
+            FocusAgendaSlot(title: "Préparer le dîner", startMinute: 1080, endMinute: 1110, fixed: true),
+            FocusAgendaSlot(title: "Lecture hors du Mac", startMinute: 1130, endMinute: 1160, fixed: true)
         ])
+        plan.agenda?.slots[1].instructions = "Ouvrir la section « Premier appel ».\nÉcrire un exemple complet, puis vérifier le résultat."
+        plan.agenda?.slots[1].contextURL = "https://example.com/documentation"
+        plan.agenda?.slots[7].instructions = "Préparer la lecture avant de fermer le Mac.\nLe programme reste disponible sans rappel."
+        plan.agenda?.slots[7].reminder = .silent
         plan.processes = [
             FocusAgentProcess(title: "Implémenter l’agenda", project: "Goalong", agent: "Agent interface", status: .running),
             FocusAgentProcess(title: "Choisir le format d’export", project: "Context Room", agent: "Agent export",
@@ -170,31 +181,38 @@ final class ConcentrationRenderingTests: XCTestCase {
 
         _ = NSApplication.shared
         for dark in [true, false] {
-            let root = ConcentrationDayView(controller: controller, now: now, onReview: {})
-                .padding(32).frame(width: 900, alignment: .topLeading)
-                .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
-                .environment(\.colorScheme, dark ? .dark : .light)
-                .environment(\.goalongReduceMotion, true).goalongControls()
-            let host = NSHostingView(rootView: root)
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 1800),
-                                  styleMask: [.borderless], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            window.contentView = host
-            defer { window.orderOut(nil); window.contentView = nil; window.close() }
-            // The imported harness intercepts ordering and keeps the real window invisible.
-            window.orderFront(nil)
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-            window.setContentSize(NSSize(width: 900, height: max(100, host.fittingSize.height)))
-            host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
-            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-            XCTAssertGreaterThan(png.count, 2_000)
-            let name = "day-parallel-" + (dark ? "dark" : "light") + ".png"
-            try png.write(to: directory.appendingPathComponent(name))
-            XCTAssertEqual(GoalongHeadlessVisibleWindowCount(), 0)
-            XCTAssertFalse(NSApp.isActive)
+            let surfaces: [(String, CGFloat, AnyView)] = [
+                ("day-parallel", 900, AnyView(ConcentrationDayView(controller: controller, now: now, onReview: {}))),
+                ("day-guide-intro", 714, AnyView(FocusDayGuideIntro(enabled: false, onContinue: {}, onClose: {}))),
+                ("day-guide-settings", 800, AnyView(FocusDayGuideControls(controller: controller,
+                    onRequestActivation: {}, onExplain: {}, onOpen: {})))
+            ]
+            for (surface, width, view) in surfaces {
+                let root = view.padding(32).frame(width: width, alignment: .topLeading)
+                    .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+                    .environment(\.colorScheme, dark ? .dark : .light)
+                    .environment(\.goalongReduceMotion, true).goalongControls()
+                let host = NSHostingView(rootView: root)
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 1800),
+                                      styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                window.contentView = host
+                defer { window.orderOut(nil); window.contentView = nil; window.close() }
+                // The imported harness intercepts ordering and keeps the real window invisible.
+                window.orderFront(nil)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                window.setContentSize(NSSize(width: width, height: max(100, host.fittingSize.height)))
+                host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                XCTAssertGreaterThan(png.count, 2_000)
+                let name = surface + "-" + (dark ? "dark" : "light") + ".png"
+                try png.write(to: directory.appendingPathComponent(name))
+                XCTAssertEqual(GoalongHeadlessVisibleWindowCount(), 0)
+                XCTAssertFalse(NSApp.isActive)
+            }
         }
     }
 

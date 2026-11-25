@@ -79,6 +79,17 @@ struct FocusAgentProcess: Codable, Equatable, Identifiable {
 }
 
 struct FocusAgendaSlot: Codable, Equatable, Identifiable {
+    /// A silent anchor stays visible in the program without asking the member to reopen the Mac.
+    enum Reminder: String, Codable, CaseIterable {
+        case inherit, silent, notify
+        var title: String {
+            switch self {
+            case .inherit: return "Selon le programme"
+            case .silent: return "Silencieux"
+            case .notify: return "Rappel à la transition"
+            }
+        }
+    }
     enum State: String, Codable, CaseIterable {
         case planned, active, done, skipped, unscheduled
         var title: String {
@@ -101,9 +112,14 @@ struct FocusAgendaSlot: Codable, Equatable, Identifiable {
     var state: State = .planned
     var earliestMinute: Int? = nil
     var latestEndMinute: Int? = nil
+    var instructions: String? = nil
+    var reminder: Reminder = .inherit
+    var contextURL: String? = nil
     var durationMinutes: Int { endMinute - startMinute }
     var valid: Bool {
         FocusValidation.text(title, maximum: 140, required: true)
+            && FocusDayValidation.instructions(instructions)
+            && FocusDayValidation.contextURL(contextURL)
             && (0..<1440).contains(startMinute) && (1...1440).contains(endMinute)
             && endMinute > startMinute
             && (earliestMinute.map { (0..<1440).contains($0) } ?? true)
@@ -112,12 +128,14 @@ struct FocusAgendaSlot: Codable, Equatable, Identifiable {
             && (state == .unscheduled || ((earliestMinute.map { startMinute >= $0 } ?? true)
                 && (latestEndMinute.map { endMinute <= $0 } ?? true)))
     }
-    enum CodingKeys: String, CodingKey { case id, itemID, title, startMinute, endMinute, fixed, state, earliestMinute, latestEndMinute }
+    enum CodingKeys: String, CodingKey { case id, itemID, title, startMinute, endMinute, fixed, state, earliestMinute, latestEndMinute, instructions, reminder, contextURL }
     init(id: UUID = UUID(), itemID: UUID? = nil, title: String, startMinute: Int, endMinute: Int,
-         fixed: Bool = false, state: State = .planned, earliestMinute: Int? = nil, latestEndMinute: Int? = nil) {
+         fixed: Bool = false, state: State = .planned, earliestMinute: Int? = nil, latestEndMinute: Int? = nil,
+         instructions: String? = nil, reminder: Reminder = .inherit, contextURL: String? = nil) {
         self.id = id; self.itemID = itemID; self.title = title
         self.startMinute = startMinute; self.endMinute = endMinute; self.fixed = fixed
         self.state = state; self.earliestMinute = earliestMinute; self.latestEndMinute = latestEndMinute
+        self.instructions = instructions; self.reminder = reminder; self.contextURL = contextURL
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -130,14 +148,17 @@ struct FocusAgendaSlot: Codable, Equatable, Identifiable {
         state = try c.decodeIfPresent(State.self, forKey: .state) ?? .planned
         earliestMinute = try c.decodeIfPresent(Int.self, forKey: .earliestMinute)
         latestEndMinute = try c.decodeIfPresent(Int.self, forKey: .latestEndMinute)
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions)
+        reminder = try c.decodeIfPresent(Reminder.self, forKey: .reminder) ?? .inherit
+        contextURL = try c.decodeIfPresent(String.self, forKey: .contextURL)
     }
 }
 
 struct FocusAgenda: Codable, Equatable {
     var timeZoneID: String
     /// Placement bounds for flexible work. Fixed routines may lie outside them.
-    var startMinute = 480
-    var endMinute = 1320
+    var startMinute = 0
+    var endMinute = 1440
     var bufferMinutes = 10
     /// Daily prompt budget; a small default, adjustable for a fully guided routine.
     var reminderLimit = 8
@@ -164,7 +185,7 @@ struct FocusAgenda: Codable, Equatable {
         }
     }
     enum CodingKeys: String, CodingKey { case timeZoneID, startMinute, endMinute, bufferMinutes, reminderLimit, guided, autoAdjust, slots }
-    init(timeZoneID: String, startMinute: Int = 480, endMinute: Int = 1320,
+    init(timeZoneID: String, startMinute: Int = 0, endMinute: Int = 1440,
          bufferMinutes: Int = 10, reminderLimit: Int = 8, guided: Bool = false, autoAdjust: Bool = true, slots: [FocusAgendaSlot] = []) {
         self.timeZoneID = timeZoneID; self.startMinute = startMinute; self.endMinute = endMinute
         self.bufferMinutes = bufferMinutes; self.reminderLimit = reminderLimit
@@ -173,8 +194,8 @@ struct FocusAgenda: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         timeZoneID = try c.decode(String.self, forKey: .timeZoneID)
-        startMinute = try c.decodeIfPresent(Int.self, forKey: .startMinute) ?? 480
-        endMinute = try c.decodeIfPresent(Int.self, forKey: .endMinute) ?? 1320
+        startMinute = try c.decodeIfPresent(Int.self, forKey: .startMinute) ?? 0
+        endMinute = try c.decodeIfPresent(Int.self, forKey: .endMinute) ?? 1440
         bufferMinutes = try c.decodeIfPresent(Int.self, forKey: .bufferMinutes) ?? 10
         reminderLimit = try c.decodeIfPresent(Int.self, forKey: .reminderLimit) ?? 8
         guided = try c.decodeIfPresent(Bool.self, forKey: .guided) ?? false
@@ -207,6 +228,12 @@ struct FocusPlanChange: Codable, Equatable, Identifiable {
 }
 
 enum FocusDayValidation {
+    /// A few readable paragraphs are permitted; terminal controls and unbounded text are not.
+    static func instructions(_ value: String?) -> Bool {
+        guard let value else { return true }
+        return value.count <= 1200 && value.utf8.count <= 9600
+            && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) && $0 != "\n" }
+    }
     static func text(_ value: String?, maximum: Int) -> Bool {
         value.map { FocusValidation.text($0, maximum: maximum) } ?? true
     }

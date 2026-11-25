@@ -31,6 +31,14 @@ binary with the fixed `app-server` argument. Codex owns its authenticated ChatGP
 Goalong passes a bounded daily context and does not expose arbitrary commands, executables,
 workspace roots or inherited cloud/API credentials to that child process.
 
+The optional [day coach](COACH.md) uses that same managed transport only after the
+member reviews its exact bounded prompt and explicitly sends it. It adds no network
+destination. Only selected member-authored plan fields and an optional note are
+eligible, after name masking; Mac history, linked documents, URLs and raw agent
+messages are not read. The model catalogue is an explicit metadata read without
+inference. One operation at a time and a durable pre-send daily attempt cap prevent
+background generation loops. The agenda and reminders never invoke this coach.
+
 For [selected website analysis](SITE-ANALYSIS.md), the context is only the selected
 JSON request. Contextual session analysis uses the same confined transport with a separately reviewed native interval and selected evidence excerpts. A separate local login profile and restricted temporary workspace are
 required; the exported draft is never automatically sent to the website.

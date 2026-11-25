@@ -45,7 +45,7 @@ extension GoalongFocusRequest {
 /// The client validates syntax; the app validates the same normalized request and owns every write.
 public enum GoalongFocusCLI {
     public static let maximumInputBytes = 64 * 1024
-    public static let commands = ["focus", "session", "sessions", "plan", "routine", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise"]
+    public static let commands = ["focus", "session", "sessions", "plan", "routine", "guide", "review", "limits", "block-lists", "block-list", "friction", "commitment", "commitments", "braise"]
     private static func text(_ value: String, max: Int = 140) -> Bool {
         !value.trimmingCharacters(in: .whitespaces).isEmpty && value.count <= max && value.utf8.count <= max * 32
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
@@ -59,7 +59,7 @@ public enum GoalongFocusCLI {
         if command == "braise" { return try GoalongBraiseCLI.parse(arguments) }
         if command == "commitment" || command == "commitments" { return try GoalongCommitmentCLI.parse(command: command, arguments: arguments, readFile: readFile) }
         var args = arguments, action = "", options: [String: String] = [:], flags = Set<String>()
-        if ["focus", "session", "plan", "routine", "review"].contains(command) {
+        if ["focus", "session", "plan", "routine", "guide", "block-list", "review"].contains(command) {
             guard !args.isEmpty else { throw GoalongFocusError.invalidArgument }; action = args.removeFirst()
         }
         var positional: [String] = [], blocks: [String] = []
@@ -73,7 +73,7 @@ public enum GoalongFocusCLI {
                 options[token] = !args.isEmpty && !args[0].hasPrefix("--") ? args.removeFirst() : "25/5/15/4"; continue
             }
             if token.hasPrefix("--") {
-                guard ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--outcome", "--note", "--day", "--project", "--estimate", "--to", "--file", "--if-revision", "--request-id"].contains(token),
+                guard ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--outcome", "--note", "--day", "--project", "--estimate", "--to", "--file", "--if-revision", "--request-id", "--if-match"].contains(token),
                       !args.isEmpty, !args[0].hasPrefix("--") else { throw GoalongFocusError.invalidArgument }
                 let value = args.removeFirst()
                 if token == "--block" { blocks.append(value) }
@@ -84,7 +84,7 @@ public enum GoalongFocusCLI {
         var body: Data?
         let route = command + (action.isEmpty ? "" : " " + action)
         switch route {
-        case "focus status", "focus watch", "session current", "session skip", "limits", "block-lists", "routine show":
+        case "focus status", "focus watch", "session current", "session skip", "limits", "block-lists", "routine show", "guide show", "guide usage":
             guard options.isEmpty, flags.isEmpty, positional.isEmpty else { throw GoalongFocusError.invalidArgument }
         case "session start":
             guard positional.isEmpty, options.keys.allSatisfy({ ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--pomodoro"].contains($0) }),
@@ -130,10 +130,28 @@ public enum GoalongFocusCLI {
                 guard body!.count <= maximumInputBytes, (try? JSONSerialization.jsonObject(with: body!)) is [String: Any] else { throw GoalongFocusError.invalidArgument }
             }
         case "routine set":
-            guard flags.isEmpty, positional.isEmpty, options.count == 1,
+            guard flags.isEmpty, positional.isEmpty, options.keys.allSatisfy({ ["--file", "--if-revision"].contains($0) }),
                   let path = options.removeValue(forKey: "--file") else { throw GoalongFocusError.invalidArgument }
+            if let raw = options["--if-revision"] {
+                guard let revision = Int(raw), (0...1_000_000_000).contains(revision), String(revision) == raw else { throw GoalongFocusError.invalidArgument }
+            }
             body = try readFile(path)
             try validateRoutineInput(body!)
+        case "guide set":
+            guard flags.isEmpty, positional.isEmpty, options.count == 2,
+                  let path = options.removeValue(forKey: "--file"),
+                  let raw = options["--if-revision"], let revision = Int(raw),
+                  (0...1_000_000_000).contains(revision), String(revision) == raw else { throw GoalongFocusError.invalidArgument }
+            body = try readFile(path); try validateGuideInput(body!)
+        case "block-list show":
+            guard flags.isEmpty, options.isEmpty, positional.count == 1,
+                  UUID(uuidString: positional[0]) != nil else { throw GoalongFocusError.invalidArgument }
+            options["id"] = positional[0]
+        case "block-list put":
+            guard flags.isEmpty, positional.isEmpty, options.count == 2,
+                  let path = options.removeValue(forKey: "--file"), let match = options["--if-match"],
+                  match == "new" || (match.count == 64 && match.allSatisfy({ "0123456789abcdef".contains($0) })) else { throw GoalongFocusError.invalidArgument }
+            body = try readFile(path); try validateBlockListInput(body!)
         case "plan set", "review set":
             guard flags.isEmpty, positional.isEmpty, options.keys.allSatisfy({ ["--day", "--file"].contains($0) }), let path = options.removeValue(forKey: "--file") else { throw GoalongFocusError.invalidArgument }
             body = try readFile(path)
@@ -155,8 +173,64 @@ public enum GoalongFocusCLI {
               agenda["timeZoneID"] is String else { throw GoalongFocusError.invalidArgument }
         if let rawSlots = agenda["slots"] {
             guard let slots = rawSlots as? [[String: Any]], slots.count <= 64 else { throw GoalongFocusError.invalidArgument }
-            let allowed: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute"]
+            let allowed: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute", "instructions", "reminder", "contextURL"]
             guard slots.allSatisfy({ Set($0.keys).isSubset(of: allowed) }) else { throw GoalongFocusError.invalidArgument }
+        }
+    }
+    /// The same schema checks run at the native app boundary; unknown fields never silently disappear.
+    public static func validateGuideInput(_ data: Data) throws {
+        guard data.count <= maximumInputBytes,
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], !object.isEmpty,
+              Set(object.keys).isSubset(of: ["dayGuide", "coach", "morningPrompt", "morningMinute", "eveningPrompt", "eveningMinute"]) else { throw GoalongFocusError.invalidArgument }
+        let groups: [(String, Set<String>)] = [
+            ("dayGuide", ["enabled", "introVersion", "remindersEnabled", "quietStartMinute", "quietEndMinute"]),
+            ("coach", ["enabled", "provider", "model", "reasoningEffort", "dailyCallLimit", "maximumOutputCharacters", "includeTasks", "includeAgenda", "includeProcesses", "includeReview"]),
+        ]
+        for (key, keys) in groups {
+            guard let raw = object[key], !(raw is NSNull) else { continue }
+            guard let group = raw as? [String: Any], Set(group.keys).isSubset(of: keys) else { throw GoalongFocusError.invalidArgument }
+        }
+        for key in ["morningPrompt", "morningMinute", "eveningPrompt", "eveningMinute"] where object[key] is NSNull { throw GoalongFocusError.invalidArgument }
+    }
+    public static func validateBlockListInput(_ data: Data) throws {
+        guard data.count <= maximumInputBytes,
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["list"], let list = object["list"] as? [String: Any],
+              Set(list.keys).isSubset(of: ["id", "name", "mode", "sites", "exceptions", "keywords", "reason", "triggers", "earn", "apps", "program", "quotaMinutesPerDay", "breaks", "action", "slowDownSeconds", "continueMinutes"]),
+              (list["id"] as? String).flatMap(UUID.init(uuidString:)) != nil else { throw GoalongFocusError.invalidArgument }
+        func rows(_ raw: Any?, keys: Set<String>, maximum: Int) throws {
+            guard let raw, !(raw is NSNull) else { return }
+            guard let values = raw as? [[String: Any]], values.count <= maximum,
+                  values.allSatisfy({ Set($0.keys).isSubset(of: keys) }) else { throw GoalongFocusError.invalidArgument }
+        }
+        try rows(list["sites"], keys: ["pattern"], maximum: 2000)
+        try rows(list["exceptions"], keys: ["pattern"], maximum: 2000)
+        try rows(list["apps"], keys: ["bundleIdentifier", "name"], maximum: 500)
+        if let raw = list["program"] {
+            guard let program = raw as? [String: Any], Set(program.keys).isSubset(of: ["ranges", "lockedUntil"]) else { throw GoalongFocusError.invalidArgument }
+            try rows(program["ranges"], keys: ["id", "weekdays", "startMinute", "endMinute", "lock", "pause"], maximum: 1000)
+            if let ranges = program["ranges"] as? [[String: Any]] {
+                for range in ranges {
+                    guard (range["id"] as? String).flatMap(UUID.init(uuidString:)) != nil else { throw GoalongFocusError.invalidArgument }
+                    if let rawPause = range["pause"], !(rawPause is NSNull) {
+                        guard let pause = rawPause as? [String: Any],
+                              Set(pause.keys).isSubset(of: ["id", "budgetMinutes", "period", "maxPauseMinutes", "maxPauses", "gate", "extraPerPeriod"]),
+                              (pause["id"] as? String).flatMap(UUID.init(uuidString:)) != nil else { throw GoalongFocusError.invalidArgument }
+                        if let rawGate = pause["gate"] {
+                            guard let gate = rawGate as? [String: Any], gate.count == 1,
+                                  Set(gate.keys).isSubset(of: ["none", "wait", "typing", "password"]),
+                                  let value = gate.values.first as? [String: Any],
+                                  Set(value.keys).isSubset(of: gate["wait"] == nil ? [] : ["minutes"]) else { throw GoalongFocusError.invalidArgument }
+                        }
+                    }
+                }
+            }
+        }
+        let objects: [(String, Set<String>)] = [("breaks", ["count", "minutes"]), ("earn", ["workMinutes", "rewardMinutes", "capMinutes"]), ("triggers", ["apps", "focus"])]
+        for (key, keys) in objects {
+            guard let raw = list[key], !(raw is NSNull) else { continue }
+            guard let value = raw as? [String: Any], Set(value.keys).isSubset(of: keys) else { throw GoalongFocusError.invalidArgument }
+            if key == "triggers" { try rows(value["apps"], keys: ["bundleIdentifier", "name"], maximum: 500) }
         }
     }
     public static func readInput(_ path: String) throws -> Data {

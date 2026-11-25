@@ -405,10 +405,14 @@ waitingForYou unchanged until the worker explicitly acknowledges running. Ready 
 not verified done. Avoid duplicate records when an orchestrator already reports a worker.
 
 An agenda has timeZoneID, startMinute, endMinute, bufferMinutes (0…60), guided, autoAdjust, reminderLimit and
-slots (at most 64). Times are civil minutes in the named zone. Defaults are 08:00–22:00, ten-minute
+slots (at most 64). Times are civil minutes in the named zone. An omitted bound means the civil-day
+boundary (00:00/24:00), not a suggested workday; the UI asks for explicit work hours. Other defaults are ten-minute
 buffers, guided false, autoAdjust true and reminderLimit 8 (adjustable 1…32). A slot has stable id, optional itemID, title,
 startMinute, endMinute, fixed (default false), state (planned/active/done/skipped/unscheduled),
-and optional earliestMinute/latestEndMinute. Duration must be positive; minute bounds are 0…1440.
+and optional earliestMinute/latestEndMinute, instructions, reminder and contextURL. instructions permits
+newlines, at most 1,200 characters/9,600 UTF-8 bytes, with no other control characters. reminder is
+inherit (follow agenda.guided), notify (explicit request) or silent (never notify). All reminders still
+obey the global guide/reminder switches, quiet hours and the agenda budget. Duration must be positive; minute bounds are 0…1440.
 Routine-only fixed anchors can extend past the work agenda's end.
 
 Reflow keeps fixed anchors and handled work, adds the requested buffers and respects time bounds.
@@ -429,6 +433,71 @@ For a populated template, use the same agenda schema. All slot itemID values mus
 and states planned. A routine contributes reusable day anchors without inventing project tasks or
 commitments. It is independent of process reports, blocking settings and private AI context consent.
 Read routine show after setting it; a checked-in JSON example by itself activates nothing.
+An optional --if-revision N guards routine set using the revision returned by guide show.
+
+#### Guide configuration and model preferences
+
+```text
+goalong guide show
+goalong guide set --if-revision N --file configuration.json
+goalong guide usage
+```
+
+guide show returns schema, revision, effective dayGuide and coach objects, and the existing
+morningPrompt/morningMinute/eveningPrompt/eveningMinute settings. guide set merges only the fields
+provided under the expected revision. Nested fields are merged too: changing enabled preserves quiet
+hours and model preferences. An explicit null whole dayGuide or coach resets that group to its defaults.
+Unknown fields and invalid values are refused. Read after writing; on conflict reread and rebuild the
+intended edit. On an uncertain outcome inspect the current configuration before retrying.
+
+dayGuide fields: enabled (default false), introVersion (default 0), remindersEnabled (default true),
+quietStartMinute and quietEndMinute (both absent/null, or distinct minutes 0…1439). A start after the
+end crosses midnight. Mark the introduction read only after the member actually reads it.
+
+coach fields: enabled (default false), provider (chatGPT or externalAgent), model, reasoningEffort,
+dailyCallLimit (1…6, default 2), maximumOutputCharacters (600…4000, default 1400), includeTasks,
+includeAgenda, includeProcesses (default true) and includeReview (default false). An enabled chatGPT
+provider requires an explicit model and effort. Use the account's real catalogue in Settings; no silent
+model substitution occurs. Model/provider configuration grants no capability consent and sends no data.
+guide usage is local read-only usage: attempts, remaining calls, known tokens and unreported attempts.
+The budget applies to this coach, independently of the existing background work classifier.
+
+The native coach runs only from the explicit preview/send action. The CLI does not secretly run models.
+An external Claude Code/T3 agent owns its own model selection, authentication and usage; Goalong only
+receives explicit local plan/process/configuration writes. See [COACH.md](COACH.md).
+
+#### Guarded Blocking configuration
+
+```text
+goalong block-list show LIST_UUID
+goalong block-list put --if-match new --file new-list.json
+goalong block-list put --if-match FINGERPRINT --file edited-list.json
+```
+
+These routes require only the Blocking module. show returns schema, fingerprint, full list, locked
+and hasPassword (a boolean; no secret). The input is exactly {"list": OBJECT}, with a stable UUID.
+new refuses an existing UUID; an update requires the SHA-256 fingerprint from a fresh show. A retry
+after a timeout must inspect the list before writing again. There is no direct store editing or
+unconditional replacement route.
+
+The list uses the native BlockList schema: id, name, mode (block/allowOnly), sites [{pattern}],
+apps [{bundleIdentifier,name}], program {ranges,lockedUntil?}, optional exceptions, keywords, reason,
+triggers, earn, quotaMinutesPerDay, breaks, action, slowDownSeconds and continueMinutes. Each range
+requires id, weekdays (ISO 1…7), startMinute/endMinute (0…1440), optional lock and pause.
+end <= start crosses midnight. Give all required native fields; use show as the editable source.
+Unknown fields, duplicate IDs, out-of-bounds values and malformed rules are refused before native
+coverage arithmetic. At most 128 ranges can be configured in one list through this route.
+
+Pause policies use a stable id, budgetMinutes (1…1440), period (day/week/month), optional
+maxPauseMinutes/maxPauses (1…1440), gate (native tagged enum), and extraPerPeriod (0…10 or null).
+The wait gate bounds minutes to 1…1440. Native protection rules still decide whether a change is allowed.
+
+The route cannot provide a password, acquire a stop grant, edit sessions, change the clock or suppress
+enforcement. Protected ranges keep their IDs and exact weekdays/start/end geometry; extra protection
+may be added with another range. Stops, reshaping protected ranges and weakening protected rules stay
+in the native user flow. Even an already granted UI password cannot authorize a remote weakening.
+Changing the guide does not stop these rules. A quota alone does not activate a list: it needs a session
+or a programmed range. Personal lists and schedules belong in local private configuration, not source.
 
 #### Agent helper
 

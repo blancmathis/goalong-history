@@ -2,6 +2,14 @@
 
 Goalong réunit le déroulé humain de la journée et les travaux qui avancent en parallèle. Une personne peut suivre une seule tâche, ou lancer plusieurs agents puis documenter, créer, répondre et vérifier pendant qu'ils travaillent. Le modèle n'impose pas un nombre de projets ou une méthode de travail.
 
+## Activer et comprendre le guide
+
+Dans **Réglages → Modules → Journée guidée**, lire la présentation puis activer le guide. L'explication reste accessible par « Revoir l'explication » et dans la page du programme. L'activation démarre seulement le composant Concentration s'il manque ; elle n'active pas le module Blocage. Désactiver le guide arrête ses rappels et ses ajustements de reprise, sans supprimer le programme, arrêter une séance ou modifier un blocage.
+
+Une installation neuve n'a ni guide actif, ni agenda, ni modèle de routine, ni appel IA automatique. Les anciens rappels matin/soir sont aussi désactivés par défaut ; une préférence déjà enregistrée est conservée. Aucun horaire, activité personnelle ou contexte de l'auteur n'est installé chez les autres utilisateurs. Les nouveaux formulaires d'agenda demandent les horaires souhaités.
+
+Le premier écran montre l'action actuelle et ses consignes. Les réponses attendues des agents viennent ensuite ; un agenda long affiche un aperçu près du moment présent et permet d'ouvrir toute la journée. Fermer un rappel ne coche rien : l'action reste dans le programme. Le temps écoulé ne constitue pas une preuve d'exécution.
+
 ## Trois objets complémentaires
 
 | Objet | Ce qu'il décrit | Exemple |
@@ -24,7 +32,11 @@ Les réponses CLI exposent agendaDiagnostics : les conflits et identifiants des 
 
 Le réagencement garde les blocs fixes et les créneaux déjà traités. Il replace les blocs flexibles restants avec la marge choisie et leurs éventuelles bornes earliestMinute/latestEndMinute. Un bloc qui ne tient plus dans la journée reste visible avec state unscheduled. Un chevauchement d'ancrages doit être corrigé explicitement ; l'algorithme ne le résout pas en déplaçant silencieusement un rendez-vous fixe. Le réagencement ne décide ni qu'un travail est terminé ni qu'un agent a repris. Quand autoAdjust est actif, les interactions de début/fin, le report de quinze minutes et la reprise d'une journée tardive peuvent déclencher ce recalage ; reflow le demande explicitement.
 
-Le guidage est volontaire. Les rappels natifs apparaissent aux horaires choisis, une fois par créneau, avec un report de quinze minutes. Le plafond reminderLimit vaut huit par défaut et se règle de un à 32 par jour ; prévoir un budget couvrant les repères souhaités, y compris celui du soir. Il n'y a pas de rafale de rattrapage au réveil. Leur exécution dépend de l'app ; aucun second agent de surveillance n'est lancé.
+Chaque créneau peut contenir des instructions multilignes (1 200 caractères au maximum), un lien et un choix de rappel : inherit suit le choix de l'agenda, notify demande un rappel explicite, silent n'en demande aucun. Tous restent soumis à l'activation du guide, à son interrupteur global des rappels, à sa plage silencieuse éventuelle et au plafond de l'agenda. La plage silencieuse peut traverser minuit ; elle n'arrête aucun blocage ou séance.
+
+Les rappels natifs apparaissent aux horaires choisis, une fois par créneau, avec un report de quinze minutes. Le plafond reminderLimit vaut huit par défaut et se règle de un à 32 par jour. Choisir les transitions utiles plutôt que notifier chaque geste. Il n'y a pas de rafale de rattrapage au réveil. Leur exécution dépend de l'app ; aucun second agent de surveillance n'est lancé. Un repère fixe peut se situer après la fin du travail et être silencieux, avec toutes ses étapes visibles avant de quitter le Mac.
+
+Le conseil IA est une option séparée, désactivée par défaut : [COACH.md](COACH.md) décrit le choix de modèle, l'aperçu des données, les limites d'appels et l'utilisation d'un agent externe. L'agenda, le réagencement et les rappels n'utilisent aucun modèle.
 
 Les réponses non urgentes peuvent être regroupées dans des créneaux de coordination. Une question bloquante reste visible sans transformer tous les travaux de création en une suite d'interruptions. L'utilisateur garde le choix de changer la priorité.
 
@@ -76,3 +88,5 @@ Conserver seulement les métadonnées nécessaires à l'action. Ne pas mettre de
 L'activité observée, le temps d'une session, l'état déclaré d'un processus et un résultat vérifié sont des informations différentes. Les données absentes restent inconnues. Une routine affichée n'atteste pas qu'une personne s'est entraînée, a mangé, médité ou dormi.
 
 Les commandes de guidage ne lancent pas les agents, ne publient pas leur travail et ne modifient pas automatiquement les protections de blocage. Un rappel de fin de journée guide l'utilisateur ; il ne constitue pas un verrouillage du Mac.
+
+Une configuration de blocage explicitement demandée peut utiliser le CLI block-list : les listes et plages passent par le contrôleur natif, avec empreinte de concurrence et refus des affaiblissements protégés. Cette opération reste distincte de l'activation du guide. Les agents n'écrivent jamais directement les fichiers de blocage ni les mots de passe.

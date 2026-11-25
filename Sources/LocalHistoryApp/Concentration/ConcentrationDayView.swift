@@ -12,6 +12,9 @@ import SwiftUI
     @State private var editingProcess: FocusDayProcessRequest?
     @State private var answering: FocusAgentProcess?
     @State private var completedOpen = false
+    @State private var fullAgendaOpen = false
+    @State private var showingGuideIntro = false
+    @State private var guideError: String?
     @State private var error: String?
 
     private var plan: FocusPlan { controller.plan }
@@ -31,7 +34,21 @@ import SwiftUI
             dayHeader
             if let error { GoalongNote(error, tone: .warning, onDismiss: { self.error = nil }) }
             if controller.settings.usePlanContext == true { FocusDayPlanContextNotice() }
+            if controller.settings.dayGuideSettings.enabled,
+               controller.settings.dayGuideSettings.introVersion < FocusDayGuideIntro.version {
+                HStack(alignment: .center, spacing: 14) {
+                    Text("Votre programme est prêt. Découvrez comment le suivre et l’ajuster.")
+                        .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Voir le mode d’emploi") { showingGuideIntro = true }
+                        .buttonStyle(LHSecondaryButtonStyle())
+                }
+                .accessibilityIdentifier("concentration-day-guide-welcome")
+            }
             currentAction
+            if !waiting.isEmpty { waitingSection }
+            FocusDayCoachCard(controller: controller)
             if let agenda = plan.agenda, !agenda.slots.isEmpty { agendaList(agenda) }
             taskList
             if !processes.isEmpty { parallelSection }
@@ -52,6 +69,12 @@ import SwiftUI
         .sheet(item: $answering) { process in
             FocusDayAnswerSheet(controller: controller, process: process).goalongControls()
         }
+        .sheet(isPresented: $showingGuideIntro) {
+            FocusDayGuideIntro(enabled: controller.settings.dayGuideSettings.enabled, error: guideError,
+                              onContinue: acknowledgeGuide,
+                              onClose: { showingGuideIntro = false; guideError = nil })
+                .goalongControls()
+        }
     }
 
     private var dayHeader: some View {
@@ -68,6 +91,10 @@ import SwiftUI
             Spacer(minLength: 8)
             Button("Agenda") { editingAgenda = true }.buttonStyle(LHSecondaryButtonStyle())
                 .accessibilityIdentifier("concentration-edit-agenda")
+            Button { showingGuideIntro = true } label: { Image(systemName: "questionmark.circle").frame(width: 26, height: 28) }
+                .buttonStyle(LHQuietButtonStyle()).accessibilityLabel("Comprendre la journée guidée")
+                .help("Comprendre la journée guidée")
+                .accessibilityIdentifier("concentration-day-guide-help")
             if !plan.items.isEmpty {
                 Button("Bilan", action: onReview).buttonStyle(LHQuietButtonStyle())
                     .accessibilityIdentifier("concentration-open-review")
@@ -83,13 +110,14 @@ import SwiftUI
             FocusDayCurrentCard(
                 eyebrow: currentSlot == nil ? "À suivre · \(FocusDayUI.time(slot.startMinute))" : "Maintenant",
                 title: slot.title, item: FocusDayPlanner.task(for: slot, in: plan),
+                instructions: slot.instructions, contextURL: slot.contextURL,
                 active: slot.state == .active, hasSession: controller.currentSession != nil,
                 next: nextDescription(after: slot), fixed: slot.fixed,
                 onStart: { perform { try controller.startAgendaSlot(slot.id) } },
                 onFinish: { perform { try controller.finishAgendaSlot(slot.id) } },
                 onShift: { perform { try controller.shiftAgendaSlot(slot.id, minutes: 15) } },
                 onBlocked: { if let item = FocusDayPlanner.task(for: slot, in: plan) { edit(item, blocked: true) } },
-                onContext: { openContext(FocusDayPlanner.task(for: slot, in: plan)?.contextURL) })
+                onContext: { openContext(slot.contextURL ?? FocusDayPlanner.task(for: slot, in: plan)?.contextURL) })
         } else if let item = currentItem {
             standaloneTaskCard(item)
         } else if controller.currentSession == nil {
@@ -120,7 +148,7 @@ import SwiftUI
     }
 
     private func agendaList(_ agenda: FocusAgenda) -> some View {
-        GoalongSection(title: "Agenda", subtitle: agenda.guided ? "Les rappels suivent le planning." : "Activez les rappels dans les réglages de l’agenda.") {
+        GoalongSection(title: "Agenda", subtitle: agendaReminderSummary(agenda)) {
             Menu {
                 Button("Modifier les horaires") { editingAgenda = true }
                 Button("Replacer la suite") { perform { try controller.reflowDayPlan() } }
@@ -130,18 +158,52 @@ import SwiftUI
             } label: { Image(systemName: "ellipsis").frame(width: 28, height: 24) }
                 .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Actions de l’agenda")
         } content: {
-            LHCard(padding: 0) {
-                VStack(spacing: 0) {
-                    ForEach(agenda.slots.sorted { $0.startMinute < $1.startMinute }) { slot in
-                        FocusDayAgendaRow(slot: slot, current: currentSlot?.id == slot.id,
-                                          onSelect: { perform { try controller.startAgendaSlot(slot.id) } },
-                                          onFinish: { perform { try controller.finishAgendaSlot(slot.id) } },
-                                          onShift: { perform { try controller.shiftAgendaSlot(slot.id, minutes: 15) } },
-                                          canStart: controller.currentSession == nil)
-                        if slot.id != agenda.slots.sorted(by: { $0.startMinute < $1.startMinute }).last?.id {
-                            GoalongRowDivider(inset: 16)
-                        }
+            let slots = agenda.slots.sorted { $0.startMinute < $1.startMinute }
+            if slots.count > 6 {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !fullAgendaOpen {
+                        agendaRows(FocusDayUI.agendaPreview(slots, currentID: currentSlot?.id, nextID: nextSlot?.id))
                     }
+                    GoalongDisclosureGroup(fullAgendaOpen ? "Replier la journée" : "Voir toute la journée · \(slots.count) créneaux",
+                                           isExpanded: $fullAgendaOpen) {
+                        agendaRows(slots).padding(.top, 12)
+                    }
+                    .font(.system(size: 13))
+                    .accessibilityIdentifier("concentration-full-agenda")
+                }
+            } else {
+                agendaRows(slots)
+            }
+        }
+    }
+
+    private func agendaReminderSummary(_ agenda: FocusAgenda) -> String {
+        guard controller.settings.dayGuideSettings.enabled else {
+            return "Programme consultable. Activez la journée guidée dans Réglages › Modules pour ses rappels et ajustements."
+        }
+        guard controller.settings.dayGuideSettings.remindersEnabled else {
+            return "Rappels en pause. Votre programme reste visible."
+        }
+        if agenda.guided { return "Les rappels suivent vos choix. Fermer un rappel ne termine pas l’action." }
+        let exceptions = agenda.slots.filter { $0.reminder == .notify }.count
+        if exceptions > 0 {
+            return exceptions == 1 ? "Un seul créneau demande explicitement un rappel."
+                : "\(exceptions) créneaux demandent explicitement un rappel."
+        }
+        return "Les rappels de cet agenda sont désactivés."
+    }
+
+    private func agendaRows(_ slots: [FocusAgendaSlot]) -> some View {
+        LHCard(padding: 0) {
+            VStack(spacing: 0) {
+                ForEach(slots) { slot in
+                    FocusDayAgendaRow(slot: slot, current: currentSlot?.id == slot.id,
+                                      onSelect: { perform { try controller.startAgendaSlot(slot.id) } },
+                                      onFinish: { perform { try controller.finishAgendaSlot(slot.id) } },
+                                      onShift: { perform { try controller.shiftAgendaSlot(slot.id, minutes: 15) } },
+                                      onContext: { openContext(slot.contextURL) },
+                                      canStart: controller.currentSession == nil)
+                    if slot.id != slots.last?.id { GoalongRowDivider(inset: 16) }
                 }
             }
         }
@@ -247,22 +309,6 @@ import SwiftUI
                 .buttonStyle(LHQuietButtonStyle()).disabled(processes.count >= FocusPlan.maximumProcesses)
         } content: {
             VStack(alignment: .leading, spacing: 14) {
-                if !waiting.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(waiting.count == 1 ? "Une question à débloquer" : "\(waiting.count) questions à débloquer")
-                            .font(.system(size: 13, weight: .semibold))
-                        ForEach(waitingGroups, id: \.self) { project in
-                            VStack(alignment: .leading, spacing: 5) {
-                                if project != "Sans projet" || waitingGroups.count > 1 {
-                                    Text(project).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
-                                }
-                                ForEach(waiting.filter { (FocusDayUI.clean($0.project) ?? "Sans projet") == project }) { process in
-                                    questionRow(process)
-                                }
-                            }
-                        }
-                    }
-                }
                 LHCard(padding: 0) {
                     VStack(spacing: 0) {
                         ForEach(processes) { process in
@@ -273,6 +319,27 @@ import SwiftUI
                 }
             }
         }
+    }
+
+    private var waitingSection: some View {
+        GoalongSection(title: "Réponses attendues",
+                       subtitle: waiting.count == 1 ? "Une question pour faire avancer un processus." : "\(waiting.count) questions, regroupées par projet.") {
+            LHCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(waitingGroups, id: \.self) { project in
+                        VStack(alignment: .leading, spacing: 5) {
+                            if project != "Sans projet" || waitingGroups.count > 1 {
+                                Text(project).font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            }
+                            ForEach(waiting.filter { (FocusDayUI.clean($0.project) ?? "Sans projet") == project }) { process in
+                                questionRow(process)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("concentration-waiting-questions")
     }
 
     private var waitingGroups: [String] {
@@ -312,6 +379,17 @@ import SwiftUI
             } label: { Image(systemName: "ellipsis").frame(width: 24, height: 28) }
                 .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Options de \(process.title)")
         }.padding(14)
+    }
+
+    private func acknowledgeGuide() {
+        var settings = controller.settings.dayGuideSettings
+        settings.enabled = true
+        settings.introVersion = FocusDayGuideIntro.version
+        do {
+            try controller.updateDayGuideSettings(settings)
+            guideError = nil
+            showingGuideIntro = false
+        } catch { guideError = FocusUIError.message(error) }
     }
 
     private func addTask() {
@@ -358,6 +436,8 @@ private struct FocusDayCurrentCard: View {
     let eyebrow: String
     let title: String
     let item: FocusPlanItem?
+    var instructions: String? = nil
+    var contextURL: String? = nil
     let active: Bool
     let hasSession: Bool
     let next: String?
@@ -383,6 +463,12 @@ private struct FocusDayCurrentCard: View {
                 if let action = FocusDayUI.clean(item?.nextAction) {
                     Text(action).font(.system(size: 15)).fixedSize(horizontal: false, vertical: true)
                 }
+                if let instructions = FocusDayUI.instructions(instructions),
+                   instructions != FocusDayUI.instructions(item?.nextAction) {
+                    Text(instructions).font(.system(size: 14))
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("concentration-current-instructions")
+                }
                 if let done = FocusDayUI.clean(item?.doneWhen) {
                     Text("Fini quand : \(done)").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 }
@@ -405,7 +491,7 @@ private struct FocusDayCurrentCard: View {
                     }
                     if item != nil { Button("Ça bloque", action: onBlocked).buttonStyle(LHQuietButtonStyle()) }
                     Spacer(minLength: 4)
-                    if item?.contextURL != nil {
+                    if (contextURL ?? item?.contextURL) != nil {
                         Button(action: onContext) { Label("Contexte", systemImage: "arrow.up.right") }
                             .buttonStyle(LHQuietButtonStyle())
                     }
@@ -425,32 +511,52 @@ private struct FocusDayAgendaRow: View {
     let onSelect: () -> Void
     let onFinish: () -> Void
     let onShift: () -> Void
+    let onContext: () -> Void
     let canStart: Bool
+    @State private var detailsOpen = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(FocusDayUI.time(slot.startMinute)).font(.system(size: 13, weight: .medium).monospacedDigit())
-                Text(FocusDayUI.time(slot.endMinute)).font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
-            }.frame(width: 44, alignment: .leading)
-            Rectangle().fill(current ? LHTheme.text : LHTheme.separator).frame(width: current ? 3 : 1, height: 30)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(slot.title).font(.system(size: 13, weight: current ? .semibold : .regular))
-                    .foregroundStyle(slot.state.isFinished ? LHTheme.secondaryText : LHTheme.text)
-                HStack(spacing: 7) {
-                    Text(slot.state.title)
-                    if slot.fixed { Label("Fixe", systemImage: "pin") }
-                }.font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(FocusDayUI.time(slot.startMinute)).font(.system(size: 13, weight: .medium).monospacedDigit())
+                    Text(FocusDayUI.time(slot.endMinute)).font(.system(size: 11).monospacedDigit()).foregroundStyle(LHTheme.secondaryText)
+                }.frame(width: 44, alignment: .leading)
+                Rectangle().fill(current ? LHTheme.text : LHTheme.separator).frame(width: current ? 3 : 1, height: 30)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(slot.title).font(.system(size: 13, weight: current ? .semibold : .regular))
+                        .foregroundStyle(slot.state.isFinished ? LHTheme.secondaryText : LHTheme.text)
+                    HStack(spacing: 7) {
+                        Text(slot.state.title)
+                        if slot.fixed { Label("Fixe", systemImage: "pin") }
+                        if slot.reminder == .silent { Label("Sans rappel", systemImage: "bell.slash") }
+                    }.font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                }
+                Spacer(minLength: 8)
+                if !slot.state.isFinished {
+                    Menu {
+                        if slot.state != .active { Button("Commencer", action: onSelect).disabled(!canStart) }
+                        Button("C’est fait", action: onFinish)
+                        if !slot.fixed { Button(slot.state == .active ? "Ajouter 15 min au créneau" : "Décaler de 15 min", action: onShift) }
+                    } label: { Image(systemName: "ellipsis").frame(width: 24, height: 28) }
+                        .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Options de \(slot.title)")
+                }
             }
-            Spacer(minLength: 8)
-            if !slot.state.isFinished {
-                Menu {
-                    if slot.state != .active { Button("Commencer", action: onSelect).disabled(!canStart) }
-                    Button("C’est fait", action: onFinish)
-                    if !slot.fixed { Button(slot.state == .active ? "Ajouter 15 min au créneau" : "Décaler de 15 min", action: onShift) }
-                } label: { Image(systemName: "ellipsis").frame(width: 24, height: 28) }
-                    .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Options de \(slot.title)")
+            if FocusDayUI.instructions(slot.instructions) != nil || slot.contextURL != nil {
+                GoalongDisclosureGroup("Consignes et contexte", isExpanded: $detailsOpen) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        if let instructions = FocusDayUI.instructions(slot.instructions) {
+                            Text(instructions).font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
+                                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        }
+                        if slot.contextURL != nil {
+                            Button("Ouvrir le contexte", action: onContext).buttonStyle(LHQuietButtonStyle())
+                        }
+                    }.padding(.top, 9)
+                }
+                .font(.system(size: 12)).padding(.leading, 58)
+                .accessibilityLabel("Consignes de \(slot.title)")
             }
         }.padding(.horizontal, 16).padding(.vertical, 12)
     }
@@ -539,6 +645,7 @@ private struct FocusDayAgendaRow: View {
     @State private var plan: FocusPlan
     @Environment(\.dismiss) private var dismiss
     @State private var agenda: FocusAgenda
+    private let newAgenda: Bool
     @State private var repeatAnchors = false
     @State private var optionsOpen = false
     @State private var error: String?
@@ -546,6 +653,7 @@ private struct FocusDayAgendaRow: View {
     init(controller: ConcentrationController, plan: FocusPlan) {
         self.controller = controller
         _plan = State(initialValue: plan)
+        newAgenda = plan.agenda == nil
         var localAgenda = plan.agenda ?? FocusAgenda(timeZoneID: TimeZone.current.identifier)
         localAgenda.timeZoneID = TimeZone.current.identifier
         _agenda = State(initialValue: localAgenda)
@@ -556,7 +664,16 @@ private struct FocusDayAgendaRow: View {
         FocusDaySheet(title: "Préparer la journée", error: error, width: 720, onCancel: { dismiss() }, onSave: save) {
             Text("Des actions pour votre attention, des repères fixes pour les repas et la fin de journée. Les processus parallèles ne prennent pas un créneau chacun.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
-            Toggle("Me rappeler l’action à suivre", isOn: $agenda.guided)
+            Toggle("Activer les rappels pour cet agenda", isOn: $agenda.guided)
+            if !controller.settings.dayGuideSettings.enabled {
+                Text("La journée guidée est désactivée dans Réglages › Modules : rappels et ajustements automatiques sont suspendus. Vous pouvez préparer le programme ici.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !controller.settings.dayGuideSettings.remindersEnabled {
+                Text("Les rappels sont en pause dans Réglages › Modules › Journée guidée. Les ajustements restent indépendants.")
+                    .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if agenda.slots.isEmpty {
                 Text("Ajoutez les actions et les repères dont vous avez besoin.")
                     .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText).padding(.vertical, 8)
@@ -584,11 +701,16 @@ private struct FocusDayAgendaRow: View {
             GoalongDisclosureGroup("Ajustements et répétition", isExpanded: $optionsOpen) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 18) {
-                        GoalongFormField(title: "Début de la plage de travail") { FocusDayTimeField(minute: $agenda.startMinute) }
-                        GoalongFormField(title: "Fin de la plage de travail") { FocusDayTimeField(minute: $agenda.endMinute, allowsMidnight: true) }
+                        GoalongFormField(title: "Début de la plage de travail") { FocusDayTimeField(minute: $agenda.startMinute, startsEmpty: newAgenda) }
+                        GoalongFormField(title: "Fin de la plage de travail") { FocusDayTimeField(minute: $agenda.endMinute, allowsMidnight: true, startsEmpty: newAgenda) }
                         GoalongFormField(title: "Marge entre les actions") {
                             Stepper("\(agenda.bufferMinutes) min", value: $agenda.bufferMinutes, in: 0...60, step: 5)
                         }
+                    }
+                    if newAgenda {
+                        Text("Ces heures sont facultatives. Choisissez-les pour limiter le placement des actions souples à votre propre plage de travail.")
+                            .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Toggle("Replacer les actions souples après un changement", isOn: $agenda.autoAdjust)
                     Stepper("Rappels maximum par jour : \(agenda.reminderLimit)", value: $agenda.reminderLimit, in: 1...32)
@@ -630,8 +752,12 @@ private struct FocusDayAgendaRow: View {
     }
     private func save() {
         agenda.timeZoneID = TimeZone.current.identifier
+        for index in agenda.slots.indices {
+            agenda.slots[index].instructions = FocusDayUI.instructions(agenda.slots[index].instructions)
+            agenda.slots[index].contextURL = FocusDayUI.instructions(agenda.slots[index].contextURL)
+        }
         guard agenda.valid(forDay: plan.day, items: plan.items) else {
-            error = "Vérifiez les titres, les horaires et la plage de travail. L’heure de fin doit suivre l’heure de début."
+            error = "Vérifiez les titres, les horaires, les liens et les consignes (1 200 caractères maximum). La fin doit suivre le début."
             return
         }
         var updated = plan; updated.agenda = agenda
@@ -650,6 +776,7 @@ private struct FocusDaySlotEditor: View {
     let items: [FocusPlanItem]
     let removable: Bool
     let onRemove: () -> Void
+    @State private var detailsOpen = false
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -670,27 +797,74 @@ private struct FocusDaySlotEditor: View {
                 }
                 if slot.state == .active { Text("En cours").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText) }
             }.font(.system(size: 12))
+            GoalongDisclosureGroup("Consignes, contexte et rappel", isExpanded: $detailsOpen) {
+                VStack(alignment: .leading, spacing: 12) {
+                    GoalongFormField(title: "Consignes", detail: "Le déroulé à suivre, y compris pour un moment hors du Mac. Facultatif, 1 200 caractères maximum.") {
+                        TextEditor(text: optional(\.instructions))
+                            .font(.system(size: 13)).frame(minHeight: 62, maxHeight: 130)
+                            .padding(6)
+                            .background(LHTheme.controlBackground, in: RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: LHTheme.controlRadius, style: .continuous).strokeBorder(LHTheme.controlBorder))
+                            .accessibilityLabel("Consignes du créneau")
+                        if (slot.instructions?.count ?? 0) > 1200 {
+                            Text("Raccourcissez les consignes à 1 200 caractères.").font(.system(size: 12)).foregroundStyle(LHTheme.warning)
+                        }
+                    }
+                    GoalongFormField(title: "Lien de contexte") {
+                        TextField("Documentation, projet ou conversation", text: optional(\.contextURL))
+                            .textFieldStyle(GoalongFieldStyle())
+                    }
+                    HStack(spacing: 12) {
+                        Text("Rappel de ce créneau").font(.system(size: 12))
+                        Spacer(minLength: 8)
+                        GoalongMenuPicker("Rappel de ce créneau", selection: $slot.reminder,
+                                          options: [(.inherit, "Suivre l’agenda"), (.notify, "Me rappeler"), (.silent, "Silencieux")])
+                    }
+                    Text("« Me rappeler » demande un rappel même si l’agenda est silencieux. L’activation générale, la plage silencieuse et le plafond quotidien restent prioritaires.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(.top, 12)
+            }
+            .collapsedSummary(FocusDayUI.instructions(slot.instructions) == nil && slot.contextURL == nil && slot.reminder == .inherit ? nil : "Personnalisés")
+            .font(.system(size: 12))
         }
+    }
+
+    private func optional(_ path: WritableKeyPath<FocusAgendaSlot, String?>) -> Binding<String> {
+        Binding(get: { slot[keyPath: path] ?? "" }, set: { slot[keyPath: path] = $0.isEmpty ? nil : $0 })
     }
 }
 
 private struct FocusDayTimeField: View {
     @Binding var minute: Int
     var allowsMidnight = false
+    var startsEmpty = false
     @State private var text = ""
     @State private var invalid = false
+    @State private var userEnteredTime = false
 
     var body: some View {
-        TextField("08:00", text: Binding(get: { text }, set: { value in
+        TextField("hh:mm", text: Binding(get: { text }, set: { value in
             text = value
+            userEnteredTime = true
+            if startsEmpty && value.trimmingCharacters(in: .whitespaces).isEmpty {
+                minute = allowsMidnight ? 1440 : 0
+                invalid = false
+                return
+            }
             if let value = FocusDayUI.minute(value), value < 1440 || allowsMidnight {
                 minute = value; invalid = false
             } else { invalid = true; minute = -1 }
         }))
         .textFieldStyle(GoalongFieldStyle(textFont: .monospaced14))
         .foregroundStyle(invalid ? LHTheme.warning : LHTheme.text)
-        .onAppearWhenShown { text = FocusDayUI.time(minute) }
+        .onAppearWhenShown {
+            if !invalid && (!startsEmpty || (userEnteredTime && !text.trimmingCharacters(in: .whitespaces).isEmpty)) {
+                text = FocusDayUI.time(minute)
+            }
+        }
         .onChange(of: minute) { value in
+            if startsEmpty && (!userEnteredTime || text.trimmingCharacters(in: .whitespaces).isEmpty) { return }
             if !invalid && FocusDayUI.minute(text) != value { text = FocusDayUI.time(value); invalid = false }
         }
         .accessibilityLabel("Heure, au format heures et minutes")
@@ -815,6 +989,19 @@ private struct FocusDaySheet<Content: View>: View {
 }
 
 enum FocusDayUI {
+    /// Keep line breaks: routine instructions are an ordered sequence, not a one-line label.
+    static func instructions(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
+    }
+    /// A long agenda opens near the present; the full day remains one visible disclosure away.
+    static func agendaPreview(_ slots: [FocusAgendaSlot], currentID: UUID?, nextID: UUID?) -> [FocusAgendaSlot] {
+        guard let anchor = currentID ?? nextID, let index = slots.firstIndex(where: { $0.id == anchor }) else {
+            return Array(slots.suffix(3))
+        }
+        return Array(slots[index...].prefix(3))
+    }
     static func clean(_ value: String?) -> String? {
         guard let value else { return nil }
         let result = value.split(whereSeparator: \.isWhitespace).joined(separator: " ")

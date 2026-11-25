@@ -6,11 +6,12 @@ final class FocusDayControllerTests: XCTestCase {
     private let day = "2026-11-25"
     private var now: Date { FocusDayPlanner.date(day: day, minute: 600, timeZoneID: "UTC")! }
     private var calendar: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }
-    private func store() throws -> FocusStore {
+    private func store(guided: Bool = false) throws -> FocusStore {
         let url = URL(fileURLWithPath: "/private/tmp/focus-day-controller-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         let store = FocusStore(directory: url)
         var settings = FocusSettings(); settings.morningPrompt = false; settings.eveningPrompt = false
+        if guided { settings.dayGuide = .init(enabled: true) }
         try store.saveSettings(settings); return store
     }
     private func json(_ object: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) }
@@ -144,7 +145,7 @@ final class FocusDayControllerTests: XCTestCase {
         XCTAssertEqual(c.plan.agenda?.slots.first?.state, .active)
     }
     @MainActor func testGuidanceBudgetPersistsAndDoesNotReplayMissedSlots() throws {
-        let s = try store(); var instant = now
+        let s = try store(guided: true); var instant = now
         let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
         let slots = (0..<12).map { FocusAgendaSlot(title: "Repère \($0)", startMinute: 600 + $0 * 10, endMinute: 610 + $0 * 10, fixed: true) }
         var plan = FocusPlan(day: day); plan.agenda = FocusAgenda(timeZoneID: "UTC", guided: true, slots: slots)

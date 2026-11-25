@@ -560,8 +560,51 @@ struct FocusPanel: Equatable {
         return FocusCalendar.dayKey(interval.end, calendar: calendar)
     }
     func updateSettings(_ value: FocusSettings) throws {
-        guard value.valid else { throw FocusFailure.invalidArgument }; try saving { try store.saveSettings(value) }; settings = value
+        guard value.valid else { throw FocusFailure.invalidArgument }
+        if value == settings { return }
+        guard settings.effectiveGuideRevision < 1_000_000_000 else { throw FocusFailure.invalidArgument }
+        var next = value; next.guideRevision = settings.effectiveGuideRevision + 1
+        let coachChanged = next.coachSettings != settings.coachSettings
+        try saving { try store.saveSettings(next) }; settings = next
+        if coachChanged { NotificationCenter.default.post(name: .goalongFocusCoachSettingsDidChange, object: self) }
+        if !settings.dayGuideSettings.enabled || !settings.dayGuideSettings.remindersEnabled {
+            if panel?.kind == .agenda { dismissPanel() }
+        }
         if !settings.detectionEnabled { detection.reset() }; refreshCommitmentCards(); refresh()
+    }
+    func updateDayGuideSettings(_ value: FocusDayGuideSettings) throws {
+        var next = settings; next.dayGuide = value; try updateSettings(next)
+    }
+    func updateCoachSettings(_ value: FocusDayCoachSettings) throws {
+        var next = settings; next.coach = value; try updateSettings(next)
+    }
+    /// Configuration only. Choosing a provider never grants a capability consent or starts inference.
+    func configureDayGuide(body: Data, expectedRevision: Int) throws {
+        try admit()
+        try GoalongFocusCLI.validateGuideInput(body)
+        guard settings.effectiveGuideRevision == expectedRevision else { throw FocusFailure.conflict }
+        guard body.count <= 65_536,
+              let object = try JSONSerialization.jsonObject(with: body) as? [String: Any], !object.isEmpty,
+              Set(object.keys).isSubset(of: ["dayGuide", "coach", "morningPrompt", "morningMinute", "eveningPrompt", "eveningMinute"]) else { throw FocusFailure.invalidArgument }
+        struct Patch: Decodable {
+            var morningPrompt: Bool?; var morningMinute: Int?; var eveningPrompt: Bool?; var eveningMinute: Int?
+        }
+        let patch = try FocusJSON.decode(Patch.self, from: body)
+        var next = settings
+        func merged<T: Codable>(_ current: T, with raw: Any) throws -> T? {
+            if raw is NSNull { return nil }
+            guard let fields = raw as? [String: Any],
+                  var value = try JSONSerialization.jsonObject(with: FocusJSON.encode(current)) as? [String: Any] else { throw FocusFailure.invalidArgument }
+            for (key, field) in fields { value[key] = field }
+            return try FocusJSON.decode(T.self, from: JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
+        }
+        if let raw = object["dayGuide"] { next.dayGuide = try merged(settings.dayGuideSettings, with: raw) }
+        if let raw = object["coach"] { next.coach = try merged(settings.coachSettings, with: raw) }
+        if let value = patch.morningPrompt { next.morningPrompt = value }
+        if let value = patch.morningMinute { next.morningMinute = value }
+        if let value = patch.eveningPrompt { next.eveningPrompt = value }
+        if let value = patch.eveningMinute { next.eveningMinute = value }
+        try updateSettings(next)
     }
     func noteInput(at date: Date, count: Int) { if count > 0 { latestInput = date } }
     func observe(_ value: FocusObservation) {
@@ -721,7 +764,7 @@ struct FocusPanel: Equatable {
         // The question about the session that just ended comes first; the prompts return once it is answered or gone.
         if panel?.kind == .sessionReview { return }
         // A guided day already carries its morning/evening anchors.
-        if plan.agenda?.guided == true { return }
+        if settings.dayGuideSettings.enabled, plan.agenda != nil { return }
         let minute = calendar.component(.hour, from: clock()) * 60 + calendar.component(.minute, from: clock())
         let evening = eveningMinute(on: clock())
         var request: FocusPanel.Kind?
@@ -767,7 +810,7 @@ struct FocusPanel: Equatable {
         var boundaries = [phase?.endsAt, panel?.expiresAt, promptState.morningReminded ? nil : promptState.morningReminderAt,
                           promptState.eveningReminded ? nil : promptState.eveningReminderAt].compactMap { $0 }
         boundaries += commitmentCards.compactMap(\.exitUntil)
-        if let agenda = plan.agenda, agenda.guided {
+        if settings.dayGuideSettings.enabled, let agenda = plan.agenda {
             boundaries += agenda.slots.filter { !$0.state.isFinished && $0.state != .unscheduled }.compactMap {
                 FocusDayPlanner.date(day: plan.day, minute: $0.startMinute, timeZoneID: agenda.timeZoneID)
             }
@@ -882,7 +925,14 @@ extension ConcentrationController {
         let hash = try digest(FocusJSON.encode(value))
         if let requestID, try repeated(old, requestID: requestID, digest: hash) { return }
         guard expectedRevision == old.effectiveRevision else { throw FocusFailure.conflict }
-        if requestID == nil, value == old { return }
+        if requestID == nil, value == old {
+            // A freshly installed template can already be returned by plan(on:) before a daily file exists.
+            // Keep the published plan in sync even when there is no new revision to persist.
+            if old.day == currentDay, plan != old {
+                plan = old; updateMeasures(); publishStatus(); scheduleTimer()
+            }
+            return
+        }
         try saveDay(versioned(value, replacing: old, actor: actor, reason: reason,
                               receipt: requestID.map { (id: $0, digest: hash) }))
     }
@@ -943,7 +993,7 @@ extension ConcentrationController {
         if let raw = object["agenda"] {
             guard let agenda = raw as? [String: Any], Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "reminderLimit", "slots"]) else { throw FocusFailure.invalidArgument }
             if let rawSlots = agenda["slots"] {
-                let keys: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute"]
+                let keys: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute", "instructions", "reminder", "contextURL"]
                 guard let slots = rawSlots as? [[String: Any]], slots.allSatisfy({
                     Set($0.keys).isSubset(of: keys) && ($0["id"] as? String).flatMap(UUID.init(uuidString:)) != nil
                 }) else { throw FocusFailure.invalidArgument }
@@ -971,9 +1021,9 @@ extension ConcentrationController {
         _ = try reflowPlan(on: currentDay, expectedRevision: plan.effectiveRevision, requestID: UUID().uuidString)
     }
     private func reflowOverdueAgenda() {
-        guard currentSession == nil, panel == nil, !storageFailed,
+        guard settings.dayGuideSettings.enabled, currentSession == nil, panel == nil, !storageFailed,
               clock().throttleElapsed(since: lastAgendaAutoAdjustment) >= 300,
-              let agenda = plan.agenda, agenda.guided, agenda.autoAdjust,
+              let agenda = plan.agenda, agenda.autoAdjust,
               !agenda.slots.contains(where: { $0.state == .active }),
               let minute = FocusDayPlanner.localMinute(at: clock(), timeZoneID: agenda.timeZoneID),
               FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == plan.day,
@@ -1104,7 +1154,10 @@ extension ConcentrationController {
     }
     private func checkAgendaPrompt() {
         let promptTime = clock() // wall: civil agenda reminder only; never a blocking or stake decision.
-        guard !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda, agenda.guided,
+        guard settings.dayGuideSettings.enabled, settings.dayGuideSettings.remindersEnabled,
+              !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda,
+              let minute = FocusDayPlanner.localMinute(at: promptTime, timeZoneID: agenda.timeZoneID),
+              !settings.dayGuideSettings.isQuiet(minute: minute),
               (promptState.agendaPromptCount ?? 0) < agenda.reminderLimit,
               (promptState.agendaSnoozedUntil ?? .distantPast) <= promptTime,
               FocusDayPlanner.dayKey(at: promptTime, timeZoneID: agenda.timeZoneID) == plan.day,
@@ -1114,7 +1167,8 @@ extension ConcentrationController {
         let candidates = agenda.slots.filter { slot in
             guard let start = FocusDayPlanner.date(day: plan.day, minute: slot.startMinute, timeZoneID: agenda.timeZoneID),
                   let end = FocusDayPlanner.date(day: plan.day, minute: slot.endMinute, timeZoneID: agenda.timeZoneID) else { return false }
-            return slot.state == .planned && start <= promptTime && promptTime < end
+            return (slot.reminder == .notify || (slot.reminder == .inherit && agenda.guided))
+                && slot.state == .planned && start <= promptTime && promptTime < end
                 && !shown.contains(slot.id) && (currentSession == nil || slot.fixed)
                 && (FocusDayPlanner.task(for: slot, in: plan).map { $0.status == .open } ?? true)
         }.sorted { $0.startMinute < $1.startMinute }
@@ -1125,7 +1179,9 @@ extension ConcentrationController {
         do { try saving { try store.savePrompts(prompts) } } catch { return }
         promptState = prompts
         let action = FocusDayPlanner.task(for: slot, in: plan)?.nextAction
-        showPanel(.init(kind: .agenda, text: action ?? slot.title, expiresAt: promptTime.addingTimeInterval(45), slotID: slot.id))
+        let instructions = slot.instructions?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = instructions.flatMap { $0.isEmpty ? nil : $0 } ?? action ?? slot.title
+        showPanel(.init(kind: .agenda, text: text, expiresAt: promptTime.addingTimeInterval(45), slotID: slot.id))
     }
     func snoozeAgendaPrompt() {
         guard let id = panel?.slotID else { return }

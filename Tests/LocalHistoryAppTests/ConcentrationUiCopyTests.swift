@@ -48,6 +48,47 @@ final class ConcentrationUiCopyTests: XCTestCase {
         XCTAssertEqual(FocusLimitsEditing.toggled(added.settings, day: 2).settings.limits.weekdays, [3])
     }
 
+    @MainActor func testActivatingTheGuideDoesNotInventAProgramOrEnableACoach() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("goalong-guide-ui-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = try ConcentrationController(store: FocusStore(directory: directory), runsTimers: false)
+        XCTAssertFalse(controller.settings.dayGuideSettings.enabled)
+        var guide = controller.settings.dayGuideSettings
+        guide.enabled = true
+        guide.introVersion = FocusDayGuideIntro.version
+        try controller.updateDayGuideSettings(guide)
+        XCTAssertTrue(controller.settings.dayGuideSettings.enabled)
+        XCTAssertNil(controller.settings.dayGuideSettings.quietStartMinute)
+        XCTAssertNil(controller.settings.dayGuideSettings.quietEndMinute)
+        XCTAssertNil(controller.settings.agendaTemplate)
+        XCTAssertNil(controller.plan.agenda)
+        XCTAssertTrue(controller.plan.items.isEmpty)
+        XCTAssertTrue((controller.plan.processes ?? []).isEmpty)
+        XCTAssertNil(controller.settings.coach)
+        XCTAssertFalse(controller.settings.coachSettings.enabled)
+        XCTAssertNil(controller.settings.coachSettings.model)
+        XCTAssertNil(controller.settings.coachSettings.reasoningEffort)
+    }
+
+    func testRoutineInstructionsKeepTheirStepsAndIgnoreAnEmptyValue() {
+        XCTAssertEqual(FocusDayUI.instructions("  Ouvrir le document.\nRelire les décisions.  "), "Ouvrir le document.\nRelire les décisions.")
+        XCTAssertNil(FocusDayUI.instructions(" \n\t "))
+        XCTAssertNil(FocusDayUI.instructions(nil))
+    }
+
+    func testLongAgendaPreviewStartsAtTheCurrentOrNextSlot() {
+        let slots = (0..<8).map { index in
+            FocusAgendaSlot(title: "Créneau \(index)", startMinute: 480 + 30 * index, endMinute: 510 + 30 * index)
+        }
+        XCTAssertEqual(FocusDayUI.agendaPreview(slots, currentID: slots[4].id, nextID: slots[5].id).map(\.id),
+                       Array(slots[4...6]).map(\.id))
+        XCTAssertEqual(FocusDayUI.agendaPreview(slots, currentID: nil, nextID: slots[6].id).map(\.id),
+                       Array(slots[6...7]).map(\.id))
+        XCTAssertEqual(FocusDayUI.agendaPreview(slots, currentID: nil, nextID: nil).map(\.id),
+                       Array(slots.suffix(3)).map(\.id))
+        XCTAssertTrue(FocusDayUI.agendaPreview([], currentID: nil, nextID: nil).isEmpty)
+    }
+
     /// H31 L7: the end of the day is a word, not 23:59.
     func testDeadlineSpeaksTheEndOfTheDay() {
         XCTAssertEqual(FocusCommitmentFormat.deadline("23:59"), "la fin de la journée")
