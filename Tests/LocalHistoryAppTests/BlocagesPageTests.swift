@@ -93,6 +93,7 @@ import XCTest
 
     func testProgrammeRequestMountsTheGuidedDayInTheProductionPage() throws {
         let now = wednesday10h
+        let instructions = "Ouvrir la documentation et écrire le premier exemple."
         let store = FocusStore(directory: try root().appendingPathComponent("Focus"))
         var settings = FocusSettings()
         settings.dayGuide = .init(enabled: true, introVersion: 1, remindersEnabled: false)
@@ -103,12 +104,15 @@ import XCTest
         var plan = focus.plan
         plan.agenda = FocusAgenda(timeZoneID: "Europe/Paris", slots: [
             FocusAgendaSlot(title: "Rédiger le livrable", startMinute: 600, endMinute: 630, fixed: true,
-                            instructions: "Ouvrir la documentation et écrire le premier exemple.")
+                            instructions: instructions)
         ])
         plan.processes = [
             FocusAgentProcess(title: "Vérifier le format", status: .waitingForYou, question: "Quel format retenir ?")
         ]
         try focus.applyDayPlan(plan, expectedRevision: plan.effectiveRevision)
+        let current = try XCTUnwrap(FocusDayPlanner.currentSlot(plan: focus.plan, at: now))
+        XCTAssertEqual(current.title, "Rédiger le livrable")
+        XCTAssertEqual(current.instructions, instructions)
 
         let sessions = visibleText(BlocagesPageContent(blocking: nil, braise: nil, focus: focus,
             now: now, target: .sessions), width: 900, height: 2_400)
@@ -119,7 +123,9 @@ import XCTest
         XCTAssertEqual(focus.requestedEditor, .agenda)
         let programme = visibleText(BlocagesPageContent(blocking: nil, braise: nil, focus: focus,
             now: now, target: .sessions), width: 900, height: 3_000)
-        for expected in ["concentration-guided-day", "concentration-current-instructions",
+        // SwiftUI can propagate the enclosing group's identifier to selectable text.
+        // Check the instruction itself in the production AX tree, not a child identifier.
+        for expected in ["concentration-guided-day", instructions,
                          "Rédiger le livrable", "Agenda", "Réponses attendues", "Quel format retenir ?"] {
             XCTAssertTrue(programme.contains(expected), "production page missing: \(expected)")
         }
