@@ -790,6 +790,9 @@ struct FocusPanel: Equatable {
         do { try saving { try store.savePrompts(promptState) } } catch { return }; dismissPanel(); scheduleTimer()
     }
     func promptNow() { guard let kind = panel?.kind else { return }; requestedEditor = kind; onOpenRequested?(kind); dismissPanel() }
+    /// An explicit programme link carries its destination through the kept Garde-fous page.
+    /// The caller owns navigation; ordinary session links keep their existing destination.
+    func requestDayPlan() { requestedEditor = .agenda }
     func dismissEditor() { requestedEditor = nil }
     func dismissPanel() { showPanel(nil) }
     /// A floating panel has no room for an error, and `error` shows on the Concentration page only:

@@ -91,6 +91,61 @@ import XCTest
         XCTAssertTrue(DashboardSection.preheated.contains(.blocking), "built at rest: the first click draws nothing new")
     }
 
+    func testProgrammeRequestMountsTheGuidedDayInTheProductionPage() throws {
+        let now = wednesday10h
+        let store = FocusStore(directory: try root().appendingPathComponent("Focus"))
+        var settings = FocusSettings()
+        settings.dayGuide = .init(enabled: true, introVersion: 1, remindersEnabled: false)
+        try store.saveSettings(settings)
+        let focus = try ConcentrationController(store: store, clock: { now }, calendar: paris,
+            blocking: { nil }, runsTimers: false, continuous: { now.timeIntervalSince1970 }, boot: { "programme-test" })
+        defer { focus.shutdown() }
+        var plan = focus.plan
+        plan.agenda = FocusAgenda(timeZoneID: "Europe/Paris", slots: [
+            FocusAgendaSlot(title: "Rédiger le livrable", startMinute: 600, endMinute: 630, fixed: true,
+                            instructions: "Ouvrir la documentation et écrire le premier exemple.")
+        ])
+        plan.processes = [
+            FocusAgentProcess(title: "Vérifier le format", status: .waitingForYou, question: "Quel format retenir ?")
+        ]
+        try focus.applyDayPlan(plan, expectedRevision: plan.effectiveRevision)
+
+        let sessions = visibleText(BlocagesPageContent(blocking: nil, braise: nil, focus: focus,
+            now: now, target: .sessions), width: 900, height: 2_400)
+        XCTAssertTrue(sessions.contains("blocages-start-session"))
+        XCTAssertFalse(sessions.contains("concentration-guided-day"), "ordinary session navigation does not force the plan open")
+
+        focus.requestDayPlan()
+        XCTAssertEqual(focus.requestedEditor, .agenda)
+        let programme = visibleText(BlocagesPageContent(blocking: nil, braise: nil, focus: focus,
+            now: now, target: .sessions), width: 900, height: 3_000)
+        for expected in ["concentration-guided-day", "concentration-current-instructions",
+                         "Rédiger le livrable", "Agenda", "Réponses attendues", "Quel format retenir ?"] {
+            XCTAssertTrue(programme.contains(expected), "production page missing: \(expected)")
+        }
+        XCTAssertFalse(programme.contains("Première tâche du jour"), "the legacy form must not replace the guided day")
+        XCTAssertNil(focus.currentSession, "opening the programme must not start a session")
+    }
+
+    func testProgrammeSummaryIncludesRoutineSlotsAndParallelProcessesWithoutHumanItems() {
+        var plan = FocusPlan(day: "2026-11-04")
+        XCTAssertEqual(BlocagesPageContent.planSummary(plan), "Vide")
+        plan.agenda = FocusAgenda(timeZoneID: "Europe/Paris", slots: (0..<8).map { index in
+            FocusAgendaSlot(title: "Étape \(index + 1)", startMinute: 600 + index * 30,
+                            endMinute: 630 + index * 30, fixed: true)
+        })
+        XCTAssertEqual(BlocagesPageContent.planSummary(plan), "8 créneaux")
+        plan.processes = [FocusAgentProcess(title: "Préparer", status: .running),
+                          FocusAgentProcess(title: "Vérifier", status: .done)]
+        XCTAssertEqual(BlocagesPageContent.planSummary(plan), "8 créneaux · 1 processus")
+        XCTAssertTrue(BlocagesPageContent.opensPlan(.agenda))
+        XCTAssertTrue(BlocagesPageContent.opensPlan(.morning))
+        XCTAssertFalse(BlocagesPageContent.opensPlan(.evening))
+        XCTAssertFalse(BlocagesPageContent.opensPlan(.sessionReview))
+        XCTAssertFalse(BlocagesPageContent.opensPlan(nil))
+        XCTAssertEqual(BlocagesTarget(.concentration), .sessions)
+    }
+
     /// « Mon travail » is no page: the old destination is the pane « Définition du travail » of Réglages.
     func testTheWorkDestinationIsASettingsPane() throws {
         XCTAssertEqual(DashboardSection.work.keptPage, "settings")

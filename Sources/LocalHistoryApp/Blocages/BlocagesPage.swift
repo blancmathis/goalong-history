@@ -101,7 +101,7 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         self.onOpenRecording = onOpenRecording
         self.onOpenWork = onOpenWork
         self.onRuleClosed = onRuleClosed
-        _open = State(initialValue: open)
+        _open = State(initialValue: Self.opensPlan(focus?.requestedEditor) ? open.union([.plan]) : open)
         _editing = State(initialValue: editing)
     }
 
@@ -159,6 +159,11 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
         guard target != .top else { return }
         // Jev is a rule: its link (menu bar, notification, Réglages) opens the rule, where its settings are.
         if target == .jev { editing = .jev; return }
+        if target == .sessions, Self.opensPlan(focus?.requestedEditor) {
+            open.insert(.plan)
+            DispatchQueue.main.async { proxy.scrollTo("plan", anchor: .top) }
+            return
+        }
         let anchor = Self.anchor(target)
         DispatchQueue.main.async { proxy.scrollTo(anchor, anchor: .top) }
     }
@@ -166,6 +171,25 @@ enum BlocagesFold: Hashable { case words, plan, commitments, pastSessions, prote
     /// The part a target scrolls to. The red screen's ranges are rules: its links land on the list of rules.
     static func anchor(_ target: BlocagesTarget) -> BlocagesTarget {
         target == .redScreen ? .top : target
+    }
+
+    static func opensPlan(_ request: FocusPanel.Kind?) -> Bool {
+        request == .agenda || request == .morning
+    }
+
+    static func planSummary(_ plan: FocusPlan) -> String {
+        let slots = plan.agenda?.slots.count ?? 0
+        let processes = (plan.processes ?? []).filter { !$0.status.isFinished }.count
+        let left = plan.items.filter { $0.status == .open }.count
+        if slots > 0 || processes > 0 {
+            var parts: [String] = []
+            if slots > 0 { parts.append(slots == 1 ? "1 créneau" : "\(slots) créneaux") }
+            if left > 0 { parts.append(left == 1 ? "1 action à faire" : "\(left) actions à faire") }
+            if processes > 0 { parts.append("\(processes) processus") }
+            return parts.joined(separator: " · ")
+        }
+        if plan.items.isEmpty { return "Vide" }
+        return left == 0 ? "Tout est fait" : "\(left) à faire"
     }
 
     private var header: some View {
@@ -710,7 +734,6 @@ private struct BlocagesRuleRow: View {
     @State private var reviewing = false
     @State private var editingCommitment: FocusCommitmentEditRequest?
     @State private var settingsOpen = false
-    @FocusState private var addFocused: Bool
 
     /// `draft` nil = the remembered one (the app). A render gives a fixed one: it reads no preference.
     init(controller: ConcentrationController, now: Date, measures: [FocusItemMeasure]?, open: Binding<Set<BlocagesFold>>,
@@ -749,10 +772,9 @@ private struct BlocagesRuleRow: View {
                     GoalongNote(note, tone: .warning).accessibilityIdentifier("concentration-measurement-error")
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    BlocagesFoldView(open: $open, fold: .plan, title: "Plan du jour", summary: planSummary) {
-                        FocusPlanSection(controller: controller, now: now, measures: measures ?? controller.itemMeasures,
-                                         draft: $draft, addFocused: $addFocused, onReview: { reviewing = true })
-                            .environment(\.goalongSectionTitleHidden, true)
+                    BlocagesFoldView(open: $open, fold: .plan, title: "Plan du jour",
+                                     summary: BlocagesPageContent.planSummary(controller.plan)) {
+                        ConcentrationDayView(controller: controller, now: now, onReview: { reviewing = true })
                     }
                     .id("plan")
                     BlocagesFoldView(open: $open, fold: .commitments, title: "Engagements et limites") {
@@ -792,13 +814,6 @@ private struct BlocagesRuleRow: View {
         }
     }
 
-    private var planSummary: String {
-        let items = controller.plan.items
-        let left = items.filter { $0.status == .open }.count
-        if items.isEmpty { return "Vide" }
-        return left == 0 ? "Tout est fait" : "\(left) à faire"
-    }
-
     /// « Faire maintenant » from a prompt: the morning goes to the plan, the evening opens the review.
     private func openRequested(_ kind: FocusPanel.Kind?) {
         guard let kind else { return }
@@ -808,7 +823,6 @@ private struct BlocagesRuleRow: View {
             open.insert(.plan)
             DispatchQueue.main.async {
                 proxy.scrollTo("plan", anchor: .top)
-                addFocused = true
             }
         }
         controller.dismissEditor()
