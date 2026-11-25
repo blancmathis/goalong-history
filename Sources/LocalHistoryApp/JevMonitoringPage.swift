@@ -104,6 +104,7 @@ struct JevActivationAvailability: Equatable {
                 }
             }
             connectionRow
+            planActionNotice
             if !availability.localHistoryEnabled {
                 HStack(alignment: .top, spacing: 12) {
                     Text("L’enregistrement doit aussi être activé. Aucun accès n’est modifié à votre place.")
@@ -169,6 +170,7 @@ struct JevActivationAvailability: Equatable {
                 }
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
                 connectionRow
+                planActionNotice
                 if !availability.localHistoryEnabled {
                     HStack(alignment: .top, spacing: 12) {
                         Text("L’enregistrement doit aussi être activé. Aucun accès n’est modifié à votre place.")
@@ -191,6 +193,14 @@ struct JevActivationAvailability: Equatable {
                     }.font(.system(size: 12))
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private var planActionNotice: some View {
+        if let notice = monitor.planActionNotice {
+            Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("jev-plan-action-omitted")
         }
     }
 

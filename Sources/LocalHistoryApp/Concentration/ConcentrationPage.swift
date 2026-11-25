@@ -36,9 +36,9 @@ import AppleScreenTime
     @ObservedObject private var runtime = ConcentrationRuntime.shared
     @State private var draft: FocusComposerDraft
     @State private var reviewing = false
+    @State private var composerOpen = false
     @State private var editingCommitment: FocusCommitmentEditRequest?
     @State private var settingsOpen: Bool
-    @FocusState private var addFocused: Bool
 
     init(controller: ConcentrationController, now: Date? = nil, measures: [FocusItemMeasure]? = nil,
          draft: FocusComposerDraft = .remembered(), settingsOpen: Bool = false) {
@@ -61,13 +61,16 @@ import AppleScreenTime
                 ScrollView {
                     VStack(alignment: .leading, spacing: LHTheme.sectionSpacing) {
                         header
+                        ConcentrationDayView(controller: controller, now: now, onReview: { reviewing = true })
+                            .id("plan")
                         if let session = controller.currentSession {
                             FocusActiveSession(controller: controller, session: session, now: now, live: self.now == nil)
+                        } else if controller.plan.items.isEmpty && controller.plan.agenda == nil {
+                            sessionComposer(now: now)
                         } else {
-                            FocusComposer(controller: controller, now: now, draft: $draft,
-                                          blockingEnabled: modules.isEnabled(.blocking))
-                            FocusDistractionSuggestionsCard(controller: controller)
-                            JevConnectHint(text: "Avec Jev, le service d’analyse partenaire, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
+                            DisclosureGroup("Séance libre ou réglages du minuteur", isExpanded: $composerOpen) {
+                                sessionComposer(now: now).padding(.top, 14)
+                            }.font(.system(size: 13))
                         }
                         if let error = controller.error {
                             GoalongNote(FocusUIError.message(raw: error), tone: .warning, onDismiss: { controller.error = nil })
@@ -76,9 +79,6 @@ import AppleScreenTime
                         if modules.isEnabled(.concentration), let note = Self.measurementNote(runtime.measurementError) {
                             GoalongNote(note, tone: .warning).accessibilityIdentifier("concentration-measurement-error")
                         }
-                        FocusPlanSection(controller: controller, now: now, measures: measures ?? controller.itemMeasures,
-                                         draft: $draft, addFocused: $addFocused, onReview: { reviewing = true })
-                            .id("plan")
                         FocusCommitmentsSection(controller: controller, now: now, onEdit: { editingCommitment = $0 })
                         FocusSessionsSection(controller: controller, now: now)
                         FocusSettingsSection(controller: controller, open: $settingsOpen)
@@ -105,9 +105,18 @@ import AppleScreenTime
         }
     }
 
+    private func sessionComposer(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            FocusComposer(controller: controller, now: now, draft: $draft,
+                          blockingEnabled: modules.isEnabled(.blocking))
+            FocusDistractionSuggestionsCard(controller: controller)
+            JevConnectHint(text: "Avec Jev, le service d’analyse partenaire, Goalong repère vos distractions pendant la séance et vous propose de les bloquer.")
+        }
+    }
+
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Une chose à la fois. Goalong garde le temps et la mesure.")
+            Text((controller.plan.processes ?? []).isEmpty ? "Le plan indique la suite. Goalong garde le temps et la mesure." : "Lancez, écrivez, débloquez. Gardez aussi les processus en vue.")
                 .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
             Spacer(minLength: 12)
             FocusStatusLabel(status: controller.status)
@@ -121,7 +130,6 @@ import AppleScreenTime
             reviewing = true
         } else {
             proxy.scrollTo("plan", anchor: .top)
-            addFocused = true
         }
         controller.dismissEditor()
     }
@@ -1416,6 +1424,7 @@ enum FocusUIError {
         switch FocusFailure(rawValue: raw) {
         case .locked: return "Le blocage de cette phase est verrouillé jusqu’à sa fin."
         case .invalidArgument: return "Vérifiez le texte et les durées."
+        case .conflict, .requestConflict: return "Le plan a changé. Rechargez sa dernière version avant de réessayer."
         case .notFound: return "Cet élément n’existe plus."
         case .planFull: return "Le plan compte déjà dix tâches."
         case .itemFinished: return "Une tâche terminée ou abandonnée ne se déplace pas. Rouvrez-la d’abord."

@@ -70,7 +70,21 @@ import LocalHistoryCore
         var cycles: Int?
         var nextBreak: Date?
         var isPaused: Bool
+        var intent: String? = nil
+        var nextAction: String? = nil
     }
+    struct DayAction: Equatable {
+        var itemID: UUID?
+        var slotID: UUID?
+        var title: String
+        var nextAction: String?
+        var time: String?
+        var active: Bool
+        var isRoutine: Bool { itemID == nil && slotID != nil }
+    }
+    @Published var dayAction: DayAction?
+    @Published var waitingProcessCount = 0
+    @Published var reviewProcessCount = 0
     @Published var focusAvailable = false
     @Published var concentrationEnabled = false
     /// The Ambiance sounds are open under the player (the chevron).
@@ -370,8 +384,12 @@ import LocalHistoryCore
             : controller == nil ? "Concentration indisponible. Ouvrez l’app." : nil
         focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
             : (observing && controller == nil) ? .app : nil
-        guard let controller else { focusRun = nil; syncReview(nil); return }
+        guard let controller else {
+            focusRun = nil; dayAction = nil; waitingProcessCount = 0; reviewProcessCount = 0
+            syncReview(nil); return
+        }
         controller.refresh()
+        refreshDayAction(controller)
         syncReview(controller)
         guard let session = controller.currentSession, let phase = controller.phase, phase.kind != .ended else {
             focusRun = nil; return
@@ -389,13 +407,42 @@ import LocalHistoryCore
         focusRun = FocusRun(phaseTitle: title, remaining: phase.endsAt.map { max(0, $0.timeIntervalSince(now)) },
             elapsed: elapsed, progress: progress, cycle: session.mode.kind == .pomodoro ? phase.cycle : nil,
             cycles: session.mode.cycles, nextBreak: session.mode.kind == .pomodoro && phase.isWork ? phase.endsAt : nil,
-            isPaused: false)
+            isPaused: false, intent: session.intent,
+            nextAction: controller.plan.items.first(where: { $0.id == session.planItemId })?.nextAction)
     }
+
+    private func refreshDayAction(_ controller: ConcentrationController) {
+        let plan = controller.plan
+        waitingProcessCount = FocusDayPlanner.waitingProcesses(plan: plan).count
+        reviewProcessCount = (plan.processes ?? []).filter { $0.status == .readyForReview }.count
+        if let id = controller.currentSession?.planItemId, let item = plan.items.first(where: { $0.id == id }) {
+            dayAction = DayAction(itemID: item.id, slotID: nil, title: item.title, nextAction: item.nextAction,
+                                  time: nil, active: true)
+        } else if let slot = FocusDayPlanner.currentSlot(plan: plan, at: clock()) ?? FocusDayPlanner.nextSlot(plan: plan, at: clock()) {
+            let item = FocusDayPlanner.task(for: slot, in: plan)
+            dayAction = DayAction(itemID: item?.id, slotID: slot.id, title: slot.title, nextAction: item?.nextAction,
+                                  time: FocusDayUI.time(slot.startMinute), active: slot.state == .active)
+        } else if let item = plan.items.first(where: { $0.status == .open }) {
+            dayAction = DayAction(itemID: item.id, slotID: nil, title: item.title, nextAction: item.nextAction,
+                                  time: nil, active: false)
+        } else { dayAction = nil }
+    }
+
+    func openDayPlan() { onOpenSection(.concentration) }
 
     func startFocus() {
         refreshRuntimeState()
         guard modules.isEnabled(.concentration) else { openModulesSettings(); return }
-        guard focusAvailable, let controller = concentration(), controller.currentSession == nil else { return }
+        guard let controller = concentration(), controller.currentSession == nil else { return }
+        if let action = dayAction, action.isRoutine, let slotID = action.slotID {
+            do {
+                if action.active { try controller.finishAgendaSlot(slotID) }
+                else { try controller.startAgendaSlot(slotID) }
+            } catch { controller.error = String(describing: error); onOpenSection(.concentration) }
+            refreshFocus()
+            return
+        }
+        guard focusAvailable else { return }
         var mode = FocusMode()
         switch focusKind {
         case .pomodoro:
@@ -403,7 +450,10 @@ import LocalHistoryCore
             mode.kind = .pomodoro; mode.workMinutes = focusMinutes; mode.cycles = 4
         case .free: mode.kind = .free; mode.minutes = nil
         }
-        do { try controller.startSession(intent: "Concentration", mode: mode) }
+        do {
+            if let id = dayAction?.itemID { try controller.startPlannedItem(id, mode: mode) }
+            else { try controller.startSession(intent: "Concentration", mode: mode) }
+        }
         catch { controller.error = String(describing: error); onOpenSection(.concentration) }
         refreshFocus()
     }

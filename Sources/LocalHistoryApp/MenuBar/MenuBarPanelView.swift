@@ -29,6 +29,7 @@
                 } else {
                     NowSection(model: model)
                     LaunchSection(model: model, store: model.prepared)
+                    DayInboxSection(model: model)
                     TodaySection(model: model)
                     PanelDivider()
                     AmbianceSection(model: model)
@@ -464,21 +465,39 @@
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         private var startLabel: some View {
-            Label("Commencer", systemImage: "play.fill").frame(maxWidth: .infinity)
+            Label(model.dayAction?.isRoutine == true && model.dayAction?.active == true ? "C’est fait" : "Commencer",
+                  systemImage: model.dayAction?.isRoutine == true && model.dayAction?.active == true ? "checkmark" : "play.fill")
+                .frame(maxWidth: .infinity)
         }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
-                // Same order and labels as the Concentration page: Libre first, « 1 h 30 ».
-                GoalongSegmentedControl("Type de séance", selection: $model.focusKind,
-                                        options: [.free, .pomodoro], fills: true) {
-                    $0 == .pomodoro ? "Pomodoro" : "Libre"
+                if let action = model.dayAction {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(action.time.map { "À suivre · " + $0 } ?? "À suivre")
+                                .font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                            Spacer(minLength: 8)
+                            Button("Journée", action: model.openDayPlan).buttonStyle(LHQuietButtonStyle())
+                                .font(.system(size: 11))
+                        }
+                        Text(action.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                        if let next = FocusDayUI.clean(action.nextAction) {
+                            Text(next).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                        }
+                    }.padding(.bottom, 3).accessibilityIdentifier("menubar-planned-action")
                 }
-                if model.focusKind == .pomodoro {
-                    // UI-12A: one selection style in the panel, the raised pill of « Type de séance ».
-                    GoalongSegmentedControl("Durée", selection: $model.focusMinutes,
-                                            options: model.focusMinuteChoices, fills: true) {
-                        BlockingFormat.duration(minutes: $0)
+                if model.dayAction?.isRoutine != true {
+                    // Same order and labels as the Concentration page.
+                    GoalongSegmentedControl("Type de séance", selection: $model.focusKind,
+                                            options: [.free, .pomodoro], fills: true) {
+                        $0 == .pomodoro ? "Pomodoro" : "Libre"
+                    }
+                    if model.focusKind == .pomodoro {
+                        GoalongSegmentedControl("Durée", selection: $model.focusMinutes,
+                                                options: model.focusMinuteChoices, fills: true) {
+                            BlockingFormat.duration(minutes: $0)
+                        }
                     }
                 }
                 Group {
@@ -490,8 +509,8 @@
                             .keyboardShortcut(.defaultAction)
                     }
                 }
-                .disabled(model.focusStartBlocked)
-                if let reason = model.focusBlockedReason {
+                .disabled(model.dayAction?.isRoutine != true && model.focusStartBlocked)
+                if model.dayAction?.isRoutine != true, let reason = model.focusBlockedReason {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(reason).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -523,6 +542,14 @@
 
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
+                if let intent = FocusDayUI.clean(run.intent) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(intent).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                        if let action = FocusDayUI.clean(run.nextAction) {
+                            Text(action).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                        }
+                    }.accessibilityIdentifier("menubar-running-action")
+                }
                 HStack(alignment: .center, spacing: 12) {
                     Text(clockText(run.remaining ?? run.elapsed))
                         .font(.system(size: 34, weight: .bold).monospacedDigit()).tracking(-1)
@@ -564,6 +591,37 @@
                         .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
                 }
             }
+        }
+    }
+
+    private struct DayInboxSection: View {
+        @ObservedObject var model: MenuBarPanelModel
+        private var count: Int { model.waitingProcessCount + model.reviewProcessCount }
+
+        var body: some View {
+            if count > 0 {
+                Button(action: model.openDayPlan) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "bubble.left.and.bubble.right").foregroundStyle(LHTheme.secondaryText)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("En parallèle").font(.system(size: 13, weight: .medium))
+                            Text(summary).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                    }.padding(.horizontal, 16).padding(.vertical, 12).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("menubar-process-inbox")
+                PanelDivider()
+            }
+        }
+
+        private var summary: String {
+            var parts: [String] = []
+            if model.waitingProcessCount > 0 {
+                parts.append(model.waitingProcessCount == 1 ? "1 question" : "\(model.waitingProcessCount) questions")
+            }
+            if model.reviewProcessCount > 0 { parts.append("\(model.reviewProcessCount) à relire") }
+            return parts.joined(separator: " · ")
         }
     }
 

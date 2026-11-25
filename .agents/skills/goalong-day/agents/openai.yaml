@@ -1,0 +1,4 @@
+interface:
+  display_name: "Goalong — journée et agents"
+  short_description: "Suivre la journée et les agents sans double saisie"
+  default_prompt: "Utilise $goalong-day pour publier mon état de travail et les questions à débloquer dans Goalong."

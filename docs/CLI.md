@@ -182,7 +182,10 @@ These commands use the same owner-only `0600` Unix socket. The running app is th
 `Focus/` and `Blocking/`. They never launch Goalong, a process, an observer, a permission prompt or
 network access. Screen Time routes still check their own consent and global-pause gates even when
 the shared socket is available for these independent modules. Concentration data is excluded from
-`export-site`, `send-site`, ChatGPT recap and Jev.
+`export-site`, `send-site` and ChatGPT recap. A separate native setting, off by default, may add only
+the title and next action of the item linked to the current session to Jev within its existing
+context budget; the budget can omit it entirely. It never sends the process queue, questions or
+project documents. Routine/plan writes cannot enable this setting.
 
 ```bash
 goalong focus status
@@ -253,7 +256,7 @@ after a broker restart. It does not sample the foreground. Interrupt the CLI to 
 ]}
 ```
 
-A plan has 1…10 items when explicitly saved. Title/intention/project are single-line text bounded
+Legacy plan set accepts 1…10 items. A revision-checked plan patch accepts 0…10 items. Title/intention/project are single-line text bounded
 to 140 characters; estimate is 5…600 minutes. Status is `open`, `done`, `dropped`, or `moved` with
 `toDay`. Missing plans show an empty plan without creating a file. Setting a shown plan round trips
 without changing IDs. Plan-linked work-phase minutes and project work minutes are separate facts;
@@ -288,13 +291,13 @@ A missing count means zero. Concentration can be off for both of these reads.
 
 All commands return JSON on stdout. `focus watch` is NDJSON; errors are sorted JSON on stderr with
 nonzero exit status and `error` equal to `appNotRunning`, `moduleDisabled`, `invalidArgument`,
-`locked`, `notFound`, `storageFailed`, `tooManyWatchers`, or `outcomeUnknown`. `appNotRunning` means the
+`locked`, `notFound`, `storageFailed`, `tooManyWatchers`, `conflict`, `requestConflict`, or `outcomeUnknown`. `appNotRunning` means the
 socket could not be reached, so nothing was sent. `outcomeUnknown` means the request was sent but no answer came
 within 10 seconds (or the connection dropped): the app may have applied it, so run `focus status` before retrying. For `outcomeUnknown` the stderr JSON also carries a `hint` string with this advice; `error` is always the bare code.
 Only unavailable `focus status`/`watch` use the stable success object above. `--file -` reads stdin; every JSON input is bounded to 64 KiB.
 Text control characters are rejected. A disabled module answers `moduleDisabled` before creating
-its controller, store, timer, observer or panel. Local module writes require the member's explicit
-instruction; plans, intentions and limits are never inferred by an agent.
+its controller, store, timer, observer or panel. Local module writes require the member's authorization. Agents may schedule and maintain work
+within accepted goals and constraints; they must not invent new goals, results or stricter limits.
 
 Read-only fact annotations are included in these same responses: every `sessions` object has
 `facts`; `plan show` (and plan edit replies) adds `measures` and `estimateRatio`; `review show` adds
@@ -304,6 +307,139 @@ not zero. The JSON accepted by `plan set`/`review set` includes these annotation
 `show`; the app ignores them on input and recomputes them, so clients cannot write measured facts.
 Facts are drawn from the currently loaded, consented Activity cache; an unrequested older interval
 may honestly have `facts.available:false`. These annotations are never persisted in Focus files.
+
+### Guided agenda and parallel processes
+
+A human plan and parallel processes share one daily record. A human item can launch several
+agents, edit a document, create a video, answer questions or review outputs. It does not force
+all background work into a sequential list. Solo work uses the same model without processes.
+See [JOURNEE.md](JOURNEE.md) and the reusable
+[goalong-day skill](../.agents/skills/goalong-day/SKILL.md).
+
+```bash
+goalong plan show 2026-11-26
+goalong plan patch --day 2026-11-26 --if-revision 0 --request-id preparation-unique-id --file patch.json
+goalong plan reflow --day 2026-11-26 --if-revision 1 --request-id reflow-unique-id
+goalong plan undo --day 2026-11-26 --if-revision 2 --request-id undo-unique-id
+goalong routine show
+goalong routine set --file routine.json
+```
+
+Use explicit dates for a prepared operation so a midnight boundary cannot change its target.
+These new day commands also accept tomorrow. plan show always returns a numeric revision;
+legacy records start at zero. Revision, receipts and change history are app-owned metadata.
+
+#### Patch and concurrency
+
+plan patch accepts this optional-field envelope:
+
+```json
+{
+  "actor": "Project agent",
+  "reason": "Prepare the agreed documentation block",
+  "intention": "Document the decision while two agents work",
+  "items": [{
+    "id": "00000000-0000-4000-8000-000000000101",
+    "title": "Write the decision",
+    "project": "Example",
+    "estimateMinutes": 45,
+    "status": "open",
+    "nextAction": "Open the accepted brief and draft the decision section",
+    "doneWhen": "The decision and its reasons are ready for review",
+    "actionKind": "work",
+    "processIDs": ["00000000-0000-4000-8000-000000000201"]
+  }],
+  "processes": [{
+    "id": "00000000-0000-4000-8000-000000000201",
+    "title": "Implement the agreed change",
+    "project": "Example",
+    "agent": "Worker",
+    "externalID": "task-example",
+    "status": "running"
+  }],
+  "reflow": true
+}
+```
+
+Other fields are removeItemIDs, removeProcessIDs and agenda. Item/process upserts replace the
+complete object with that ID; preserve fields from a fresh full read when changing only one field.
+Omitted collections preserve their contents. agenda replaces the whole agenda, so merge its
+slots explicitly. Patches support zero through ten human items, including routine/process-only
+days, and at most 64 processes. Legacy plan set keeps its 1…10 item requirement and preserves
+agenda/process fields that were absent from its input; concurrent clients should use patch.
+
+Every write requires --if-revision 0…1000000000 and a nonempty --request-id up to 128 characters.
+A stale revision returns conflict. Read again and merge the intended edit into the current state;
+do not resubmit the old replacement with a fresh revision. The same request ID with the same
+canonical request content returns idempotently while its receipt is retained. The same ID with
+changed content returns requestConflict. Keep the exact prepared operation until its result
+is reconciled.
+
+plan show and mutation replies also include read-only agendaDiagnostics with conflicts (strings) and
+unplaced (slot UUIDs), computed without changing the plan. Inspect them before claiming the day is
+feasible. New agenda and routine configurations must match the native Mac calendar time zone;
+existing historical data keeps its recorded zone.
+
+Successful patch/reflow/undo replies have the same root plan object as plan show, including
+revision, receipts, changes and read-only measures. A receipt has id (the request ID), revision
+and optional digest; a change has id, at, actor, reason and revision. Following outcomeUnknown,
+inspect plan show DAY receipts for that request ID before any retry. A missing receipt does not
+justify assuming a timed-out request failed.
+
+Undo restores the previous agenda only. It preserves current tasks/processes, completed/skipped/
+active work and the active session. It creates a new revision/receipt; it does not roll back the
+audit history. Do not use undo as automatic conflict recovery.
+
+#### Human items, processes and slots
+
+Human items optionally add nextAction and doneWhen (up to 280 characters each), contextURL,
+processIDs and actionKind: work, launch, coordination, review or routine. These fields describe
+the user's work; they neither launch an agent nor grant permission to publish its output.
+
+Processes have id, title, optional project/agent/externalID/contextURL, status, optional question
+and answer (up to 1000 characters each), and updatedAt as an ISO 8601 date. Supported statuses:
+queued, running, waitingForYou, readyForReview, done, failed, cancelled.
+
+A process state is an explicit report, not passive observation of T3. Recording answer leaves
+waitingForYou unchanged until the worker explicitly acknowledges running. Ready for review is
+not verified done. Avoid duplicate records when an orchestrator already reports a worker.
+
+An agenda has timeZoneID, startMinute, endMinute, bufferMinutes (0…60), guided, autoAdjust and
+slots (at most 64). Times are civil minutes in the named zone. Defaults are 08:00–22:00, ten-minute
+buffers, guided false and autoAdjust true. A slot has stable id, optional itemID, title,
+startMinute, endMinute, fixed (default false), state (planned/active/done/skipped/unscheduled),
+and optional earliestMinute/latestEndMinute. Duration must be positive; minute bounds are 0…1440.
+Routine-only fixed anchors can extend past the work agenda's end.
+
+Reflow keeps fixed anchors and handled work, adds the requested buffers and respects time bounds.
+Items that cannot fit remain explicitly unscheduled. It does not move fixed appointments, extend
+the chosen workday, mark work done or infer a process resumed. Guided reminders are native,
+opt-in, at most eight spontaneous reminders per day and once per slot, with a 15-minute snooze;
+there is no wake-up catch-up burst or additional AI polling daemon.
+
+#### Recurring routine
+
+routine set accepts exactly an agenda envelope. Use null to remove the recurring template:
+
+```json
+{"agenda":null}
+```
+
+For a populated template, use the same agenda schema. All slot itemID values must be absent/null
+and states planned. A routine contributes reusable day anchors without inventing project tasks or
+commitments. It is independent of process reports, blocking settings and private AI context consent.
+Read routine show after setting it; a checked-in JSON example by itself activates nothing.
+
+#### Agent helper
+
+The goalong-day package includes scripts/goalong_plan.py (Python 3 standard library). snapshot
+reads the complete plan; prepare emits an immutable request with its revision and request ID;
+process reads and merges only one explicit process report; apply sends that saved operation once.
+prepare and process do not write. --kind reflow|undo prepares the corresponding command.
+
+The helper has bounded deadlines and never blindly retries a write. If Goalong is unavailable,
+the real task continues. No MCP server or background agent is needed. Its own source is reusable;
+installing it does not make existing T3 threads automatically publish their states.
 
 ### Engagements: periods, input and results
 

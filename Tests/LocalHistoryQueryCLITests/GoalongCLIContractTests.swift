@@ -40,6 +40,18 @@
             }
         }
 
+        func testGuidedDayContractAdvertisesConcurrencyAndLocalRoutineWrites() throws {
+            let plan = try XCTUnwrap(GoalongCLIContract.definition(named: "plan"))
+            for token in ["patch --day DAY", "--if-revision N", "--request-id ID", "reflow|undo"] {
+                XCTAssertTrue(plan.syntax.contains(token))
+            }
+            XCTAssertEqual(plan.effect, .writesExplicitFocusState)
+            let routine = try XCTUnwrap(GoalongCLIContract.definition(named: "routine"))
+            XCTAssertEqual(routine.effect, .writesExplicitFocusState)
+            XCTAssertTrue(GoalongCLIContract.agentInstructions.contains("declared plans, not proof of work"))
+            XCTAssertTrue(GoalongCLIContract.agentInstructions.contains("On `conflict`, reread and reconcile"))
+        }
+
         func testCapabilitiesAndVersionAreMachineReadable() throws {
             let capabilities = try jsonObject(GoalongQueryCLI.capabilitiesPayload())
             XCTAssertEqual(capabilities["schemaVersion"] as? Int, GoalongCLIContract.schemaVersion)

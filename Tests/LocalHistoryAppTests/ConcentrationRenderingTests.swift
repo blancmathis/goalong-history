@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import GoalongHeadlessTestSupport
 import SwiftUI
 import XCTest
 @testable import LocalHistoryCore
@@ -125,6 +126,75 @@ final class ConcentrationRenderingTests: XCTestCase {
             try render("review-sheet-commit-\(s)", width: 640,
                        ConcentrationReviewSheet(controller: f.committed, plan: f.committed.plan, review: nil, commitTomorrow: true,
                                                 now: now, onClose: {}))
+        }
+    }
+
+    /// A focused, synthetic render of the guided day; it cannot run with visible-window mode enabled.
+    @MainActor func testRenderGuidedDayWithParallelProcessesHeadlessly() throws {
+        guard GoalongHeadlessActive(),
+              let path = ProcessInfo.processInfo.environment["GOALONG_CONCENTRATION_SNAPSHOTS"] else {
+            throw XCTSkip("Requires the headless test harness and an explicit render directory")
+        }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = FocusStore(directory: temporaryRoot())
+        var settings = FocusSettings()
+        settings.morningPrompt = false; settings.eveningPrompt = false
+        try store.saveSettings(settings)
+        let controller = try ConcentrationController(store: store, clock: { self.now }, blocking: { nil })
+        var launch = FocusPlanItem(title: "Lancer les deux chantiers", project: "Goalong", estimateMinutes: 15, status: .done)
+        launch.actionKind = .launch
+        var document = FocusPlanItem(title: "Écrire la documentation d’intégration", project: "Context Room", estimateMinutes: 30)
+        document.nextAction = "Décrire le premier appel et son résultat attendu."
+        document.doneWhen = "Un exemple utilisable est relu et enregistré."
+        var review = FocusPlanItem(title: "Relire la vidéo de présentation", project: "Goalong", estimateMinutes: 20)
+        review.actionKind = .review
+        let minute = FocusDayPlanner.localMinute(at: now, timeZoneID: TimeZone.current.identifier)
+        var plan = controller.plan
+        plan.items = [launch, document, review]
+        plan.agenda = FocusAgenda(timeZoneID: TimeZone.current.identifier, guided: true, autoAdjust: false, slots: [
+            FocusAgendaSlot(itemID: launch.id, title: launch.title, startMinute: minute - 30, endMinute: minute - 15, state: .done),
+            FocusAgendaSlot(itemID: document.id, title: document.title, startMinute: minute, endMinute: minute + 30),
+            FocusAgendaSlot(itemID: review.id, title: review.title, startMinute: minute + 45, endMinute: minute + 65),
+            FocusAgendaSlot(title: "Préparer le dîner", startMinute: 1080, endMinute: 1110, fixed: true)
+        ])
+        plan.processes = [
+            FocusAgentProcess(title: "Implémenter l’agenda", project: "Goalong", agent: "Agent interface", status: .running),
+            FocusAgentProcess(title: "Choisir le format d’export", project: "Context Room", agent: "Agent export",
+                              status: .waitingForYou, question: "Faut-il inclure les liens vers les documents ?"),
+            FocusAgentProcess(title: "Vérifier les contrats", project: "Goalong", agent: "Agent validation",
+                              status: .waitingForYou, question: "Quelle version faut-il relire ?", answer: "La dernière révision enregistrée."),
+            FocusAgentProcess(title: "Relire les changements", project: "Goalong", agent: "Agent revue", status: .readyForReview)
+        ]
+        try controller.applyDayPlan(plan, expectedRevision: controller.plan.effectiveRevision)
+
+        _ = NSApplication.shared
+        for dark in [true, false] {
+            let root = ConcentrationDayView(controller: controller, now: now, onReview: {})
+                .padding(32).frame(width: 900, alignment: .topLeading)
+                .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text).tint(LHTheme.accent)
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .environment(\.goalongReduceMotion, true).goalongControls()
+            let host = NSHostingView(rootView: root)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 1800),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.contentView = host
+            defer { window.orderOut(nil); window.contentView = nil; window.close() }
+            // The imported harness intercepts ordering and keeps the real window invisible.
+            window.orderFront(nil)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            window.setContentSize(NSSize(width: 900, height: max(100, host.fittingSize.height)))
+            host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            XCTAssertGreaterThan(png.count, 2_000)
+            let name = "day-parallel-" + (dark ? "dark" : "light") + ".png"
+            try png.write(to: directory.appendingPathComponent(name))
+            XCTAssertEqual(GoalongHeadlessVisibleWindowCount(), 0)
+            XCTAssertFalse(NSApp.isActive)
         }
     }
 

@@ -143,3 +143,85 @@ extension JevWorkContextTests {
             from: Data(#"{"schemaVersion":1,"summary":"Goalong","content":"injected"}"#.utf8)))
     }
 }
+
+extension JevWorkContextTests {
+    private func plannedActionWindow(rich: Bool = false) -> JevWindow {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let samples: [JevSample] = rich ? [
+            .init(date: now, resource: "developer.apple.com", title: String(repeating: "a", count: 160),
+                  action: "scroll", surface: "other", isActivity: true, excerpt: String(repeating: "b", count: 224)),
+            .init(date: now, resource: "github.com", title: String(repeating: "c", count: 160),
+                  action: "typing", surface: "other", isActivity: true, excerpt: String(repeating: "d", count: 224))
+        ] : [
+            .init(date: now, resource: "Xcode", title: "Swift guide", action: "typing", surface: "other", isActivity: true)
+        ]
+        return JevWindow(start: now, end: now.addingTimeInterval(15), samples: samples)
+    }
+
+    func testAbsentPlanActionKeepsExactExistingRequestAndCriteria() throws {
+        let work = try JevWorkContext(summary: "Goalong", applications: "Xcode", content: "Swift", procrastination: "Achats")
+        let window = plannedActionWindow()
+        let result = try JevPlannedActionPayload.build(window, work: work, action: nil)
+        XCTAssertEqual(result.inclusion, .absent)
+        XCTAssertEqual(result.body, try JevPayload.build(window, work: work))
+        XCTAssertEqual(result.work, work)
+        XCTAssertNil(result.inclusion.omissionNotice)
+    }
+
+    func testPlanActionIsSupplementaryAndPreservesEverySelectedObservationAndRule() throws {
+        let work = try JevWorkContext(summary: "Goalong", applications: "Xcode", content: "Swift", procrastination: "Achats")
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let before = try encoder.encode(work)
+        let window = plannedActionWindow()
+        let baseline = try XCTUnwrap(JSONSerialization.jsonObject(with: JevPayload.build(window, work: work)) as? [String: Any])
+        let result = try JevPlannedActionPayload.build(window, work: work, action: "  Rédiger le guide\nÉcrire le premier exemple  ")
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: result.body) as? [String: Any])
+        let baselineState = try XCTUnwrap(baseline["state"] as? [String: Any])
+        let sentState = try XCTUnwrap(sent["state"] as? [String: Any])
+        XCTAssertEqual(result.inclusion, .included)
+        XCTAssertEqual(result.work.summary, "Goalong Current action: Rédiger le guide Écrire le premier exemple")
+        XCTAssertEqual(result.work.applications, work.applications)
+        XCTAssertEqual(result.work.content, work.content)
+        XCTAssertEqual(result.work.procrastination, work.procrastination)
+        XCTAssertEqual(sentState["goals"] as? String, result.work.summary)
+        XCTAssertEqual(sentState["rows"] as? [[String]], baselineState["rows"] as? [[String]])
+        XCTAssertEqual(try encoder.encode(work), before, "The saved criteria remain unchanged")
+        XCTAssertLessThanOrEqual(result.work.byteCount, JevWorkContext.maximumBytes)
+        XCTAssertLessThanOrEqual(result.body.count, JevPayload.maximumRequestBytes)
+    }
+
+    func testPlanActionNeverTruncatesFullCriteriaOrMultibyteActionToMakeRoom() throws {
+        let work = try JevWorkContext(summary: String(repeating: "é", count: 400))
+        let window = plannedActionWindow()
+        let result = try JevPlannedActionPayload.build(window, work: work, action: "Écrire le guide")
+        XCTAssertEqual(result.inclusion, .criteriaBudget)
+        XCTAssertEqual(result.work, work)
+        XCTAssertEqual(result.body, try JevPayload.build(window, work: work))
+        XCTAssertNotNil(result.inclusion.omissionNotice)
+        let longAction = try JevPlannedActionPayload.build(window, work: .empty, action: String(repeating: "🙂", count: 201))
+        XCTAssertEqual(longAction.inclusion, .criteriaBudget)
+        XCTAssertEqual(longAction.body, try JevPayload.build(window))
+    }
+
+    func testPlanActionIsOmittedRatherThanReducingEvidenceAtRequestLimit() throws {
+        let window = plannedActionWindow(rich: true)
+        let baseline = try JevPayload.build(window)
+        let headroom = JevPayload.maximumRequestBytes - baseline.count
+        XCTAssertGreaterThanOrEqual(headroom, 0)
+        XCTAssertLessThan(headroom + 1 + "Current action: ".utf8.count, JevWorkContext.maximumBytes)
+        let result = try JevPlannedActionPayload.build(window, work: .empty,
+                                                      action: String(repeating: "z", count: headroom + 1))
+        XCTAssertEqual(result.inclusion, .requestBudget)
+        XCTAssertEqual(result.body, baseline)
+        XCTAssertEqual(result.work, .empty)
+        XCTAssertNotNil(result.inclusion.omissionNotice)
+    }
+
+    func testInvalidPlanActionNeverChangesAnOtherwiseUsableRequest() throws {
+        let window = plannedActionWindow()
+        let result = try JevPlannedActionPayload.build(window, work: .empty, action: "Guide\u{0000}invalide")
+        XCTAssertEqual(result.inclusion, .invalidAction)
+        XCTAssertEqual(result.body, try JevPayload.build(window))
+        XCTAssertNotNil(result.inclusion.omissionNotice)
+    }
+}

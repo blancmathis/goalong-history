@@ -51,7 +51,7 @@ import SwiftUI
         switch kind {
         case .phase: return 380
         case .sessionReview: return 460
-        case .morning, .evening, .limit, .commitment: return 420
+        case .morning, .evening, .limit, .commitment, .agenda: return 420
         }
     }
 
@@ -77,6 +77,27 @@ import SwiftUI
             FocusPromptPanelView(morning: content.kind == .morning, onNow: { controller.promptNow() }, onLater: { controller.promptLater() })
         case .limit:
             FocusLimitPanelView(text: content.text, onClose: { controller.dismissPanel() })
+        case .agenda:
+            FocusPanelSurface {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(controller.plan.agenda?.slots.first(where: { $0.id == content.slotID })?.title ?? "Votre programme")
+                        .font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                    Text(content.text).foregroundStyle(LHTheme.secondaryText).lineLimit(3)
+                    HStack {
+                        Button(controller.currentSession == nil ? "Commencer" : "Voir le programme") {
+                            if controller.currentSession != nil { controller.promptNow() }
+                            else if let id = content.slotID {
+                                do { try controller.startAgendaSlot(id) }
+                                catch { controller.reportPanelError(FocusUIError.message(error)) }
+                            }
+                        }
+                        Button("Dans 15 min") { controller.snoozeAgendaPrompt() }
+                        Spacer()
+                        Button { controller.dismissPanel() } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("Fermer le rappel")
+                    }
+                }
+            }.accessibilityIdentifier("concentration-agenda-notice")
         case .commitment:
             FocusCommitmentPanelView(cards: controller.commitmentCards.filter { content.commitmentIDs.contains($0.id) },
                                      lists: controller.blockLists, now: GoalongToday.now,

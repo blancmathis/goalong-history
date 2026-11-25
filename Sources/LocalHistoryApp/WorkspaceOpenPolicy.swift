@@ -11,6 +11,7 @@
         case updatePage
         case documentation
         case goalongWebsite
+        case plannedContext
     }
 
     /// Single reviewed LaunchServices boundary. The unified app accepts only
@@ -47,6 +48,18 @@
                 return (try? GoalongSiteSubmission.endpoint(origin: origin)) != nil
             }
 
+            // A saved plan link opens only after an explicit click. Custom app schemes have
+            // no reviewed handler yet; local Context Room URLs stay on exact loopback hosts.
+            if purpose == .plannedContext {
+                guard GoalongBuildCapabilities.permitsHTTPWorkspaceOpening,
+                      let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                      parts.user == nil, parts.password == nil,
+                      let host = parts.host?.lowercased(), !host.isEmpty,
+                      parts.port.map({ (1...65535).contains($0) }) ?? true else { return false }
+                if scheme == "https" { return parts.port == nil || parts.port == 443 }
+                return scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host)
+            }
+
             guard GoalongBuildCapabilities.permitsHTTPWorkspaceOpening,
                 scheme == "https",
                 url.user == nil,
@@ -65,7 +78,7 @@
                 return host == "github.com"
             case .documentation:
                 return reviewedDocumentationHosts.contains(host)
-            case .localFile, .systemSettings, .goalongWebsite:
+            case .localFile, .systemSettings, .goalongWebsite, .plannedContext:
                 return false
             }
         }

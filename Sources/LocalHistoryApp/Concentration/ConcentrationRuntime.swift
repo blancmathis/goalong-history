@@ -74,12 +74,23 @@ import LocalHistoryQueryCLI
                 }
                 statusHub.publish(try FocusJSON.encode(value.status))
                 value.onPanelChange = { [weak self, weak value] panel in
-                    guard let self, let value, self.presentsPanels else { return }
+                    guard let self, let value else { return }
+                    // Also covers a reminder prepared during controller initialization, before the runtime gate was installed.
+                    if panel?.kind == .agenda, !value.guidanceMayPresent() {
+                        value.dismissPanel(); return
+                    }
+                    guard self.presentsPanels else { return }
                     // A session stopped from the menu bar popover gets its question there, not in a floating panel.
                     if let panel, value.presentsFloating(panel) { let p = self.presenter ?? ConcentrationPanelPresenter(); p.show(panel, controller: value); self.presenter = p }
                     else { self.presenter?.close(); self.presenter = nil }
                 }
                 value.onPhaseSound = { NSSound(named: "Glass")?.play() }
+                // Guidance yields to the existing intervention and never creates a panel in tests/headless use.
+                value.guidanceMayPresent = { [weak self] in
+                    guard self?.presentsPanels == true else { return false }
+                    let warning = JevWarningPanel.shared
+                    return warning.panel?.isVisible != true && !warning.overlays.contains(where: { $0.isVisible })
+                }
                 value.onOpenRequested = { [weak self] _ in self?.onOpen?() }
                 value.onLimitMark = { [weak self] mark in self?.monitor?.recordFocusLimit(mark) }
                 value.measurementRefresh = { [weak self] in self?.refreshMeasurements() }
@@ -262,6 +273,22 @@ import LocalHistoryQueryCLI
             case "session skip": try controller.skipPhase(); return try FocusJSON.encode(controller.status)
             case "session stop": try controller.stopSession(outcome: o["--outcome"].flatMap(FocusSession.Outcome.init(rawValue:)), note: o["--note"]); return try FocusJSON.encode(controller.status)
             case "plan show": return try planPayload(controller.plan(on: day), controller: controller)
+            case "plan patch":
+                let object = try JSONSerialization.jsonObject(with: request.body!)
+                let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                return try planPayload(controller.patchPlan(day: day, expectedRevision: Int(o["--if-revision"]!)!, requestID: o["--request-id"]!, body: canonical), controller: controller)
+            case "plan reflow":
+                return try planPayload(controller.reflowPlan(on: day, expectedRevision: Int(o["--if-revision"]!)!, requestID: o["--request-id"]!), controller: controller)
+            case "plan undo":
+                return try planPayload(controller.undoPlan(on: day, expectedRevision: Int(o["--if-revision"]!)!, requestID: o["--request-id"]!), controller: controller)
+            case "routine show": return try routinePayload(controller.settings.agendaTemplate)
+            case "routine set":
+                guard let object = try JSONSerialization.jsonObject(with: request.body!) as? [String: Any], let rawAgenda = object["agenda"] else { throw FocusFailure.invalidArgument }
+                let agenda: FocusAgenda?
+                if rawAgenda is NSNull { agenda = nil }
+                else { agenda = try FocusJSON.decode(FocusAgenda.self, from: JSONSerialization.data(withJSONObject: rawAgenda, options: [.sortedKeys])) }
+                try controller.updateAgendaTemplate(agenda)
+                return try routinePayload(controller.settings.agendaTemplate)
             case "plan add": _ = try controller.addPlanItem(title: o["title"]!, day: day, project: o["--project"], estimateMinutes: o["--estimate"].flatMap(Int.init))
             case "plan done", "plan drop": try controller.setItemStatus(UUID(uuidString: o["id"]!)!, day: day, status: request.command == "plan done" ? .done : .dropped)
             case "plan move": try controller.movePlanItem(UUID(uuidString: o["id"]!)!, day: day, to: resolveDay(o["--to"]!))
@@ -281,9 +308,18 @@ import LocalHistoryQueryCLI
     }
     private func planPayload(_ plan: FocusPlan, controller: ConcentrationController) throws -> Data {
         var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(plan)) as! [String: Any]
+        object["revision"] = plan.effectiveRevision
+        // Preview only: reading a plan never accepts or writes a schedule adjustment.
+        let preview = FocusDayPlanner.reflow(plan: plan, now: clock())
+        let unplaced = Set(preview.unplaced + (plan.agenda?.slots.filter { $0.state == .unscheduled }.map(\.id) ?? []))
+        object["agendaDiagnostics"] = ["conflicts": preview.conflicts, "unplaced": unplaced.map(\.uuidString).sorted()]
         object["measures"] = try JSONSerialization.jsonObject(with: FocusJSON.encode(controller.measures(for: plan)))
         object["estimateRatio"] = controller.estimateRatio.map { $0 as Any } ?? NSNull()
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+    private func routinePayload(_ agenda: FocusAgenda?) throws -> Data {
+        let value = try JSONSerialization.jsonObject(with: FocusJSON.encode(agenda), options: [.fragmentsAllowed])
+        return try JSONSerialization.data(withJSONObject: ["agenda": value], options: [.sortedKeys])
     }
     private func reviewPayload(_ review: FocusReview, controller: ConcentrationController) throws -> Data {
         var object = try JSONSerialization.jsonObject(with: FocusJSON.encode(review)) as! [String: Any]

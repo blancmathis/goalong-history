@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Combine
+import CryptoKit
 import Foundation
 import LocalHistoryCore
 import LocalHistoryQueryCLI
@@ -14,14 +15,19 @@ struct FocusStatus: Codable, Equatable {
     var source: String?
     var since: Date
     var session: Session?
+    /// Watchers re-read the versioned plan when these small local signals change.
+    var planDay: String?
+    var planRevision: Int?
+    var waitingProcesses: Int?
 }
 struct FocusPanel: Equatable {
-    enum Kind: String { case phase, sessionReview, morning, evening, limit, commitment }
+    enum Kind: String { case phase, sessionReview, morning, evening, limit, commitment, agenda }
     var kind: Kind
     var text: String
     var sessionID: UUID?
     var expiresAt: Date?
     var commitmentIDs: [UUID] = []
+    var slotID: UUID?
 }
 
 /// Main-actor writer; UI and socket actions share exactly these validated actions.
@@ -65,6 +71,8 @@ struct FocusPanel: Equatable {
     var onPhaseSound: (() -> Void)?
     var onOpenRequested: ((FocusPanel.Kind) -> Void)?
     var measurementRefresh: (() -> Void)?
+    /// Guidance yields to an existing intervention; it never changes that intervention's rules.
+    var guidanceMayPresent: () -> Bool = { true }
 
     private let store: FocusStore
     private let clock: () -> Date
@@ -104,6 +112,8 @@ struct FocusPanel: Equatable {
     private var measuredDays: [String: GoalongLocalAnalytics.Day] = [:]
     private var definitionAvailable = false
     private var lastMeasureRequest = Date.distantPast
+    private var lastAgendaAutoAdjustment = Date.distantPast
+    private var lastPublishedJevPlanAction: String?
     private var lastCommitmentCardRefresh = Date.distantPast
     /// Decoded session files for commitment progress. This controller is their only writer: `persist` keeps it current.
     private var sessionCache: [String: [FocusSession]] = [:]
@@ -205,7 +215,18 @@ struct FocusPanel: Equatable {
         }
     }
     private func loadDay(_ day: String) throws {
-        sessions = try store.sessions(day); plan = try store.plan(day) ?? FocusPlan(day: day); review = try store.review(day)
+        sessions = try store.sessions(day)
+        var value = try store.plan(day) ?? freshDayPlan(day)
+        // A non-nil process list, including [], is an explicit daily snapshot. Never
+        // resurrect a removed process from yesterday when the app relaunches.
+        if value.processes == nil, let priorDay = try store.planDays().filter({ $0 < day }).max(),
+           let prior = try store.plan(priorDay), let processes = prior.processes, !processes.isEmpty {
+            let previous = value
+            value.processes = processes.filter { !$0.status.isFinished }
+            value = try versioned(value, replacing: previous, actor: "day", reason: "Processus en cours repris du dernier jour")
+            try store.savePlans([value])
+        }
+        plan = value; review = try store.review(day)
     }
     private func admit() throws { if storageFailed { throw FocusFailure.storageFailed } }
     /// Clears the write latch only after the files read back cleanly. No write happens here.
@@ -267,6 +288,9 @@ struct FocusPanel: Equatable {
         try admit(); refresh()
         guard currentSession == nil else { throw FocusFailure.invalidArgument }
         if let id = planItemId, !plan.items.contains(where: { $0.id == id && $0.status == .open }) { throw FocusFailure.notFound }
+        if let id = planItemId, let slot = plan.agenda?.slots.first(where: { $0.itemID == id && !$0.state.isFinished }) {
+            _ = try preparedStart(slot.id, in: plan)
+        }
         if !blockListIds.isEmpty {
             guard let b = blocking() else { throw FocusFailure.moduleDisabled }
             guard Set(blockListIds).isSubset(of: Set(b.lists.map(\.id))) else { throw FocusFailure.notFound }
@@ -283,7 +307,12 @@ struct FocusPanel: Equatable {
         catch {
             value.events.append(.init(kind: .stop, at: now, reason: .member)); try persist(value); currentSession = nil; throw error
         }
-        error = nil; refresh()
+        error = nil
+        if let id = planItemId, let slot = plan.agenda?.slots.first(where: { $0.itemID == id && !$0.state.isFinished }) {
+            do { try applyDayPlan(preparedStart(slot.id, in: plan), expectedRevision: plan.effectiveRevision, reason: "Action démarrée") }
+            catch { self.error = "La séance a démarré, mais son créneau n’a pas pu être mis à jour : \(FocusUIError.message(error))" }
+        }
+        refresh()
     }
     func skipPhase() throws {
         try admit(); refresh()
@@ -326,7 +355,22 @@ struct FocusPanel: Equatable {
         guard note.map({ FocusValidation.text($0, maximum: 140) }) ?? true else { throw FocusFailure.invalidArgument }
         for day in try store.sessionDays().reversed() {
             if var value = try store.sessions(day).first(where: { $0.id == sessionID && $0.endedAt != nil }) {
-                value.outcome = outcome; value.note = note; try persist(value); if panel?.sessionID == sessionID { dismissPanel() }; return
+                value.outcome = outcome; value.note = note; try persist(value)
+                if let id = value.planItemId,
+                   !(currentSession?.planItemId == id && currentSession?.id != sessionID) {
+                    var linked = try plan(on: day)
+                    if let i = linked.items.firstIndex(where: { $0.id == id && $0.status == .open }) {
+                        if outcome == .done { linked.items[i].status = .done; linked.items[i].toDay = nil }
+                        if var agenda = linked.agenda {
+                            for k in agenda.slots.indices where agenda.slots[k].itemID == id && !agenda.slots[k].state.isFinished {
+                                agenda.slots[k].state = outcome == .done ? .done : .unscheduled
+                            }
+                            linked.agenda = agenda
+                        }
+                        try applyDayPlan(linked, expectedRevision: linked.effectiveRevision, reason: outcome == .done ? "Résultat déclaré terminé" : "Séance terminée ; action à reprendre")
+                    }
+                }
+                if panel?.sessionID == sessionID { dismissPanel() }; return
             }
         }
         throw FocusFailure.notFound
@@ -379,12 +423,20 @@ struct FocusPanel: Equatable {
         value.distractions?.counts[i].state = .ignored
         try persist(value)
     }
-    func plan(on day: String) throws -> FocusPlan { try store.plan(day) ?? FocusPlan(day: day) }
+    func plan(on day: String) throws -> FocusPlan { try store.plan(day) ?? freshDayPlan(day) }
     func review(on day: String) throws -> FocusReview { try store.review(day) ?? FocusReview(day: day) }
     func setPlan(_ value: FocusPlan) throws {
         guard value.items.count <= FocusPlan.maximumItems else { throw FocusFailure.planFull }
-        guard value.valid, !value.items.isEmpty else { throw FocusFailure.invalidArgument }
-        try saving { try store.savePlans([value]) }; if value.day == currentDay { plan = value }; updateMeasures()
+        guard !value.items.isEmpty else { throw FocusFailure.invalidArgument }
+        let old = try plan(on: value.day)
+        // An older client only knows the item list. Preserve newer fields it did not send.
+        var next = value
+        if next.agenda == nil { next.agenda = old.agenda }
+        if next.processes == nil { next.processes = old.processes }
+        next.receipts = old.receipts; next.changes = old.changes; next.previousAgenda = old.previousAgenda
+        if next.revision == nil { next.revision = old.revision }
+        reconcileSlots(&next)
+        try applyDayPlan(next, expectedRevision: value.revision ?? old.effectiveRevision, reason: "Plan modifié")
     }
     /// A task renamed in « Vérifier et corriger »: linked plan items follow, or their project minutes read 0 (T-045 H5-04).
     /// Returns the unreadable days left on the old name (T-045 L3-3).
@@ -392,7 +444,7 @@ struct FocusPanel: Equatable {
         var changed: [FocusPlan] = [], skipped: [String] = []
         try? saving { (changed, skipped) = try store.renamePlanProjectReporting(from: old, to: new) }
         if let today = changed.first(where: { $0.day == currentDay }) { plan = today }
-        if !changed.isEmpty { updateMeasures() }
+        if !changed.isEmpty { updateMeasures(); publishStatus() }
         return skipped
     }
     @discardableResult func addPlanItem(title: String, day: String, project: String? = nil, estimateMinutes: Int? = nil) throws -> FocusPlanItem {
@@ -443,8 +495,15 @@ struct FocusPanel: Equatable {
     private func savePlanChanges(_ changed: [String: FocusPlan], review value: FocusReview? = nil) throws {
         // A move or a review carry can target a plan that is already full.
         guard changed.values.allSatisfy({ $0.items.count <= FocusPlan.maximumItems }) else { throw FocusFailure.planFull }
-        try saving { try store.savePlans(Array(changed.values), review: value) }
-        if let today = changed[currentDay] { plan = today }; if let value, value.day == currentDay { review = value }; updateMeasures()
+        var values: [FocusPlan] = []
+        for var next in changed.values {
+            reconcileSlots(&next)
+            values.append(try versioned(next, replacing: plan(on: next.day), actor: "member", reason: value == nil ? "Tâche déplacée ou mise à jour" : "Bilan enregistré"))
+        }
+        try saving { try store.savePlans(values, review: value) }
+        if let today = values.first(where: { $0.day == currentDay }) { plan = today }
+        if let value, value.day == currentDay { review = value }
+        updateMeasures(); publishStatus(); scheduleTimer()
     }
     func setReview(_ value: FocusReview) throws {
         guard value.valid else { throw FocusFailure.invalidArgument }
@@ -511,7 +570,9 @@ struct FocusPanel: Equatable {
         observation = value
         if settings.detectionEnabled && currentSession == nil { _ = detection.observe(value) } else { detection.reset() }
         refresh()
-        if value.observing, value.available, value.idleSeconds < 120 { checkPrompts(activity: true) }
+        if value.observing, value.available, value.idleSeconds < 120 {
+            reflowOverdueAgenda(); checkPrompts(activity: true); checkAgendaPrompt()
+        }
         // Also without observation: sessions, plans and period ends still need a measurement (T-044 B2-02).
         if value.at.throttleElapsed(since: lastMeasureRequest) >= 60 { lastMeasureRequest = value.at; measurementRefresh?() }
     }
@@ -601,7 +662,7 @@ struct FocusPanel: Equatable {
         }
         if panel?.expiresAt.map({ $0 <= now }) == true { dismissPanel() }
         if now.throttleElapsed(since: lastCommitmentCardRefresh) >= 60 || commitmentCards.contains(where: { ($0.editMode == "free" && $0.editUntil <= now) || ($0.exitUntil.map { $0 <= now } == true && ($0.canUseJoker || $0.canDeclare)) }) { refreshCommitmentCards() }
-        checkPrompts(activity: false); checkLimits(); publishStatus(); scheduleTimer()
+        checkPrompts(activity: false); checkLimits(); checkAgendaPrompt(); publishStatus(); scheduleTimer()
     }
     /// The last block failure published: a member who closed it is not shown the same one again.
     private var lastSyncErrorShown: String?
@@ -635,7 +696,14 @@ struct FocusPanel: Equatable {
         phaseBlockID = id; phaseBlockKey = key
     }
     private func publishStatus() {
+        let chosenAction = currentJevPlanAction
+        if chosenAction != lastPublishedJevPlanAction {
+            lastPublishedJevPlanAction = chosenAction
+            NotificationCenter.default.post(name: Notification.Name("goalongFocusPlanContextDidChange"), object: self)
+        }
         var next = FocusStatus(since: status.since)
+        next.planDay = plan.day; next.planRevision = plan.effectiveRevision
+        next.waitingProcesses = FocusDayPlanner.waitingProcesses(plan: plan).count
         if let value = currentSession, let p = phase {
             next.state = p.isWork ? "focus" : "break"; next.source = p.isWork ? "session" : nil
             next.session = .init(id: value.id, intent: value.intent, phase: p.kind, cycle: p.cycle, phaseEndsAt: p.endsAt)
@@ -652,6 +720,8 @@ struct FocusPanel: Equatable {
     private func checkPrompts(activity: Bool) {
         // The question about the session that just ended comes first; the prompts return once it is answered or gone.
         if panel?.kind == .sessionReview { return }
+        // A guided day already carries its morning/evening anchors.
+        if plan.agenda?.guided == true { return }
         let minute = calendar.component(.hour, from: clock()) * 60 + calendar.component(.minute, from: clock())
         let evening = eveningMinute(on: clock())
         var request: FocusPanel.Kind?
@@ -697,6 +767,12 @@ struct FocusPanel: Equatable {
         var boundaries = [phase?.endsAt, panel?.expiresAt, promptState.morningReminded ? nil : promptState.morningReminderAt,
                           promptState.eveningReminded ? nil : promptState.eveningReminderAt].compactMap { $0 }
         boundaries += commitmentCards.compactMap(\.exitUntil)
+        if let agenda = plan.agenda, agenda.guided {
+            boundaries += agenda.slots.filter { !$0.state.isFinished && $0.state != .unscheduled }.compactMap {
+                FocusDayPlanner.date(day: plan.day, minute: $0.startMinute, timeZoneID: agenda.timeZoneID)
+            }
+            if let until = promptState.agendaSnoozedUntil { boundaries.append(until) }
+        }
         boundaries += commitmentCards.filter { $0.editMode == "free" }.map(\.editUntil)
         if storageFailed { boundaries.append(max(now.addingTimeInterval(1), lastStorageRetry.addingTimeInterval(60))) }
         if currentSession?.mode.kind == .free, currentSession?.mode.minutes == nil, phaseBlockID != nil { boundaries.append(now.addingTimeInterval(45)) }
@@ -726,6 +802,327 @@ struct FocusPanel: Equatable {
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
+    }
+}
+
+// MARK: - Versioned day planning
+extension ConcentrationController {
+    private struct DayPatch: Decodable {
+        var actor: String?; var reason: String?; var intention: String?
+        var items: [FocusPlanItem]?; var removeItemIDs: [UUID]?
+        var processes: [FocusAgentProcess]?; var removeProcessIDs: [UUID]?
+        var agenda: FocusAgenda?; var reflow: Bool?
+    }
+    private func freshDayPlan(_ day: String) -> FocusPlan {
+        var value = FocusPlan(day: day)
+        if let template = settings.agendaTemplate, template.valid(forDay: day, items: []) { value.agenda = template }
+        return value
+    }
+    /// Never leave a dangling task reference after an older client's move/remove command.
+    private func reconcileSlots(_ value: inout FocusPlan) {
+        guard var agenda = value.agenda else { return }
+        for i in agenda.slots.indices {
+            guard let id = agenda.slots[i].itemID else { continue }
+            guard let item = value.items.first(where: { $0.id == id }) else {
+                agenda.slots[i].itemID = nil
+                if !agenda.slots[i].state.isFinished { agenda.slots[i].state = .skipped }
+                continue
+            }
+            if item.status != .open, !agenda.slots[i].state.isFinished {
+                agenda.slots[i].state = item.status == .done ? .done : .skipped
+            }
+        }
+        value.agenda = agenda
+    }
+    private func versioned(_ draft: FocusPlan, replacing old: FocusPlan, actor: String, reason: String,
+                           receipt: (id: String, digest: String)? = nil) throws -> FocusPlan {
+        guard draft.day == old.day, old.effectiveRevision < 1_000_000_000,
+              FocusValidation.text(actor, maximum: 140, required: true),
+              FocusValidation.text(reason, maximum: 500, required: true) else { throw FocusFailure.invalidArgument }
+        var value = draft
+        value.revision = old.effectiveRevision + 1
+        value.receipts = old.receipts
+        if let receipt {
+            guard FocusValidation.text(receipt.id, maximum: 128, required: true) else { throw FocusFailure.invalidArgument }
+            value.receipts = Array(((old.receipts ?? []) + [.init(id: receipt.id, revision: value.effectiveRevision, digest: receipt.digest)]).suffix(64))
+        }
+        value.changes = Array(((old.changes ?? []) + [.init(at: clock(), actor: actor, reason: reason, revision: value.effectiveRevision)]).suffix(64))
+        guard value.items.count <= FocusPlan.maximumItems else { throw FocusFailure.planFull }
+        guard value.valid,
+              (value.agenda == old.agenda || (value.agenda.map({ TimeZone(identifier: $0.timeZoneID) == calendar.timeZone }) ?? true)) else { throw FocusFailure.invalidArgument }
+        return value
+    }
+    private func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    private func repeated(_ old: FocusPlan, requestID: String, digest: String) throws -> Bool {
+        guard FocusValidation.text(requestID, maximum: 128, required: true) else { throw FocusFailure.invalidArgument }
+        guard let previous = old.receipts?.first(where: { $0.id == requestID }) else { return false }
+        guard previous.digest == digest else { throw FocusFailure.requestConflict }
+        return true
+    }
+    private func saveDay(_ value: FocusPlan) throws {
+        try saving { try store.savePlans([value]) }
+        if value.day == currentDay { plan = value }
+        updateMeasures(); publishStatus(); scheduleTimer()
+    }
+    /// Full native editor save, guarded by the revision the editor actually displayed.
+    func applyDayPlan(_ value: FocusPlan, expectedRevision: Int, reason: String = "Plan modifié",
+                      requestID: String? = nil, actor: String = "member") throws {
+        try admit()
+        let old = try plan(on: value.day)
+        let hash = try digest(FocusJSON.encode(value))
+        if let requestID, try repeated(old, requestID: requestID, digest: hash) { return }
+        guard expectedRevision == old.effectiveRevision else { throw FocusFailure.conflict }
+        if requestID == nil, value == old { return }
+        try saveDay(versioned(value, replacing: old, actor: actor, reason: reason,
+                              receipt: requestID.map { (id: $0, digest: hash) }))
+    }
+    /// Main-actor read/modify/write: agents cannot overwrite one another with stale snapshots.
+    func patchPlan(day: String, expectedRevision: Int, requestID: String, body: Data) throws -> FocusPlan {
+        try admit()
+        guard body.count <= 65_536, let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+              Set(object.keys).isSubset(of: ["actor", "reason", "intention", "items", "removeItemIDs", "processes", "removeProcessIDs", "agenda", "reflow"]) else { throw FocusFailure.invalidArgument }
+        try validatePatchObjects(object)
+        let canonical = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let hash = digest(Data("patch:".utf8) + canonical)
+        let old = try plan(on: day)
+        if try repeated(old, requestID: requestID, digest: hash) { return old }
+        guard expectedRevision == old.effectiveRevision else { throw FocusFailure.conflict }
+        let patch = try FocusJSON.decode(DayPatch.self, from: canonical)
+        var value = old
+        if let items = patch.items {
+            guard Set(items.map(\.id)).count == items.count else { throw FocusFailure.invalidArgument }
+            for item in items {
+                if let i = value.items.firstIndex(where: { $0.id == item.id }) { value.items[i] = item } else { value.items.append(item) }
+            }
+        }
+        if let removed = patch.removeItemIDs {
+            guard Set(removed).count == removed.count,
+                  Set(removed).isDisjoint(with: Set((patch.items ?? []).map(\.id))) else { throw FocusFailure.invalidArgument }
+            value.items.removeAll { removed.contains($0.id) }
+        }
+        if let incoming = patch.processes {
+            guard Set(incoming.map(\.id)).count == incoming.count else { throw FocusFailure.invalidArgument }
+            var processes = value.processes ?? []
+            for var process in incoming {
+                process.updatedAt = clock()
+                if let i = processes.firstIndex(where: { $0.id == process.id }) { processes[i] = process } else { processes.append(process) }
+            }
+            value.processes = processes
+        }
+        if let removed = patch.removeProcessIDs {
+            guard Set(removed).count == removed.count,
+                  Set(removed).isDisjoint(with: Set((patch.processes ?? []).map(\.id))) else { throw FocusFailure.invalidArgument }
+            value.processes?.removeAll { removed.contains($0.id) }
+        }
+        if object.keys.contains("intention") { value.intention = patch.intention }
+        if let agenda = patch.agenda { value.agenda = agenda }
+        reconcileSlots(&value)
+        if patch.reflow == true { value = adjusted(value) }
+        let result = try versioned(value, replacing: old, actor: patch.actor ?? "agent", reason: patch.reason ?? "Plan ajusté par un agent", receipt: (requestID, hash))
+        try saveDay(result)
+        return result
+    }
+    private func validatePatchObjects(_ object: [String: Any]) throws {
+        let itemKeys: Set<String> = ["id", "title", "project", "estimateMinutes", "status", "toDay", "nextAction", "doneWhen", "actionKind", "contextURL", "processIDs"]
+        let processKeys: Set<String> = ["id", "title", "project", "agent", "externalID", "contextURL", "status", "question", "answer", "updatedAt"]
+        for (key, keys) in [("items", itemKeys), ("processes", processKeys)] where object[key] != nil {
+            guard let rows = object[key] as? [[String: Any]], rows.allSatisfy({
+                Set($0.keys).isSubset(of: keys) && ($0["id"] as? String).flatMap(UUID.init(uuidString:)) != nil
+            }) else { throw FocusFailure.invalidArgument }
+        }
+        if let raw = object["agenda"] {
+            guard let agenda = raw as? [String: Any], Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "slots"]) else { throw FocusFailure.invalidArgument }
+            if let rawSlots = agenda["slots"] {
+                let keys: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute"]
+                guard let slots = rawSlots as? [[String: Any]], slots.allSatisfy({
+                    Set($0.keys).isSubset(of: keys) && ($0["id"] as? String).flatMap(UUID.init(uuidString:)) != nil
+                }) else { throw FocusFailure.invalidArgument }
+            }
+        }
+    }
+    private func adjusted(_ source: FocusPlan) -> FocusPlan {
+        var value = source
+        let result = FocusDayPlanner.reflow(plan: value, now: clock())
+        if result.agenda != value.agenda { value.previousAgenda = value.agenda; value.agenda = result.agenda }
+        var messages = result.conflicts
+        if !result.unplaced.isEmpty { messages.append("\(result.unplaced.count) créneau(x) à replacer : la journée n’a pas été prolongée.") }
+        if !messages.isEmpty { error = messages.joined(separator: " ") }
+        return value
+    }
+    func reflowPlan(on day: String, expectedRevision: Int, requestID: String) throws -> FocusPlan {
+        try admit()
+        let old = try plan(on: day), hash = digest(Data("reflow:\(day)".utf8))
+        if try repeated(old, requestID: requestID, digest: hash) { return old }
+        guard old.effectiveRevision == expectedRevision else { throw FocusFailure.conflict }
+        let value = try versioned(adjusted(old), replacing: old, actor: "agent", reason: "Programme recalé dans les horaires autorisés", receipt: (requestID, hash))
+        try saveDay(value); return value
+    }
+    func reflowDayPlan() throws {
+        _ = try reflowPlan(on: currentDay, expectedRevision: plan.effectiveRevision, requestID: UUID().uuidString)
+    }
+    private func reflowOverdueAgenda() {
+        guard currentSession == nil, panel == nil, !storageFailed,
+              clock().throttleElapsed(since: lastAgendaAutoAdjustment) >= 300,
+              let agenda = plan.agenda, agenda.guided, agenda.autoAdjust,
+              !agenda.slots.contains(where: { $0.state == .active }),
+              let minute = FocusDayPlanner.localMinute(at: clock(), timeZoneID: agenda.timeZoneID),
+              FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == plan.day,
+              minute < agenda.endMinute,
+              agenda.slots.contains(where: { !$0.fixed && $0.state == .planned && $0.endMinute < minute }) else { return }
+        lastAgendaAutoAdjustment = clock()
+        let value = adjusted(plan)
+        guard value.agenda != plan.agenda else { return }
+        do { try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Reprise tardive : programme recalé, repères fixes conservés", actor: "agenda") }
+        catch { self.error = FocusUIError.message(error) }
+    }
+    private func undoValue(_ old: FocusPlan) throws -> FocusPlan {
+        guard var agenda = old.previousAgenda else { throw FocusFailure.notFound }
+        // Undo times, never a completion, answer or current work session that happened since.
+        let current = Dictionary(uniqueKeysWithValues: (old.agenda?.slots ?? []).map { ($0.id, $0) })
+        for i in agenda.slots.indices {
+            if let now = current[agenda.slots[i].id] {
+                if now.state.isFinished { agenda.slots[i].state = now.state }
+                if now.state == .active { agenda.slots[i] = now }
+            }
+        }
+        let known = Set(agenda.slots.map(\.id))
+        agenda.slots += (old.agenda?.slots ?? []).filter { !known.contains($0.id) }
+        var value = old; value.agenda = agenda; value.previousAgenda = nil; reconcileSlots(&value)
+        return value
+    }
+    func undoPlan(on day: String, expectedRevision: Int, requestID: String) throws -> FocusPlan {
+        try admit()
+        let old = try plan(on: day), hash = digest(Data("undo:\(day)".utf8))
+        if try repeated(old, requestID: requestID, digest: hash) { return old }
+        guard old.effectiveRevision == expectedRevision else { throw FocusFailure.conflict }
+        let value = try versioned(undoValue(old), replacing: old, actor: "member", reason: "Dernier décalage annulé", receipt: (requestID, hash))
+        try saveDay(value); return value
+    }
+    func undoDayAdjustment() throws {
+        _ = try undoPlan(on: currentDay, expectedRevision: plan.effectiveRevision, requestID: UUID().uuidString)
+    }
+    func updateAgendaTemplate(_ agenda: FocusAgenda?) throws {
+        guard agenda?.validTemplate ?? true,
+              agenda.map({ TimeZone(identifier: $0.timeZoneID) == calendar.timeZone }) ?? true else { throw FocusFailure.invalidArgument }
+        var next = settings; next.agendaTemplate = agenda; try updateSettings(next)
+        if plan.agenda == nil, let agenda, agenda.valid(forDay: plan.day, items: plan.items) {
+            var value = plan; value.agenda = agenda
+            try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Repères quotidiens installés")
+        }
+    }
+    private func preparedStart(_ id: UUID, in source: FocusPlan) throws -> FocusPlan {
+        guard var agenda = source.agenda, let i = agenda.slots.firstIndex(where: { $0.id == id }),
+              !agenda.slots[i].state.isFinished,
+              !agenda.slots.contains(where: { $0.state == .active && $0.id != id }),
+              FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == source.day,
+              let minute = FocusDayPlanner.localMinute(at: clock(), timeZoneID: agenda.timeZoneID) else { throw FocusFailure.invalidArgument }
+        if agenda.slots[i].fixed {
+            guard minute >= agenda.slots[i].startMinute, minute < agenda.slots[i].endMinute else { throw FocusFailure.invalidArgument }
+        } else if agenda.slots[i].state != .active {
+            let duration = agenda.slots[i].durationMinutes
+            agenda.slots[i].startMinute = minute; agenda.slots[i].endMinute = minute + duration
+            guard minute >= max(agenda.startMinute, agenda.slots[i].earliestMinute ?? 0),
+                  agenda.slots[i].endMinute <= min(agenda.endMinute, agenda.slots[i].latestEndMinute ?? 1440) else { throw FocusFailure.invalidArgument }
+        }
+        let selected = agenda.slots[i]
+        guard !agenda.slots.contains(where: { $0.id != id && $0.fixed && !$0.state.isFinished && $0.state != .unscheduled && $0.startMinute < selected.endMinute && selected.startMinute < $0.endMinute }) else { throw FocusFailure.invalidArgument }
+        agenda.slots[i].state = .active
+        var value = source; value.agenda = agenda
+        if agenda.autoAdjust { value = adjusted(value) }
+        return value
+    }
+    func startPlannedItem(_ id: UUID, mode: FocusMode? = nil) throws {
+        guard let item = plan.items.first(where: { $0.id == id && $0.status == .open }) else { throw FocusFailure.notFound }
+        // The agenda supplies the next transition. An explicit Pomodoro/timer remains available unchanged.
+        try startSession(intent: item.title, mode: mode ?? FocusMode(minutes: nil), planItemId: id)
+    }
+    func startAgendaSlot(_ id: UUID) throws {
+        guard currentSession == nil else { throw FocusFailure.invalidArgument }
+        let value = try preparedStart(id, in: plan)
+        guard let slot = value.agenda?.slots.first(where: { $0.id == id }) else { throw FocusFailure.notFound }
+        if let itemID = slot.itemID { try startPlannedItem(itemID) }
+        else { try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Créneau démarré") }
+        dismissPanel()
+    }
+    func finishAgendaSlot(_ id: UUID) throws {
+        guard let slot = plan.agenda?.slots.first(where: { $0.id == id }), !slot.state.isFinished else { throw FocusFailure.notFound }
+        if let itemID = slot.itemID, currentSession?.planItemId == itemID {
+            // Uses the existing surveillance/locked-block guards without an alternate stop path.
+            try stopSession(outcome: .done)
+        }
+        var value = plan
+        if let i = value.agenda?.slots.firstIndex(where: { $0.id == id }) { value.agenda?.slots[i].state = .done }
+        if let itemID = slot.itemID, let i = value.items.firstIndex(where: { $0.id == itemID }) { value.items[i].status = .done; value.items[i].toDay = nil }
+        if value.agenda?.autoAdjust == true { value = adjusted(value) }
+        try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Créneau terminé par déclaration")
+        if panel?.kind == .sessionReview, let sessionID = panel?.sessionID { try recordOutcome(sessionID: sessionID, outcome: .done) }
+    }
+    func shiftAgendaSlot(_ id: UUID, minutes: Int) throws {
+        guard (1...180).contains(minutes), var agenda = plan.agenda,
+              let i = agenda.slots.firstIndex(where: { $0.id == id }), !agenda.slots[i].fixed,
+              !agenda.slots[i].state.isFinished else { throw FocusFailure.invalidArgument }
+        let old = agenda
+        let nowMinute = FocusDayPlanner.localMinute(at: clock(), timeZoneID: agenda.timeZoneID) ?? 0
+        if agenda.slots[i].state == .active { agenda.slots[i].endMinute = max(agenda.slots[i].endMinute, nowMinute) + minutes }
+        else {
+            let duration = agenda.slots[i].durationMinutes
+            agenda.slots[i].startMinute = max(agenda.slots[i].startMinute, nowMinute) + minutes
+            agenda.slots[i].endMinute = agenda.slots[i].startMinute + duration
+            agenda.slots[i].state = .planned
+        }
+        let selected = agenda.slots[i]
+        guard selected.endMinute <= min(agenda.endMinute, selected.latestEndMinute ?? 1440),
+              !agenda.slots.contains(where: { $0.id != id && $0.fixed && !$0.state.isFinished && $0.state != .unscheduled && $0.startMinute < selected.endMinute && selected.startMinute < $0.endMinute }) else { throw FocusFailure.invalidArgument }
+        var value = plan; value.agenda = agenda
+        if agenda.autoAdjust { value = adjusted(value) }
+        value.previousAgenda = old
+        try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Créneau décalé de \(minutes) min ; repères fixes conservés")
+    }
+    func answerProcess(_ id: UUID, answer: String) throws {
+        guard FocusValidation.text(answer, maximum: 1000, required: true),
+              let i = plan.processes?.firstIndex(where: { $0.id == id && $0.status == .waitingForYou }) else { throw FocusFailure.invalidArgument }
+        var value = plan
+        value.processes?[i].answer = answer; value.processes?[i].updatedAt = clock()
+        // A stored answer is not evidence that another process has received it or resumed.
+        try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Réponse enregistrée ; reprise à confirmer par l’agent")
+    }
+    /// Only an explicitly chosen work session may supply context. Never send the agent queue or documentation.
+    var currentJevPlanAction: String? {
+        guard settings.usePlanContext == true, let id = currentSession?.planItemId,
+              let item = plan.items.first(where: { $0.id == id }) else { return nil }
+        return [item.title, item.nextAction].compactMap { $0 }.joined(separator: " — ")
+    }
+    private func checkAgendaPrompt() {
+        guard !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda, agenda.guided,
+              (promptState.agendaPromptCount ?? 0) < 8,
+              (promptState.agendaSnoozedUntil ?? .distantPast) <= clock(),
+              FocusDayPlanner.dayKey(at: clock(), timeZoneID: agenda.timeZoneID) == plan.day,
+              TimeZone(identifier: agenda.timeZoneID) == calendar.timeZone else { return }
+        // No replay of the day's missed reminders on wake, and no mid-session work interruption.
+        let shown = Set(promptState.agendaShownIDs ?? [])
+        let candidates = agenda.slots.filter { slot in
+            guard let start = FocusDayPlanner.date(day: plan.day, minute: slot.startMinute, timeZoneID: agenda.timeZoneID),
+                  let end = FocusDayPlanner.date(day: plan.day, minute: slot.endMinute, timeZoneID: agenda.timeZoneID) else { return false }
+            return slot.state == .planned && start <= clock() && clock() < end
+                && !shown.contains(slot.id) && (currentSession == nil || slot.fixed)
+                && (FocusDayPlanner.task(for: slot, in: plan).map { $0.status == .open } ?? true)
+        }.sorted { $0.startMinute < $1.startMinute }
+        guard let slot = candidates.first else { return }
+        var prompts = promptState
+        prompts.agendaShownIDs = Array((prompts.agendaShownIDs ?? []) + [slot.id])
+        prompts.agendaPromptCount = (prompts.agendaPromptCount ?? 0) + 1
+        do { try saving { try store.savePrompts(prompts) } } catch { return }
+        promptState = prompts
+        let action = FocusDayPlanner.task(for: slot, in: plan)?.nextAction
+        showPanel(.init(kind: .agenda, text: action ?? slot.title, expiresAt: clock().addingTimeInterval(45), slotID: slot.id))
+    }
+    func snoozeAgendaPrompt() {
+        guard let id = panel?.slotID else { return }
+        var prompts = promptState
+        prompts.agendaSnoozedUntil = clock().addingTimeInterval(900)
+        prompts.agendaShownIDs?.removeAll { $0 == id }
+        do { try saving { try store.savePrompts(prompts) } } catch { return }
+        promptState = prompts; dismissPanel(); scheduleTimer()
     }
 }
 

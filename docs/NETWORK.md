@@ -94,7 +94,18 @@ explicit consent, from `JevTransport.swift`. It sends one POST to the fixed endp
 recent context: the body is at most `JevPayload.maximumRequestBytes` (1600 UTF-8 bytes) and
 the input is capped at 999 tokens. The session is ephemeral, with no cookie, cache or stored
 credential. Redirects are refused. Timeouts are 10 s per request and 12 s per resource.
-There is no retry. See [`JEV-MONITORING.md`](JEV-MONITORING.md).
+There is no retry in this transport. See [`JEV-MONITORING.md`](JEV-MONITORING.md).
+
+The separate **Donner à Jev l’action en cours** preference is off by default. If enabled,
+only a task explicitly linked to the current focus session may add its title and next action
+to the existing `state.goals` value. The four saved work criteria stay intact and are never
+rewritten. This temporary supplement shares their 800-byte budget and the same 1600-byte
+request limit. The normal request is built first; if the complete supplement does not fit,
+that exact normal request is sent and Goalong shows a local omission notice. No observation
+row is shortened or removed to accommodate the action. There is no extra request or endpoint.
+The selected action is checked before sending and after awaiting the response; changing it
+or disabling the preference invalidates a pending result. Task context links, documentation,
+agent questions and answers are not added to this payload.
 
 ### Website pairing — explicit claim
 

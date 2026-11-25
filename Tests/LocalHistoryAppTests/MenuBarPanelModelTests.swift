@@ -228,6 +228,92 @@ final class MenuBarPanelModelTests: XCTestCase {
         model.applyDay(value(.other)); XCTAssertTrue(model.workKnown, "Mostly classified: work is a real zero")
     }
 
+    @MainActor func testPlannedMenuStartLinksCurrentActionAndPreservesParallelProcesses() throws {
+        let f = fixture(); try f.startFocusController()
+        let controller = try XCTUnwrap(f.focus)
+        let earlier = FocusPlanItem(title: "Écrire la documentation", project: "A", estimateMinutes: 25)
+        var chosen = FocusPlanItem(title: "Enregistrer la vidéo", project: "B", estimateMinutes: 25)
+        chosen.nextAction = "Enregistrer l’introduction"
+        let minute = FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC")
+        let slot = FocusAgendaSlot(itemID: chosen.id, title: chosen.title, startMinute: minute, endMinute: minute + 25)
+        let waiting = FocusAgentProcess(title: "Export", status: .waitingForYou, question: "Quel format ?")
+        let answered = FocusAgentProcess(title: "Tests", status: .waitingForYou, question: "Quelle version ?", answer: "La dernière")
+        let review = FocusAgentProcess(title: "Interface", status: .readyForReview)
+        var plan = controller.plan
+        plan.items = [earlier, chosen]
+        plan.agenda = FocusAgenda(timeZoneID: "UTC", autoAdjust: false, slots: [slot])
+        plan.processes = [waiting, answered, review]
+        try controller.applyDayPlan(plan, expectedRevision: controller.plan.effectiveRevision)
+
+        let model = f.model()
+        model.refreshRuntimeState()
+        XCTAssertEqual(model.dayAction?.itemID, chosen.id)
+        XCTAssertEqual(model.dayAction?.nextAction, chosen.nextAction)
+        XCTAssertEqual(model.waitingProcessCount, 1, "An answer recorded for an agent is not another unanswered question")
+        XCTAssertEqual(model.reviewProcessCount, 1)
+        model.startFocus()
+        XCTAssertEqual(controller.currentSession?.planItemId, chosen.id)
+        XCTAssertEqual(model.focusRun?.intent, chosen.title)
+        XCTAssertEqual(model.focusRun?.nextAction, chosen.nextAction)
+        XCTAssertEqual(controller.plan.processes, plan.processes, "A human session never changes concurrent agent states")
+    }
+
+    @MainActor func testRoutineInMenuDoesNotStartUnrelatedWorkOrInventAWorkSession() throws {
+        let f = fixture(); try f.startFocusController()
+        let controller = try XCTUnwrap(f.focus)
+        let item = FocusPlanItem(title: "Relire le projet", project: nil, estimateMinutes: 25)
+        let minute = FocusDayPlanner.localMinute(at: f.now, timeZoneID: "UTC")
+        let meal = FocusAgendaSlot(title: "Déjeuner", startMinute: minute, endMinute: minute + 30, fixed: true)
+        var plan = controller.plan
+        plan.items = [item]
+        plan.agenda = FocusAgenda(timeZoneID: "UTC", autoAdjust: false, slots: [meal])
+        try controller.applyDayPlan(plan, expectedRevision: controller.plan.effectiveRevision)
+
+        let model = f.model(); model.refreshRuntimeState()
+        XCTAssertEqual(model.dayAction?.title, meal.title)
+        XCTAssertEqual(model.dayAction?.isRoutine, true)
+        model.startFocus()
+        XCTAssertNil(controller.currentSession)
+        XCTAssertEqual(controller.plan.agenda?.slots.first?.state, .active)
+        XCTAssertEqual(controller.plan.items.first?.status, .open)
+        model.startFocus()
+        XCTAssertNil(controller.currentSession)
+        XCTAssertEqual(controller.plan.agenda?.slots.first?.state, .done)
+        XCTAssertEqual(controller.plan.items.first?.status, .open)
+    }
+
+    @MainActor func testJevPlanActionRequiresOptInAndAnExplicitlyLinkedSession() throws {
+        let f = fixture(); try f.startFocusController()
+        let controller = try XCTUnwrap(f.focus)
+        var item = FocusPlanItem(title: "Écrire le guide", project: "Documentation", estimateMinutes: 25)
+        item.nextAction = "Décrire le premier exemple"
+        item.doneWhen = "PRIVATE_DONE_CRITERION"
+        item.contextURL = "https://example.com/PRIVATE_DOCUMENT"
+        var plan = controller.plan
+        plan.items = [item]
+        plan.processes = [FocusAgentProcess(title: "Autre processus", status: .waitingForYou, question: "PRIVATE_AGENT_QUESTION")]
+        try controller.applyDayPlan(plan, expectedRevision: controller.plan.effectiveRevision)
+        XCTAssertNil(controller.currentJevPlanAction)
+        try controller.startPlannedItem(item.id)
+        XCTAssertNil(controller.currentJevPlanAction, "A chosen session is not consent to disclose its plan")
+        var settings = controller.settings
+        settings.usePlanContext = true
+        try controller.updateSettings(settings)
+        let context = try XCTUnwrap(controller.currentJevPlanAction)
+        XCTAssertTrue(context.contains(item.title))
+        XCTAssertTrue(context.contains(try XCTUnwrap(item.nextAction)))
+        XCTAssertFalse(context.contains("PRIVATE_"), "Neither documents, done criteria nor agent questions are sent")
+        settings.usePlanContext = false
+        try controller.updateSettings(settings)
+        XCTAssertNil(controller.currentJevPlanAction)
+        try controller.stopSession()
+        settings.usePlanContext = true
+        try controller.updateSettings(settings)
+        XCTAssertNil(controller.currentJevPlanAction)
+        try controller.startSession(intent: "Travail libre", mode: FocusMode(minutes: 25))
+        XCTAssertNil(controller.currentJevPlanAction, "An unrelated free session does not inherit another task's context")
+    }
+
     @MainActor func testPomodoroAndFreeSessionsUseControllerAndRealPhaseClock() throws {
         let f = fixture(); try f.startFocusController()
         let model = f.model(); model.focusMinutes = 50; model.startFocus()

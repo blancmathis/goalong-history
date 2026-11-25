@@ -25,6 +25,7 @@ struct JevRecentCheck: Identifiable {
     @Published private(set) var lastInputTokens: Int?
     @Published private(set) var lastRequestBytes = 0
     @Published private(set) var lastPayload = ""
+    @Published private(set) var planActionNotice: String?
     @Published private(set) var recentChecks: [JevRecentCheck] = []
     @Published private(set) var error: String?
     /// The settings of the strongest rule or session that carries « Surveillance » now (T-050 B1 point 3).
@@ -33,6 +34,7 @@ struct JevRecentCheck: Identifiable {
     private let surveillance: JevSurveillanceStore
     private let consents: GoalongCapabilityConsentStore
     private let sessionProvider: () -> UUID?
+    private let planActionProvider: () -> String?
     private let blocksProvider: () -> Set<UUID>
     private let legacySettings: () -> JevInterventionSettings
     private var apiKey = ""
@@ -73,11 +75,12 @@ struct JevRecentCheck: Identifiable {
          consents: GoalongCapabilityConsentStore? = nil,
          sessionProvider: (() -> UUID?)? = nil, blocksProvider: (() -> Set<UUID>)? = nil,
          legacySettings: (() -> JevInterventionSettings)? = nil, inbox: JevIngress? = nil, loadLocalSettings: Bool = true,
-         localRoot: URL? = nil) {
+         localRoot: URL? = nil, planActionProvider: (() -> String?)? = nil) {
         self.scopePreferences = scopePreferences ?? .shared
         self.surveillance = surveillance ?? .shared
         self.consents = consents ?? .shared
         self.sessionProvider = sessionProvider ?? { ConcentrationRuntime.shared.controller?.jevSessionID }
+        self.planActionProvider = planActionProvider ?? { ConcentrationRuntime.shared.controller?.currentJevPlanAction }
         self.blocksProvider = blocksProvider ?? {
             Self.runningBlockIDs(BlockingRuntime.shared.controller?.activeBlocks ?? [], now: Date()) // wall: the controller's block dates
         }
@@ -122,7 +125,8 @@ struct JevRecentCheck: Identifiable {
         migrateSurveillance()
         let center = NotificationCenter.default
         // These notifications are posted on the main actor. End/disable cancels synchronously.
-        for name in [Notification.Name.goalongFocusSessionDidChange, .jevSurveillanceDidChange] {
+        for name in [Notification.Name.goalongFocusSessionDidChange, .jevSurveillanceDidChange,
+                     Notification.Name("goalongFocusPlanContextDidChange")] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.reconfigure() }
             })
@@ -286,7 +290,7 @@ struct JevRecentCheck: Identifiable {
     }
     private func cancelPending() {
         epoch = UUID(); request?.cancel(); request = nil; resetInterventions()
-        lastPayload = ""; JevWarningPanel.shared.hide()
+        lastPayload = ""; planActionNotice = nil; JevWarningPanel.shared.hide()
     }
     /// Whether a protected surveillance ran at the last look; nil until the first one (T-050 B1, question 2).
     private var wasProtected: Bool?
@@ -341,10 +345,11 @@ struct JevRecentCheck: Identifiable {
             SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [.state: .state(.skipped)]); resetInterventions(); status = "Aucune nouvelle activité observable, aucun appel"; return
         }
         guard now >= retryAfter else { resetInterventions(); return }
-        let body: Data
+        let payload: JevPlannedActionPayload
         let workStore = JevWorkContextStore.shared
         let workRevision = workStore.revision
-        do { body = try JevPayload.build(window, work: workStore.context) }
+        let plannedAction = planActionProvider()
+        do { payload = try JevPlannedActionPayload.build(window, work: workStore.context, action: plannedAction) }
         catch {
             SupportDiagnostics.shared.failure(error, component: .monitoring)
                 resetInterventions(); status = "Fenêtre trop complexe : classement indéterminé"; return }
@@ -352,14 +357,22 @@ struct JevRecentCheck: Identifiable {
         let pause = GoalongGlobalPause.load()
         guard !policy.blocked, !pause.blocksActivity, gate == nil else { reconfigure(); return }
         let token = epoch, generation = inbox.generation, key = apiKey, focusID = focusSessionID
+        let body = payload.body
+        planActionNotice = payload.inclusion.omissionNotice
         lastRequestBytes = body.count; lastPayload = String(data: body, encoding: .utf8) ?? ""
         status = "Classification des 15 dernières secondes…"
         request = Task { @MainActor [weak self] in
-            guard let self, self.gate == nil, self.epoch == token,
-                  self.focusSessionID == focusID,
+            guard let self else { return }
+            guard self.gate == nil, self.epoch == token,
+                  self.focusSessionID == focusID, self.planActionProvider() == plannedAction,
                   self.inbox.generation == generation, workStore.revision == workRevision,
                   GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
-                  GoalongGlobalPause.load().revision == pause.revision else { return }
+                  GoalongGlobalPause.load().revision == pause.revision else {
+                if self.epoch == token {
+                    self.request = nil; self.planActionNotice = nil; self.resetInterventions()
+                }
+                return
+            }
             do {
                 let decision = try await JevTransport().classify(body: body, key: key)
                 guard !Task.isCancelled, self.epoch == token else { return }
@@ -369,9 +382,9 @@ struct JevRecentCheck: Identifiable {
                       Date().throttleElapsed(since: end) < 15,
                       GoalongPrivacyPolicy.load(in: AppPaths.applicationSupportDirectory).revision == policy.revision,
                       GoalongGlobalPause.load().revision == pause.revision else {
-                    self.resetInterventions(); return
+                    self.planActionNotice = nil; self.resetInterventions(); return
                 }
-                let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: workStore.context, window: window)
+                let verdict = JevWorkContextStore.reviewedVerdict(decision.verdict, work: payload.work, window: window)
                 if verdict == .procrastination, let focusID {
                     do {
                         try ConcentrationRuntime.shared.controller?.recordJevDistraction(window: window, verdict: verdict, sessionID: focusID)

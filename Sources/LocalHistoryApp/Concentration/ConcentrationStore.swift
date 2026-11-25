@@ -215,7 +215,12 @@ struct FocusStore {
             for i in value.items.indices where value.items[i].project?.localizedCaseInsensitiveCompare(old) == .orderedSame && value.items[i].project != new {
                 value.items[i].project = new; touched = true
             }
-            if touched { changed.append(value) }
+            if touched {
+                guard value.effectiveRevision < 1_000_000_000 else { skipped.append(day); continue }
+                value.revision = value.effectiveRevision + 1
+                value.changes = Array(((value.changes ?? []) + [.init(at: Date(), actor: "member", reason: "Nom du projet mis à jour", revision: value.effectiveRevision)]).suffix(64))
+                changed.append(value)
+            }
         }
         if !changed.isEmpty { try savePlans(changed) }
         return (changed, skipped)

@@ -6,6 +6,8 @@ public enum GoalongFocusError: String, Error, CustomStringConvertible {
     case appNotRunning, moduleDisabled, invalidArgument, locked, notFound, storageFailed, tooManyWatchers
     /// `plan move` on a task already done or dropped.
     case itemFinished
+    /// The plan changed since it was read, or a request ID was reused for different input.
+    case conflict, requestConflict
     /// Client side only: the request reached the app but no answer came back in time.
     case outcomeUnknown
     public var description: String { rawValue }
@@ -43,13 +45,13 @@ extension GoalongFocusRequest {
 /// The client validates syntax; the app validates the same normalized request and owns every write.
 public enum GoalongFocusCLI {
     public static let maximumInputBytes = 64 * 1024
-    public static let commands = ["focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise"]
+    public static let commands = ["focus", "session", "sessions", "plan", "routine", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise"]
     private static func text(_ value: String, max: Int = 140) -> Bool {
         !value.trimmingCharacters(in: .whitespaces).isEmpty && value.count <= max && value.utf8.count <= max * 32
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
     private static func day(_ value: String) -> Bool {
-        if value == "today" || value == "yesterday" { return true }
+        if value == "today" || value == "yesterday" || value == "tomorrow" { return true }
         return GoalongDayParser.date(value) != nil
     }
     public static func parse(command: String, arguments: [String], readFile: (String) throws -> Data = readInput) throws -> GoalongFocusRequest {
@@ -57,7 +59,7 @@ public enum GoalongFocusCLI {
         if command == "braise" { return try GoalongBraiseCLI.parse(arguments) }
         if command == "commitment" || command == "commitments" { return try GoalongCommitmentCLI.parse(command: command, arguments: arguments, readFile: readFile) }
         var args = arguments, action = "", options: [String: String] = [:], flags = Set<String>()
-        if ["focus", "session", "plan", "review"].contains(command) {
+        if ["focus", "session", "plan", "routine", "review"].contains(command) {
             guard !args.isEmpty else { throw GoalongFocusError.invalidArgument }; action = args.removeFirst()
         }
         var positional: [String] = [], blocks: [String] = []
@@ -71,7 +73,7 @@ public enum GoalongFocusCLI {
                 options[token] = !args.isEmpty && !args[0].hasPrefix("--") ? args.removeFirst() : "25/5/15/4"; continue
             }
             if token.hasPrefix("--") {
-                guard ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--outcome", "--note", "--day", "--project", "--estimate", "--to", "--file"].contains(token),
+                guard ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--outcome", "--note", "--day", "--project", "--estimate", "--to", "--file", "--if-revision", "--request-id"].contains(token),
                       !args.isEmpty, !args[0].hasPrefix("--") else { throw GoalongFocusError.invalidArgument }
                 let value = args.removeFirst()
                 if token == "--block" { blocks.append(value) }
@@ -82,7 +84,7 @@ public enum GoalongFocusCLI {
         var body: Data?
         let route = command + (action.isEmpty ? "" : " " + action)
         switch route {
-        case "focus status", "focus watch", "session current", "session skip", "limits", "block-lists":
+        case "focus status", "focus watch", "session current", "session skip", "limits", "block-lists", "routine show":
             guard options.isEmpty, flags.isEmpty, positional.isEmpty else { throw GoalongFocusError.invalidArgument }
         case "session start":
             guard positional.isEmpty, options.keys.allSatisfy({ ["--intent", "--minutes", "--cycles", "--block", "--plan-item", "--pomodoro"].contains($0) }),
@@ -115,6 +117,23 @@ public enum GoalongFocusCLI {
             guard flags.isEmpty, positional.count == 1, UUID(uuidString: positional[0]) != nil, options.keys.allSatisfy({ allowed.contains($0) }),
                   action != "move" || options["--to"].map(day) == true else { throw GoalongFocusError.invalidArgument }
             options["id"] = positional[0]
+        case "plan patch", "plan reflow", "plan undo":
+            let allowed = action == "patch" ? ["--day", "--if-revision", "--request-id", "--file"] : ["--day", "--if-revision", "--request-id"]
+            guard flags.isEmpty, positional.isEmpty, options.keys.allSatisfy({ allowed.contains($0) }),
+                  options["--day"].map(day) == true,
+                  let rawRevision = options["--if-revision"], let revision = Int(rawRevision),
+                  (0...1_000_000_000).contains(revision), String(revision) == rawRevision,
+                  options["--request-id"].map({ text($0, max: 128) }) == true else { throw GoalongFocusError.invalidArgument }
+            if action == "patch" {
+                guard let path = options.removeValue(forKey: "--file") else { throw GoalongFocusError.invalidArgument }
+                body = try readFile(path)
+                guard body!.count <= maximumInputBytes, (try? JSONSerialization.jsonObject(with: body!)) is [String: Any] else { throw GoalongFocusError.invalidArgument }
+            }
+        case "routine set":
+            guard flags.isEmpty, positional.isEmpty, options.count == 1,
+                  let path = options.removeValue(forKey: "--file") else { throw GoalongFocusError.invalidArgument }
+            body = try readFile(path)
+            try validateRoutineInput(body!)
         case "plan set", "review set":
             guard flags.isEmpty, positional.isEmpty, options.keys.allSatisfy({ ["--day", "--file"].contains($0) }), let path = options.removeValue(forKey: "--file") else { throw GoalongFocusError.invalidArgument }
             body = try readFile(path)
@@ -123,6 +142,22 @@ public enum GoalongFocusCLI {
         }
         guard options["--day"].map(day) ?? true else { throw GoalongFocusError.invalidArgument }
         return GoalongFocusRequest(command: route, options: options, flags: flags, body: body)
+    }
+    /// Reject unknown routine fields before the request reaches the app. The app also validates
+    /// the typed agenda, civil-time ranges and the absence of task commitments in a template.
+    private static func validateRoutineInput(_ data: Data) throws {
+        guard data.count <= maximumInputBytes,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              Set(object.keys) == ["agenda"], let rawAgenda = object["agenda"] else { throw GoalongFocusError.invalidArgument }
+        if rawAgenda is NSNull { return }
+        guard let agenda = rawAgenda as? [String: Any],
+              Set(agenda.keys).isSubset(of: ["timeZoneID", "startMinute", "endMinute", "bufferMinutes", "guided", "autoAdjust", "slots"]),
+              agenda["timeZoneID"] is String else { throw GoalongFocusError.invalidArgument }
+        if let rawSlots = agenda["slots"] {
+            guard let slots = rawSlots as? [[String: Any]], slots.count <= 64 else { throw GoalongFocusError.invalidArgument }
+            let allowed: Set<String> = ["id", "itemID", "title", "startMinute", "endMinute", "fixed", "state", "earliestMinute", "latestEndMinute"]
+            guard slots.allSatisfy({ Set($0.keys).isSubset(of: allowed) }) else { throw GoalongFocusError.invalidArgument }
+        }
     }
     public static func readInput(_ path: String) throws -> Data {
         let handle: FileHandle

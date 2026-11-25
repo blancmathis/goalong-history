@@ -54,6 +54,23 @@ uses only the reviewed JSON file and an isolated ChatGPT login, without reading 
 archives or provider conversations. Its editable text draft stays transient until an
 explicit protected file export; website import remains a separate user action.
 
+### Optional current-action context for Jev
+
+Jev's existing separate consent remains required. **Concentration → Agenda → Donner à Jev
+l’action en cours** is an additional preference, disabled by default. While a focus session
+is explicitly linked to a planned task, it makes that task's title and next action eligible
+for the existing TypeSafe request. These are the member's selected texts and may contain
+personal information. No other task fields, task links, documentation contents, agent
+questions or answers are imported into this supplement.
+
+The supplement exists only for the request. It never changes the saved definition of work.
+It is omitted in full if it cannot fit alongside the complete work criteria and the
+observations already selected by the ordinary payload builder; the omission is shown locally.
+Turning the preference off or changing the active action invalidates pending classification
+results. An already-started request may have reached the service and cannot be recalled.
+The endpoint, existing consent checks, exclusions, pause rules and request limits are unchanged.
+See [Jev monitoring](JEV-MONITORING.md#action-du-plan-en-cours--accord-séparé).
+
 ### Website disclosure
 
 `export-site` reads an existing normalized Screen Time archive without refreshing Apple data,

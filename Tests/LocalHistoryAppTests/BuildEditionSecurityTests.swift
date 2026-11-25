@@ -42,6 +42,23 @@
             )
         }
 
+        func testPlannedContextLinksStayOnHTTPSOrExactLoopbackAndNeverLaunchCode() throws {
+            for value in ["https://example.com/project/notes", "https://example.com:443/work",
+                          "http://localhost:3100/project", "http://127.0.0.1:3100/project",
+                          "http://[::1]:3100/project"] {
+                XCTAssertEqual(GoalongWorkspaceOpenPolicy.permits(try XCTUnwrap(URL(string: value)), purpose: .plannedContext),
+                               GoalongBuildCapabilities.permitsHTTPWorkspaceOpening, value)
+            }
+            for value in ["file:///tmp/project", "javascript:alert(1)", "data:text/html,test",
+                          "t3://project/one", "context-room://project/one",
+                          "http://example.com/project", "http://localhost.example.com/project",
+                          "http://127.0.0.1.example.com/project", "http://192.168.1.2:3100/project",
+                          "https://example.com:8443/project", "https://user:secret@example.com/project",
+                          "http://user@localhost:3100/project", "http://localhost:0/project"] {
+                XCTAssertFalse(GoalongWorkspaceOpenPolicy.permits(try XCTUnwrap(URL(string: value)), purpose: .plannedContext), value)
+            }
+        }
+
         func testSingleAppCapabilityDeclarationIsSecurityFirst() {
             XCTAssertEqual(GoalongBuildCapabilities.edition, .unified)
             XCTAssertTrue(GoalongBuildCapabilities.permitsFirstPartyNetworking)

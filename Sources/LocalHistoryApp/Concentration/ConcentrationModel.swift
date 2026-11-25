@@ -78,11 +78,21 @@ struct FocusPlanItem: Codable, Equatable, Identifiable {
     var estimateMinutes: Int?
     var status: Status = .open
     var toDay: String?
+    var nextAction: String? = nil
+    var doneWhen: String? = nil
+    var actionKind: FocusActionKind? = nil
+    var contextURL: String? = nil
+    /// Soft references allow a task to be carried forward before process metadata is copied.
+    var processIDs: [UUID]? = nil
     var valid: Bool {
         FocusValidation.text(title, maximum: 140, required: true)
             && (project.map { FocusValidation.text($0, maximum: 140, required: true) } ?? true)
             && (estimateMinutes.map { (5...600).contains($0) } ?? true)
             && (status != .moved || toDay.map(FocusValidation.day) == true)
+            && FocusDayValidation.text(nextAction, maximum: 280)
+            && FocusDayValidation.text(doneWhen, maximum: 280)
+            && FocusDayValidation.contextURL(contextURL)
+            && (processIDs.map { $0.count <= 64 && Set($0).count == $0.count } ?? true)
     }
 }
 struct FocusPlan: Codable, Equatable {
@@ -90,10 +100,25 @@ struct FocusPlan: Codable, Equatable {
     var day: String
     var intention: String?
     var items: [FocusPlanItem] = []
+    /// Optional fields preserve old plans without a data migration.
+    var revision: Int? = nil
+    var agenda: FocusAgenda? = nil
+    var processes: [FocusAgentProcess]? = nil
+    var receipts: [FocusPlanReceipt]? = nil
+    var changes: [FocusPlanChange]? = nil
+    var previousAgenda: FocusAgenda? = nil
+    var effectiveRevision: Int { revision ?? 0 }
     static let maximumItems = 10
+    static let maximumProcesses = 64
     var valid: Bool { schema == 1 && FocusValidation.day(day) && items.count <= Self.maximumItems
         && Set(items.map(\.id)).count == items.count && items.allSatisfy(\.valid)
-        && (intention.map { FocusValidation.text($0, maximum: 140) } ?? true) }
+        && (intention.map { FocusValidation.text($0, maximum: 140) } ?? true)
+        && FocusDayValidation.revision(effectiveRevision)
+        && (agenda.map { $0.valid(forDay: day, items: items) } ?? true)
+        && (previousAgenda?.valid ?? true)
+        && (processes.map { $0.count <= Self.maximumProcesses && Set($0.map(\.id)).count == $0.count && $0.allSatisfy(\.valid) } ?? true)
+        && (receipts.map { $0.count <= 64 && Set($0.map(\.id)).count == $0.count && $0.allSatisfy(\.valid) } ?? true)
+        && (changes.map { $0.count <= 64 && Set($0.map(\.id)).count == $0.count && $0.allSatisfy(\.valid) } ?? true) }
 }
 struct FocusReview: Codable, Equatable {
     struct Item: Codable, Equatable {
@@ -134,12 +159,18 @@ struct FocusSettings: Codable, Equatable {
     var commitmentJokers: FocusJokerSettings?
     /// Explicit member choices, never inferred from a classification.
     var ignoredDistractionTargets: [JevDistractionTarget]?
+    /// Repeated day structure, without task commitments or process state.
+    var agendaTemplate: FocusAgenda? = nil
+    /// Consent to send only the explicitly selected personal action to the existing coach.
+    var usePlanContext: Bool? = nil
     var jokerSettings: FocusJokerSettings { commitmentJokers ?? FocusJokerSettings() }
     var valid: Bool { (0..<1440).contains(morningMinute) && (0..<1440).contains(eveningMinute) && limits.valid && jokerSettings.valid
-        && (ignoredDistractionTargets.map { $0.count <= 2000 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true) }
+        && (ignoredDistractionTargets.map { $0.count <= 2000 && $0.allSatisfy(\.isValid) && Set($0.map(\.id)).count == $0.count } ?? true)
+        && (agendaTemplate?.validTemplate ?? true) }
 }
 enum FocusFailure: String, Error {
     case moduleDisabled, invalidArgument, locked, notFound, storageFailed, appNotRunning
+    case conflict, requestConflict
     /// A day plan holds at most `FocusPlan.maximumItems`; the CLI reports it as invalidArgument.
     case planFull
     /// A done or dropped task cannot be moved; reopen it first.
@@ -293,6 +324,9 @@ struct FocusPromptState: Codable {
     var eveningReminded = false
     var morningReminderAt: Date?
     var eveningReminderAt: Date?
+    var agendaShownIDs: [UUID]? = nil
+    var agendaPromptCount: Int? = nil
+    var agendaSnoozedUntil: Date? = nil
 }
 
 @MainActor protocol FocusSessionAudio {

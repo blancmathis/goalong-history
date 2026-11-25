@@ -232,6 +232,42 @@ facultative utilise uniquement des situations synthétiques, jamais l'historique
 Références d’implémentation : https://docs.typesafe.ai/concepts/state,
 https://docs.typesafe.ai/api et https://docs.typesafe.ai/model-jaggedness/jev-1.13.
 
+## Action du plan en cours — accord séparé
+
+**Concentration → Agenda → Ajustements et répétition → Donner à Jev l’action en cours**
+est désactivé par défaut (`FocusSettings.usePlanContext` absent ou faux).
+Le consentement Jev existant reste nécessaire. Avec cet accord supplémentaire, seule
+une séance liée explicitement à une action du plan peut fournir son titre et son
+`nextAction` à l’analyse existante. Une séance libre sans action liée ne récupère pas
+une autre tâche. Aucun lien de contexte n’est suivi : la documentation, le critère de fin,
+les projets parallèles, les questions et les réponses des agents ne sont pas ajoutés.
+
+`ConcentrationController.currentJevPlanAction` sélectionne ces deux textes.
+`JevPlannedActionPayload` construit d’abord la requête habituelle, puis ajoute le
+supplément entier, préfixé `Current action:`, à `state.goals` seulement s’il tient
+dans les limites existantes : 800 octets pour les critères et ce supplément, 1 600
+octets pour tout le JSON. Les critères enregistrés sont préservés dans leur intégralité,
+sans modification du fichier `work-context.json`. Les autres champs, les instructions
+et chaque ligne d’observation du JSON de base restent identiques.
+
+Si le supplément est trop long, contient des caractères non pris en charge ou dépasse
+le budget JSON disponible, il est omis entièrement ; la requête de base reste identique.
+La journée et la page Jev affichent cette omission. La précision d’une observation ne
+diminue donc pas pour faire entrer la tâche. Le supplément peut aider l’interprétation,
+mais ne prouve ni que l’utilisateur travaille effectivement ni qu’un agent a terminé.
+
+Le moniteur capture le contexte choisi et le compare immédiatement avant l’appel
+et après son retour. `goalongFocusPlanContextDidChange` invalide synchroniquement
+l’analyse en vol lorsque ce contexte change, y compris un retrait suivi d’un rétablissement
+de l’accord. Les gardes existantes sur la révision des critères, la séance, la confidentialité
+et les pauses restent en place. Une réponse périmée ne déclenche pas de rappel. Il n’y a
+ni nouvel endpoint, ni appel supplémentaire, ni changement des règles de blocage.
+
+Tests ciblés : `JevWorkContextTests` vérifie les budgets et la conservation exacte du
+JSON de base lors d’une omission ; `MenuBarPanelModelTests` vérifie l’absence de contexte
+sans accord ou sans séance liée et l’exclusion des autres champs du plan. Ces tests ne
+mesurent pas un gain de précision de Jev.
+
 ## Données, budget et exclusions
 
 `JevIngress` est un tampon de 512 échantillons maximum et 60 secondes de rétention

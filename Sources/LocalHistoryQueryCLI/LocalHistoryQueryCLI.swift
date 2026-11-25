@@ -644,6 +644,10 @@ public enum GoalongQueryCLI {
             payload.hint = "Goalong did not answer in time and may have applied the request; run `goalong focus status` before retrying"
         } else if let focus = error as? GoalongFocusError, focus == .itemFinished {
             payload.hint = "Une tâche terminée ou abandonnée ne se déplace pas ; rouvrez-la d’abord."
+        } else if let focus = error as? GoalongFocusError, focus == .conflict {
+            payload.hint = "Relisez goalong plan show DAY, puis adaptez la modification à sa revision ; une révision périmée ne doit pas écraser le plan."
+        } else if let focus = error as? GoalongFocusError, focus == .requestConflict {
+            payload.hint = "Cet identifiant de requête a déjà servi pour un autre contenu. Conservez le même identifiant uniquement pour rejouer exactement la même modification."
         }
         return try? encodedJSON(payload)
     }
@@ -683,7 +687,7 @@ public enum GoalongQueryCLI {
             }
             FileHandle.standardOutput.write(try statusPayload(rootDirectory: root))
 
-        case "focus", "session", "sessions", "plan", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise":
+        case "focus", "session", "sessions", "plan", "routine", "review", "limits", "block-lists", "friction", "commitment", "commitments", "braise":
             let request = try GoalongFocusCLI.parse(command: command, arguments: arguments.values)
             if request.command == "focus watch" {
                 try GoalongFocusCLI.watch(root: root) { data in
