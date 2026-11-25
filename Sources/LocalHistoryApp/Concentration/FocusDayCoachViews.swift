@@ -1,5 +1,4 @@
 #if os(macOS)
-import AppKit
 import SwiftUI
 
 @MainActor struct FocusDayCoachSettingsView: View {
@@ -119,6 +118,7 @@ import SwiftUI
     @State private var note = ""
     @State private var showingPreview = false
     @State private var copied = false
+    @State private var copyFailed = false
     private var settings: FocusDayCoachSettings { controller.settings.coachSettings }
 
     var body: some View {
@@ -137,10 +137,13 @@ import SwiftUI
                         Text("Votre agent peut préparer la suite, coordonner plusieurs processus et tenir l’agenda à jour.")
                             .font(.system(size: 13)).foregroundStyle(LHTheme.secondaryText)
                         Button(copied ? "Consigne copiée" : "Copier la consigne pour mon agent") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(Self.externalInstructions, forType: .string)
-                            copied = true
+                            copied = GoalongClipboardWriter.copy(Self.externalInstructions)
+                            copyFailed = !copied
                         }.buttonStyle(LHSecondaryButtonStyle()).accessibilityIdentifier("focus-coach-external-copy")
+                        if copyFailed {
+                            Text("La consigne n’a pas pu être copiée. Réessayez.")
+                                .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        }
                     } else {
                         TextField("Un obstacle à signaler ? Facultatif.", text: $note)
                             .textFieldStyle(.roundedBorder).disabled(runtime.isBusy)
