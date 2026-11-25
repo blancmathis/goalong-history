@@ -7,7 +7,8 @@ struct BlockingObservation: Equatable {
     var pid: Int32
     var windowFrame: CGRect?
     var isBrowser: Bool
-    /// Host and path only, or a browser internal-page identifier. Never query/credentials.
+    /// Host and path (explicit port for loopback), or a browser internal-page identifier.
+    /// Never query, fragment or credentials.
     var url: String?
     var privateWindow: Bool
     var at: Date
@@ -86,22 +87,39 @@ enum BlockingRules {
         let full = value.contains("://") ? value : "https://" + value
         guard let url = URL(string: full), ["http", "https"].contains(url.scheme),
               var host = url.host?.lowercased() else { return nil }
-        if host.hasPrefix("www.") { host.removeFirst(4) }
         if host.hasSuffix(".") { host.removeLast() }
+        // Local services are scoped to an explicit port. They are ordinary list entries, never
+        // globally exempt; aliases and other ports do not inherit an allowed service's access.
+        let loopbackHost: String?
+        switch host {
+        case "localhost", "127.0.0.1": loopbackHost = host
+        case "::1", "[::1]": loopbackHost = "[::1]"
+        default: loopbackHost = nil
+        }
+        if let loopbackHost {
+            guard let port = url.port, (1...65535).contains(port) else { return nil }
+            return loopbackHost + ":" + String(port) + normalizedPath(url)
+        }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
         guard host.contains("."), !host.contains(":"), !host.hasPrefix("["),
               !host.allSatisfy({ $0.isNumber || $0 == "." }), host.count <= 253,
               host.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ label in
                   !label.isEmpty && label.count <= 63 && label.first != "-" && label.last != "-"
                     && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
               }) else { return nil }
-        var path = url.path.lowercased()
-        while path.hasSuffix("/") { path.removeLast() }
-        return host + path
+        return host + normalizedPath(url)
     }
 
-    /// The blocking form of an address that was read: normalized host and path, or, when it does not
-    /// normalize (IP, localhost, non-web scheme), its scheme and host only. Such an address is read, not
-    /// unreadable: no site rule matches it, so a block list leaves it alone and allowOnly blocks the tab.
+    private static func normalizedPath(_ url: URL) -> String {
+        var path = url.path.lowercased()
+        while path.hasSuffix("/") { path.removeLast() }
+        return path
+    }
+
+    /// The blocking form of an address that was read: normalized host and path (with an explicit
+    /// port for loopback services), or, for an unsupported address, its scheme and host only.
+    /// An unsupported address is read, not unreadable: no site rule matches it, so a block list
+    /// leaves it alone and allowOnly blocks the tab. Credentials, query and fragment never survive.
     static func blockingAddress(_ raw: String) -> String {
         if let normalized = normalize(raw) { return normalized }
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -115,7 +133,10 @@ enum BlockingRules {
         guard let normalized = normalize(url), let pattern = normalize(rule.pattern) else { return false }
         let candidate = normalized.split(separator: "/", maxSplits: 1).map(String.init)
         let expected = pattern.split(separator: "/", maxSplits: 1).map(String.init)
-        guard candidate[0] == expected[0] || candidate[0].hasSuffix("." + expected[0]) else { return false }
+        // Only domain rules include subdomains. Loopback authorities contain a port and match
+        // exactly, so allowing one local service never allows a different host or port.
+        let exactAuthority = candidate[0].contains(":") || expected[0].contains(":")
+        guard candidate[0] == expected[0] || (!exactAuthority && candidate[0].hasSuffix("." + expected[0])) else { return false }
         guard expected.count == 2 else { return true }
         guard candidate.count == 2 else { return false }
         return candidate[1] == expected[1] || candidate[1].hasPrefix(expected[1] + "/")
@@ -170,7 +191,7 @@ enum BlockingRules {
                 }
             }
             guard rawURL != nil else { return .init(blocked: false, reason: .unreadableURL) }
-            // An address that does not normalize (IP, localhost) matches no rule: allowOnly still blocks it.
+            // Unsupported addresses match no rule: allowOnly still blocks them.
             if let url, let rule = list.sites.first(where: { matches($0, url: url) }) {
                 return .init(blocked: list.mode == .block, reason: .siteRule(rule.pattern))
             }

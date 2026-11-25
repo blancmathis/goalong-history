@@ -43,8 +43,8 @@ struct BlockList: Codable, Identifiable, Equatable, Hashable {
     var isEmpty: Bool { sites.isEmpty && apps.isEmpty && (keywords ?? []).isEmpty && mode == .block }
 }
 
-/// A normalized `host[/path]`. A host matches itself and every subdomain; a path matches on a
-/// segment boundary.
+/// A normalized `host[/path]` or explicit loopback `host:port[/path]`. Domain rules include
+/// subdomains; loopback authorities match exactly. Paths match on a segment boundary.
 struct BlockSiteRule: Codable, Hashable, Identifiable {
     var pattern: String
     var id: String { pattern }

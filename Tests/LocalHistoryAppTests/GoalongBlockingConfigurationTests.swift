@@ -91,6 +91,33 @@ import XCTest
         assertError(.notFound) { _ = try show(UUID(), from: c) }
     }
 
+    func testLoopbackConfigurationPersistsAndProtectedAllowListStillRefusesExpansion() throws {
+        let store = store()
+        let c = controller(store: store)
+        let local = BlockList(name: "Local service", mode: .allowOnly, sites: [.init(pattern: "127.0.0.1:4310/project")])
+        _ = try put(local, match: "new", to: c)
+        XCTAssertEqual(try store.load().lists.first?.sites, local.sites)
+        let edited = BlockListEditor.addSite("http://localhost:4310/project/?secret=value", to: local, controller: c)
+        XCTAssertNil(edited.error)
+        XCTAssertEqual(edited.text, "")
+        XCTAssertTrue(try XCTUnwrap(c.list(local.id)).sites.contains(.init(pattern: "localhost:4310/project")))
+        XCTAssertEqual(try store.load().lists.first?.sites.count, 2)
+
+        var protected = protectedList()
+        protected.mode = .allowOnly
+        let guarded = try protectedController(protected)
+        XCTAssertTrue(guarded.activeBlocks.isEmpty)
+        var expanded = protected
+        expanded.sites.append(.init(pattern: "127.0.0.1:4310"))
+        let hash = try GoalongBlockingConfiguration.fingerprint(protected)
+        assertError(.locked) { _ = try put(expanded, match: hash, to: guarded) }
+        XCTAssertEqual(guarded.list(protected.id), protected)
+        guarded.start(listIDs: [protected.id], until: now.addingTimeInterval(600), lock: .password)
+        XCTAssertTrue(guarded.isStricterOnly(protected.id))
+        assertError(.locked) { _ = try put(expanded, match: hash, to: guarded) }
+        XCTAssertEqual(guarded.list(protected.id), protected)
+    }
+
     func testFingerprintIsIndependentOfWeekdaySetInsertionOrder() throws {
         var list = protectedList()
         list.program.ranges[0].weekdays = Set([1, 3, 5, 7])

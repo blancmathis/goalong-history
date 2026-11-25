@@ -34,6 +34,76 @@ final class BlockingEngineTests: XCTestCase {
         for value in ["youtube.com/shorts", "m.youtube.com/shorts/x", "https://youtube.com/shorts?q=1"] { XCTAssertTrue(BlockingRules.matches(rule, url: value), value) }
         for value in ["youtube.com/shortsx", "notyoutube.com/shorts", "youtube.com.evil.org/shorts"] { XCTAssertFalse(BlockingRules.matches(rule, url: value), value) }
     }
+    func testLoopbackRulesRequireAnExplicitValidPortAndStripPrivateParts() {
+        let accepted = [
+            "http://user:secret@127.0.0.1:4310/WORK/?token=secret#fragment": "127.0.0.1:4310/work",
+            "LOCALHOST:4310/project/": "localhost:4310/project",
+            "http://LOCALHOST.:04310/path": "localhost:4310/path",
+            "http://[::1]:4310/project/": "[::1]:4310/project",
+            "https://127.0.0.1:65535/": "127.0.0.1:65535",
+        ]
+        for (raw, normalized) in accepted {
+            XCTAssertEqual(BlockingRules.normalize(raw), normalized, raw)
+            XCTAssertEqual(BlockingRules.normalizeSite(raw), normalized, "The native editor must preserve the service port.")
+            XCTAssertEqual(BlockingRules.normalize(normalized), normalized, "Canonical rules must round-trip.")
+        }
+        for raw in ["localhost", "127.0.0.1", "http://[::1]", "localhost:0", "localhost:65536",
+                    "http://127.0.0.1:-1", "http://[::1]:70000", "192.168.1.20:4310", "127.0.0.2:4310",
+                    "0.0.0.0:4310", "ftp://localhost:4310", "localhost:4310/a b"] {
+            XCTAssertNil(BlockingRules.normalize(raw), raw)
+        }
+    }
+
+    func testLoopbackMatchingKeepsHostsPortsAndPathBoundariesSeparate() {
+        let rule = BlockSiteRule(pattern: "127.0.0.1:4310/project")
+        for raw in ["http://127.0.0.1:4310/project", "http://127.0.0.1:4310/project/page?secret=x#fragment"] {
+            XCTAssertTrue(BlockingRules.matches(rule, url: raw), raw)
+        }
+        for raw in ["http://127.0.0.1:4311/project", "http://127.0.0.1/project", "http://localhost:4310/project",
+                    "http://[::1]:4310/project", "http://127.0.0.1:4310/project-other", "http://127.0.0.1:4310/",
+                    "http://evil.127.0.0.1:4310/project", "http://127.0.0.1.evil.example:4310/project",
+                    "http://127.0.0.1:4310@evil.example/project"] {
+            XCTAssertFalse(BlockingRules.matches(rule, url: raw), raw)
+        }
+        XCTAssertTrue(BlockingRules.matches(.init(pattern: "localhost:4310"), url: "http://localhost:4310/any/path"))
+        XCTAssertFalse(BlockingRules.matches(.init(pattern: "localhost:4310"), url: "http://sub.localhost:4310/"))
+        XCTAssertTrue(BlockingRules.matches(.init(pattern: "[::1]:4310"), url: "http://[::1]:4310/page"))
+        XCTAssertFalse(BlockingRules.matches(.init(pattern: "[::1]:4310"), url: "http://[::1]:4311/page"))
+    }
+
+    func testLoopbackAccessRequiresAListEntryAndNeverExemptsTheBrowser() {
+        let service = BlockSiteRule(pattern: "127.0.0.1:4310")
+        let allowed = BlockList(name: "Local service", mode: .allowOnly, sites: [service],
+                                apps: [.init(bundleIdentifier: "com.google.Chrome", name: "Browser")])
+        XCTAssertFalse(BlockingRules.wouldBlock(target(date(), url: "127.0.0.1:4310/project"), list: allowed))
+        for url in ["127.0.0.1:4311/project", "localhost:4310/project", "video.example"] {
+            XCTAssertTrue(BlockingRules.wouldBlock(target(date(), url: url), list: allowed), url)
+        }
+        let emptyAllow = BlockList(name: "Empty allow list", mode: .allowOnly)
+        XCTAssertTrue(BlockingRules.wouldBlock(target(date(), url: "127.0.0.1:4310/project"), list: emptyAllow))
+        let blocked = BlockList(name: "Blocked service", sites: [service])
+        XCTAssertTrue(BlockingRules.wouldBlock(target(date(), url: "127.0.0.1:4310/project"), list: blocked))
+        XCTAssertFalse(BlockingRules.wouldBlock(target(date(), url: "127.0.0.1:4311/project"), list: blocked))
+    }
+
+    @MainActor func testAllowedLoopbackRunsThroughNativeObservationWithoutOpeningOtherPorts() {
+        let now = date(); let backend = FakeBlockingBackend()
+        let list = BlockList(name: "Local service", mode: .allowOnly, sites: [.init(pattern: "127.0.0.1:4310/project")])
+        let c = BlockingController(document: BlockingDocument(lists: [list]), clock: { now }, backend: backend,
+                                   continuous: { now.timeIntervalSince1970 })
+        defer { c.shutdown() }
+        c.start(listIDs: [list.id], until: now.addingTimeInterval(3600), lock: .free)
+        let allowed = target(now, url: BlockingRules.blockingAddress("http://127.0.0.1:4310/project/page?secret=value"))
+        c.observe(allowed)
+        XCTAssertEqual(backend.siteBlocks, 0)
+        XCTAssertEqual(backend.appBlocks, 0)
+        XCTAssertFalse(c.siteActionStillRequired(allowed))
+        let disallowed = BlockingRules.blockingAddress("http://127.0.0.1:4311/project/page")
+        c.observe(target(now, url: disallowed))
+        XCTAssertEqual(backend.lastReason, .site(disallowed))
+        XCTAssertEqual(backend.appBlocks, 0)
+    }
+
     func testNeverBlockedInventoryAndNonRegular() {
         XCTAssertEqual(BlockingRules.neverBlocked, Set(["ai.goalong.localhistory", "ai.goalong.localhistory.dev", "com.apple.finder", "com.apple.dock", "com.apple.loginwindow", "com.apple.systemuiserver", "com.apple.controlcenter", "com.apple.notificationcenterui", "com.apple.Spotlight", "com.apple.SecurityAgent", "com.apple.coreautha", "com.apple.ScreenSaver.Engine"]))
         for id in BlockingRules.neverBlocked { var t = target(date()); t.bundleIdentifier = id; XCTAssertTrue(BlockingRules.exempt(t)) }
@@ -348,8 +418,8 @@ final class BlockingEngineTests: XCTestCase {
     }
     func testReadButUnlistedAddressKeepsSchemeAndHostOnly() {
         XCTAssertEqual(BlockingRules.blockingAddress("https://www.youtube.com/shorts?q=1"), "youtube.com/shorts")
-        XCTAssertEqual(BlockingRules.blockingAddress("http://user:pw@127.0.0.1:7788/runs?id=1"), "http://127.0.0.1:7788")
-        XCTAssertEqual(BlockingRules.blockingAddress("localhost:3000/app"), "http://localhost:3000")
+        XCTAssertEqual(BlockingRules.blockingAddress("http://user:pw@127.0.0.1:4310/runs?id=1#secret"), "127.0.0.1:4310/runs")
+        XCTAssertEqual(BlockingRules.blockingAddress("localhost:3000/app"), "localhost:3000/app")
         XCTAssertEqual(BlockingRules.blockingAddress("chrome-extension://abc/popup.html"), "chrome-extension://abc")
         XCTAssertEqual(BlockingRules.blockingAddress("file:///Users/me/secret.pdf"), "file:")
     }

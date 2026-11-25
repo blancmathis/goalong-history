@@ -87,11 +87,16 @@ and rewritten. A store error refuses edits; it is never a lock and never stops �
   Exceptions use the same normalized host/path as sites. Keywords are trimmed, lowercased,
   NFC, 2…40 characters, at most 50 per list, unique after case/diacritic folding.
   These additive fields keep schema version 1 and old files decode unchanged.
-- `BlockSiteRule.pattern`: normalized `host[/path]`. Normalization: trim, lowercase, drop scheme,
-  `www.`, credentials, port, query, fragment and trailing `/`; IDN to punycode; reject IPs, empty
-  hosts and hosts without a dot (except `localhost` is rejected too). `youtube.com` matches
-  `youtube.com` and every subdomain; `youtube.com/shorts` matches that path prefix on a segment
-  boundary (`/shorts`, `/shorts/x`, not `/shortsx`).
+- `BlockSiteRule.pattern`: normalized `host[/path]`. Domain normalization: trim, lowercase, drop
+  scheme, `www.`, credentials, port, query, fragment and trailing `/`; IDN to punycode. A domain
+  matches itself and its subdomains. Paths match on a segment boundary (`/shorts`, `/shorts/x`,
+  not `/shortsx`).
+- Local services support `localhost:port[/path]`, `127.0.0.1:port[/path]` and `[::1]:port[/path]`,
+  with an explicit port from 1 to 65535. Host and port match exactly; aliases, other ports and
+  subdomains are not included. Credentials, query and fragment are discarded. Other IP addresses,
+  empty hosts and single-label hosts remain unsupported. A local service needs an ordinary list
+  entry: there is no global loopback exemption. Adding one to a protected allow-list still requires
+  the native stop/password flow. Listing a browser app in `allowOnly` never allows all its sites.
 - `BlockAppRule`: `bundleIdentifier`, `name`.
 - `BlockProgram`: `ranges: [BlockProgramRange]` (`id`, `weekdays: Set<Int>` ISO 1 = Monday … 7,
   `startMinute`, `endMinute` in 0…1440; `end <= start` means it ends the next day, `lock:
@@ -124,7 +129,8 @@ app. `allowOnly` ignores exceptions, and keywords can block even a listed allowe
 
 Keywords match whole words, ignoring case and diacritics (`é` = `e`): `sex` does not match `essex`
 or `sex2`. A phrase matches consecutive words. URL matching uses the observed host and path,
-with `.`, `/`, `-`, `_` as separators; never query, fragment, credentials or port. Title matching
+with `.`, `/`, `-`, `_` as separators; never query, fragment or credentials. An explicit loopback
+port remains part of the in-memory address. Title matching
 can therefore catch a Google search such as « école - Recherche Google » without reading its query.
 Keywords do not apply to non-browser apps.
 
@@ -241,7 +247,8 @@ the delay, lowering `continueMinutes` are allowed (stricter).
   activity analysis, and keeps no snapshot after the sample.
 - When Computer History is capturing normally, the same samples feed the sink: no extra sampling.
 - The sink receives `BlockingObservation`: bundle id, pid, window frame (AX, screen coordinates),
-  browser flag, URL (host + path only) when readable, private-window flag, at, and a set of
+  browser flag, URL (host + path, plus an explicit port for loopback services) when readable,
+  private-window flag, at, and a set of
   configured, folded keywords matched in this sample's title. It never contains a raw title.
 - Private windows follow the same site, exception, keyword and quota rules as any window. The
   blocking reader reads their address (host + path) and, while keywords are active, their title,

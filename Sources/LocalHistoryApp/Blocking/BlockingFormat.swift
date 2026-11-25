@@ -202,6 +202,9 @@ enum BlockingFormat {
 extension BlockingRules {
     /// `https://www.YouTube.com/shorts/?x=1` → `youtube.com/shorts`. Nil when it is not a site.
     static func normalizeSite(_ raw: String) -> String? {
+        // Use the engine's canonical form, including exact loopback ports. The fallback retains
+        // the editor's existing shorthand (for example, a leading wildcard on a domain).
+        if let normalized = normalize(raw) { return normalized }
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !text.isEmpty, !text.contains(" ") else { return nil }
         if let scheme = text.range(of: "://") { text = String(text[scheme.upperBound...]) }
