@@ -256,6 +256,8 @@ def shard_command(run: Path, shard: int, shards: int, home: str, only: str | Non
     if probe in ("1", "-1"):  # one day later or earlier
         environment.append(f"GOALONG_GALLERY_CLOCK_PROBE={probe}")
     xctest = CHECKOUT / ".build" / "debug" / "LocalHistoryPackageTests.xctest"
+    if not xctest.exists():  # Xcode 27 build system: one bundle per test target, no package-wide bundle
+        xctest = CHECKOUT / ".build" / "debug" / "LocalHistoryAppTests.xctest"
     # Spec C §3-4: the arguments domain is read only before -XCTest. The fake HOME has no global preferences, so the
     # accent colour and the scroll-bar style (else « Automatic »: legacy bars once a mouse is plugged in) are fixed here.
     return ["/usr/bin/env", "-i", *environment, "/usr/bin/xcrun", "xctest", *LAUNCH_ARGUMENTS,
