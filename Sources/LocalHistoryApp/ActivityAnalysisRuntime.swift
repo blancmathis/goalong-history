@@ -131,6 +131,30 @@ import AppleScreenTime
         )
     }
 
+    /// Background cadence of today's derived views (T-057 §2). Each pass of an active day rewrites
+    /// ~16 MB of analysis, memory and computer-history JSON (content changes with every new event;
+    /// unchanged content is already skipped by the writers). The 10-minute timer keeps yesterday's
+    /// catch-up and the day rollover, but only every third tick refreshes today: ÷3 background
+    /// writes. Pages that show a day request their own refresh and are not affected.
+    struct ActivityAnalysisBackgroundCadence {
+        static let todayInterval: TimeInterval = 30 * 60
+        /// The timer has a 30 s tolerance: a tick that fires a little early must not slip
+        /// to the next one (a 40-minute cadence).
+        static let tolerance: TimeInterval = 90
+        private var lastTodayRefresh: (day: Date, at: Date)?
+
+        mutating func shouldRefreshToday(_ today: Date, at now: Date) -> Bool {
+            if let last = lastTodayRefresh, last.day == today,
+                now.timeIntervalSince(last.at) >= 0,
+                now.timeIntervalSince(last.at) < Self.todayInterval - Self.tolerance
+            {
+                return false
+            }
+            lastTodayRefresh = (today, now)
+            return true
+        }
+    }
+
     final class ActivityAnalysisRuntime: ActivityAnalysisRefreshServing {
         static let shared = ActivityAnalysisRuntime()
         static let backgroundRefreshInterval: TimeInterval = 10 * 60
@@ -145,6 +169,7 @@ import AppleScreenTime
 
         private var richContextTimer: Timer?
         private var analysisTimer: Timer?
+        private var backgroundCadence = ActivityAnalysisBackgroundCadence()
         private var lastRichContextFingerprints: [String: String] = [:]
         private var pendingRichContextFingerprints: [String: (jobID: UUID, fingerprint: String)] = [:]
         private var lastSemanticCaptureDates: [String: Date] = [:]
@@ -234,7 +259,7 @@ import AppleScreenTime
                 timeInterval: Self.backgroundRefreshInterval,
                 repeats: true
             ) { [weak self] _ in
-                self?.generateRecentAnalyses(force: false)
+                self?.generateRecentAnalyses(force: false, background: true)
                 GoalongAnalyticsModel.advanceToday()
             }
             analysisTimer.tolerance = 30
@@ -649,13 +674,15 @@ import AppleScreenTime
                 && candidate.globalPauseRevision == expected.globalPauseRevision
         }
 
-        private func generateRecentAnalyses(force: Bool) {
+        private func generateRecentAnalyses(force: Bool, background: Bool = false) {
             let calendar = Calendar.current
-            let today = calendar.startOfDay(for: Date())
+            let now = Date()
+            let today = calendar.startOfDay(for: now)
             let yesterday = calendar.date(byAdding: .day, value: -1, to: today)
+            let includeToday = !background || backgroundCadence.shouldRefreshToday(today, at: now)
             // Enqueue older input first so today's workflow detection sees the refreshed
             // prior memory. The scheduler serializes these with every UI refresh.
-            for day in [yesterday, today].compactMap({ $0 }) {
+            for day in [yesterday, includeToday ? today : nil].compactMap({ $0 }) {
                 refresh(day: day, force: force) { result in
                     if case .failure(let error) = result,
                         !(error is ActivityAnalysisRefreshError)
