@@ -45,7 +45,8 @@ if [[ -e "$FRAMEWORK/XPCServices" || -e "$FRAMEWORK/Versions/B/XPCServices" ]]; 
   echo "Unexpected optional Sparkle XPC services in the non-sandboxed app." >&2
   exit 1
 fi
-if ! /usr/bin/otool -L "$BINARY" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+# Not grep -q: an early exit kills otool with SIGPIPE under pipefail.
+if ! /usr/bin/otool -L "$BINARY" | /usr/bin/grep -F '@rpath/Sparkle.framework' >/dev/null; then
   echo "The real updater is not linked." >&2
   exit 1
 fi
@@ -121,7 +122,7 @@ if [[ -f "$ROOT_DIR/Sources/GoalongMenuBarHelper/main.swift" ]]; then
   /usr/bin/grep -Fxq "Identifier=$EXPECTED_BUNDLE_ID.menubar" <<< "$(/usr/bin/codesign -d --verbose=4 "$MENUBAR" 2>&1)"
   test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$MENUBAR/Contents/Info.plist")" == "$EXPECTED_BUNDLE_ID.menubar"
   test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$MENUBAR/Contents/Info.plist")" == true
-  if /usr/bin/codesign -d --entitlements - "$MENUBAR" 2>/dev/null | /usr/bin/grep -q '<key>'; then
+  if /usr/bin/codesign -d --entitlements - "$MENUBAR" 2>/dev/null | /usr/bin/grep -F '<key>' >/dev/null; then
     echo "The menu bar helper must carry no entitlements." >&2
     exit 1
   fi
