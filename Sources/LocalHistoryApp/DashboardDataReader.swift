@@ -177,6 +177,11 @@
             var identity: FileIdentity
             var limit: BudgetLimit
             var lastAccess: UInt64
+            /// Cache rows/bytes held by other journals when the read failed. A refusal under
+            /// cache pressure is not a property of the journal: it is retried once that
+            /// pressure drops (other days evicted, caches purged).
+            var reservedRows = 0
+            var reservedEstimatedBytes: Int64 = 0
         }
 
         private struct DayBudgetFailure {
@@ -320,9 +325,26 @@
                 return nil
             }
 
-            guard let loadedEvents = loadEvents(for: day, cancellation: cancellation, diagnostics: &operation),
-                let loadedSeals = loadSeals(for: day, cancellation: cancellation, diagnostics: &operation)
-            else {
+            var firstAttempt = true
+            var loadedPair: ([HistoryEvent], [LocalMinuteSeal])?
+            while loadedPair == nil {
+                let events = loadEvents(for: day, cancellation: cancellation, diagnostics: &operation)
+                let seals = events == nil
+                    ? nil : loadSeals(for: day, cancellation: cancellation, diagnostics: &operation)
+                if let events, let seals {
+                    loadedPair = (events, seals)
+                    break
+                }
+                // Other days' cached rows can crowd this day out: evict them and retry once.
+                // A day that is too big on its own fails again and stays refused.
+                guard firstAttempt, !operation.budgetExceeded.isEmpty,
+                    evictCachesOfOtherDays(than: day)
+                else { break }
+                firstAttempt = false
+                operation.budgetExceeded = [:]
+                operation.transitions = [:]
+            }
+            guard let (loadedEvents, loadedSeals) = loadedPair else {
                 if !operation.budgetExceeded.isEmpty {
                     operation.snapshotState = .budgetExceeded
                 } else {
@@ -865,6 +887,19 @@
             )
             trimJournalCachesToGlobalBudget()
             return events
+        }
+
+        /// Drops cached journals of every other day (and all receipts). Returns whether any
+        /// cached row was released.
+        private func evictCachesOfOtherDays(than day: Date) -> Bool {
+            let key = dayKey(for: day)
+            let keepEvents = eventsDirectory.appendingPathComponent(key + ".jsonl").path
+            let keepSeals = sealsDirectory.appendingPathComponent(key + ".seals.jsonl").path
+            let before = cachedRowCount
+            eventCache = eventCache.filter { $0.key == keepEvents }
+            sealCache = sealCache.filter { $0.key == keepSeals }
+            receiptCache.removeAll(keepingCapacity: false)
+            return cachedRowCount < before
         }
 
         private func loadSeals(
@@ -1472,7 +1507,10 @@
                 return previous?.values ?? []
             }
 
-            if var failure = journalBudgetFailures[path], failure.identity == identity {
+            if var failure = journalBudgetFailures[path], failure.identity == identity,
+                reservedRows >= failure.reservedRows,
+                reservedEstimatedBytes >= failure.reservedEstimatedBytes
+            {
                 accessSequence &+= 1
                 failure.lastAccess = accessSequence
                 journalBudgetFailures[path] = failure
@@ -1579,7 +1617,9 @@
                 journalBudgetFailures[path] = JournalBudgetFailure(
                     identity: identity,
                     limit: limit,
-                    lastAccess: accessSequence
+                    lastAccess: accessSequence,
+                    reservedRows: reservedRows,
+                    reservedEstimatedBytes: reservedEstimatedBytes
                 )
                 trimBudgetFailures()
                 diagnostics.bytesRead += bytesRead
