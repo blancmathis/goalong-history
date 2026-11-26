@@ -26,6 +26,10 @@ TARGET_APP=""
 BACKUP_APP=""
 REPLACEMENT_ACTIVE=0
 ORIGINAL_TARGET_PRESENT=0
+# 1 from the moment Goalong was asked to quit: from then on, whatever happens, the installed app (the old one
+# restored by the rollback, or the new one) is opened again in the background (open -g -j) when the script ends.
+QUIT_DONE=0
+LATE_RELAUNCH_WAIT_SECONDS="${GOALONG_LATE_RELAUNCH_WAIT_SECONDS:-900}"
 
 bundle_identifier_from_plist() {
   /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist" 2>/dev/null
@@ -335,9 +339,43 @@ rollback_replacement() {
   REPLACEMENT_ACTIVE=0
 }
 
+# Open the installed app again, in the background and hidden (never takes the focus). Used after any exit
+# that follows the quit request. A failure here is only a warning.
+relaunch_installed_app() {
+  [[ "$QUIT_DONE" -eq 1 ]] || return 0
+  QUIT_DONE=0
+  if [[ -n "$TARGET_APP" && -d "$TARGET_APP" && ! -L "$TARGET_APP" ]]; then
+    /usr/bin/open -g -j "$TARGET_APP" >>"$LOG_FILE" 2>&1 \
+      || echo "  ! Goalong could not be reopened automatically; open it from $TARGET_APP." >&2
+  else
+    echo "  ! No installed Goalong found to reopen at $TARGET_APP." >&2
+  fi
+  return 0
+}
+
+# Password timeout path: Goalong may still quit later (the password is typed after we gave up). Wait for it
+# in the background and open it again then. Never forces anything.
+late_quit_relaunch_loop() { # EXECUTABLE_NAME...
+  local waited=0 name running
+  while (( waited < LATE_RELAUNCH_WAIT_SECONDS )); do
+    running=0
+    for name in "$@"; do
+      if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
+    done
+    if (( running == 0 )); then
+      QUIT_DONE=1
+      relaunch_installed_app
+      return 0
+    fi
+    /bin/sleep 1
+    waited=$((waited + 1))
+  done
+}
+
 cleanup() {
   local status=$?
   rollback_replacement || true
+  relaunch_installed_app || true
   safe_remove_temporary_directory "$INSTALL_STAGE_ROOT" || true
   safe_remove_temporary_directory "$BUILD_OUTPUT" || true
   exit "$status"
@@ -553,6 +591,7 @@ refuse_install_during_severe_block() {
 
 quit_running_goalong() {
   local name waited=0 limit="${GOALONG_QUIT_WAIT_TENTHS:-80}" running
+  QUIT_DONE=1
   for name in "$@"; do /usr/bin/pkill -TERM -x "$name" >/dev/null 2>&1 || true; done
   while (( waited < limit )); do
     running=0
@@ -579,7 +618,13 @@ quit_running_goalong() {
       /bin/sleep 0.1
       waited=$((waited + 1))
     done
-    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Quit Goalong in the app (or type its password in the prompt), then run make local again. Nothing was replaced." >&2
+    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Nothing was replaced: Goalong is reopened if it quits later (password typed afterwards); run make local again." >&2
+    if [[ "${GOALONG_LATE_RELAUNCH_SYNC:-0}" == 1 ]]; then
+      late_quit_relaunch_loop "$@"
+    else
+      ( late_quit_relaunch_loop "$@" ) >/dev/null 2>&1 </dev/null &
+      disown 2>/dev/null || true
+    fi
     exit 1
   fi
   for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
@@ -628,10 +673,13 @@ replace_staged_bundle() {
 }
 
 finalize_replacement() {
-  if [[ "$ORIGINAL_TARGET_PRESENT" -eq 1 ]]; then
-    safe_remove_backup_bundle "$BACKUP_APP" || return 1
-  fi
+  # The new app is in place and validated: from here the rollback must never put the old one back.
   REPLACEMENT_ACTIVE=0
+  if [[ "$ORIGINAL_TARGET_PRESENT" -eq 1 ]]; then
+    safe_remove_backup_bundle "$BACKUP_APP" \
+      || echo "  ! The previous app copy could not be removed; the next installation cleans it up." >&2
+  fi
+  return 0
 }
 
 remove_verified_legacy_bundle() {
@@ -658,6 +706,18 @@ remove_verified_obsolete_local_bundle() {
     || return 0
   verify_bundle_signature "$app_path" >/dev/null 2>&1 || return 0
   /bin/rm -rf -- "$app_path"
+}
+
+post_install_cleanup() {
+  local step_failed=0
+  remove_verified_legacy_bundle "/Applications/$PREVIOUS_APP_NAME.app" || step_failed=1
+  remove_verified_legacy_bundle "$HOME/Applications/$PREVIOUS_APP_NAME.app" || step_failed=1
+  remove_verified_legacy_bundle "/Applications/$LEGACY_APP_NAME.app" || step_failed=1
+  remove_verified_legacy_bundle "$HOME/Applications/$LEGACY_APP_NAME.app" || step_failed=1
+  remove_verified_obsolete_local_bundle "/Applications/$OBSOLETE_LOCAL_APP_NAME.app" || step_failed=1
+  remove_verified_obsolete_local_bundle "$HOME/Applications/$OBSOLETE_LOCAL_APP_NAME.app" || step_failed=1
+  [[ "$step_failed" -eq 0 ]] || echo "  ! Some old app copies were not removed; Goalong itself is installed." >&2
+  return 0
 }
 
 main() {
@@ -750,17 +810,13 @@ main() {
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
   run_step "Validating the installed bundle" validate_app_bundle "$TARGET_APP"
-  run_step "Installing the goalong terminal command" install_goalong_cli_link "$TARGET_APP"
-
-  remove_verified_legacy_bundle "/Applications/$PREVIOUS_APP_NAME.app"
-  remove_verified_legacy_bundle "$HOME/Applications/$PREVIOUS_APP_NAME.app"
-  remove_verified_legacy_bundle "/Applications/$LEGACY_APP_NAME.app"
-  remove_verified_legacy_bundle "$HOME/Applications/$LEGACY_APP_NAME.app"
-  remove_verified_obsolete_local_bundle "/Applications/$OBSOLETE_LOCAL_APP_NAME.app"
-  remove_verified_obsolete_local_bundle "$HOME/Applications/$OBSOLETE_LOCAL_APP_NAME.app"
+  # The new app is installed: link and cleanup failures are warnings, never an exit (the app must reopen).
+  run_step "Installing the goalong terminal command" install_goalong_cli_link "$TARGET_APP" \
+    || echo "  ! The goalong terminal command was not installed; run scripts/install_cli_link.sh later." >&2
   finalize_replacement
+  post_install_cleanup
 
-  /usr/bin/open "$TARGET_APP"
+  relaunch_installed_app
   printf '\nInstalled from source at %s\n' "$TARGET_APP"
 }
 
