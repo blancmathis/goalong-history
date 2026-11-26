@@ -43,9 +43,8 @@ var environment = GuardEnvironment(
             completion(app.map { $0.isTerminated ? -1 : $0.processIdentifier }, error)
         }
     })
-environment.proofAlive = { reason in
-    guard let path = bundle.proofPath(for: reason) else { return false }
-    return !GuardProcesses.pids(executable: path).isEmpty
+environment.proofAlive = { lease in
+    bundle.proofPaths(for: lease).contains { !GuardProcesses.pids(executable: $0).isEmpty }
 }
 environment.bundlePresent = { FileManager.default.fileExists(atPath: bundle.infoPlist.path) }
 environment.binaryReplaced = {

@@ -58,7 +58,7 @@ public struct GuardInput: Equatable, Sendable {
     public var death: Death?
     public var release: GuardRelease?
     public var lease: GuardLease?
-    /// The lease's proof process (Autoupdate or goalong-relauncher of this bundle) is alive.
+    /// The lease's proof process (Autoupdate or goalong-relauncher of this bundle, or of its perso stage) is alive.
     public var leaseProofAlive = false
     /// Leases already honoured in the last hour.
     public var leasesInLastHour = 0
@@ -164,7 +164,7 @@ public enum GuardDecision {
         guard let lease = input.lease, input.death.map({ lease.pid == $0.pid }) ?? true, input.leaseProofAlive,
               input.leasesInLastHour < leasesPerHour, lease.until > input.now,
               lease.until <= input.now + GuardLease.maximumDuration,
-              [GuardLease.update, GuardLease.permissionRestart].contains(lease.reason) else { return nil }
+              [GuardLease.update, GuardLease.permissionRestart, GuardLease.persoUpdate].contains(lease.reason) else { return nil }
         return lease
     }
 

@@ -182,9 +182,11 @@ import AppleScreenTime
 
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
-        private(set) var isRelaunchingForUpdate = false
+        /// Sparkle or a perso swap; Sparkle's abort ends only its own (sparkle-didAbort, audit 2026-11-26).
+        private var relaunchOwnership = UpdateRelaunchOwnership()
+        var isRelaunchingForUpdate: Bool { relaunchOwnership.isRelaunching }
         /// `make perso` self-update: the new build is already in place; quit like a Sparkle relaunch (no password).
-        func markRelaunchingForPersoUpdate() { isRelaunchingForUpdate = true }
+        func markRelaunchingForPersoUpdate() { relaunchOwnership.mark(.perso) }
         private var lastBackgroundCheck: Date?
         private var checkQueue = SoftwareUpdateCheckQueue()
         private var sparkleObservations: [NSKeyValueObservation] = []
@@ -634,7 +636,7 @@ import AppleScreenTime
                 values[.availableVersion] = .symbol(version)
             }
             SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: values)
-            isRelaunchingForUpdate = true
+            relaunchOwnership.mark(.sparkle)
             GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
         }
 
@@ -647,8 +649,8 @@ import AppleScreenTime
         }
 
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
-            isRelaunchingForUpdate = false
-            GoalongGuardFiles.standard.removeLease()
+            // « No update » also lands here: never end a perso swap's state or lease.
+            if relaunchOwnership.sparkleAborted() { GoalongGuardFiles.standard.removeLease(reason: GuardLease.update) }
             if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }

@@ -211,8 +211,9 @@ import AppleScreenTime
             }
 
             runtimeStarted = true
-            // A guard token always belongs to the process that wrote it (spec K).
-            GoalongGuardFiles.standard.clearTokens()
+            // A guard token always belongs to the process that wrote it (spec K), except a perso swap's
+            // lease: its relauncher ends it after health or rollback (installation-05).
+            GoalongGuardFiles.standard.clearTokensAtLaunch()
             installTerminationSignalHandler()
             let buildIdentity = BuildIdentityReader.current()
             LegacyInstallationMigrator.run()
@@ -402,6 +403,8 @@ import AppleScreenTime
                     onQuit: { [weak self] in self?.requestUserQuit() }
                 )
             } catch {
+                // Never report perso health after this, even if the run loop goes on behind the report window.
+                PersoSelfUpdate.startupFailed()
                 SupportDiagnostics.shared.failure(error, component: .app)
                 presentFatalError(error)
                 return
@@ -526,6 +529,8 @@ import AppleScreenTime
             }
             // A URL can arrive before the dashboard exists on a cold launch.
             Task { @MainActor in presentWebsitePairingIfReady() }
+            // Launch complete: a perso relauncher may now keep this build (installation-03).
+            PersoSelfUpdate.startupSucceeded()
         }
 
         func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

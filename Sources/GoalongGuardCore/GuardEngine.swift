@@ -14,7 +14,7 @@ public struct GuardEnvironment {
     public var isStopped: (Int32) -> Bool = GuardProcesses.isStopped
     public var resume: (Int32) -> Void = { _ = kill($0, SIGCONT) }
     /// The proof process of a lease reason is alive (Autoupdate or goalong-relauncher of this bundle).
-    public var proofAlive: (String) -> Bool = { _ in false }
+    public var proofAlive: (GuardLease) -> Bool = { _ in false }
     /// False once the app bundle is gone (Info.plist missing): the guard ends for good.
     public var bundlePresent: () -> Bool = { true }
     /// True when the guard's own executable was replaced (update): exit 75 so launchd starts the new one.
@@ -162,7 +162,7 @@ public final class GuardEngine {
         input.death = death
         input.release = death == nil && watchedPID != nil ? nil : files.readRelease()
         input.lease = watchedPID != nil ? nil : files.readLease()
-        if let lease = input.lease { input.leaseProofAlive = environment.proofAlive(lease.reason) }
+        if let lease = input.lease { input.leaseProofAlive = environment.proofAlive(lease) }
         leaseTimes.removeAll { continuous - $0 >= 3600 }
         input.leasesInLastHour = leaseTimes.count - (leaseHonoured ? 1 : 0)
         input.sessionEndWaitOver = death != nil && continuous - deathContinuous >= environment.sessionEndWait

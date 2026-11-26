@@ -141,4 +141,29 @@ final class PersoSelfUpdateTests: XCTestCase {
         XCTAssertNotNil(PersoSignature.check(candidate: temp.appendingPathComponent("Missing.app"), reference: reference))
     }
     #endif
+
+    // installation-03: health only after a complete launch, never after a fatal one.
+    func testFatalStartupNeverDeclaresHealth() {
+        var health = PersoStartupHealth()
+        health.startupFailed()
+        XCTAssertFalse(health.startupSucceeded())
+        var ok = PersoStartupHealth()
+        XCTAssertTrue(ok.startupSucceeded())
+        XCTAssertFalse(ok.startupSucceeded(), "declared once")
+    }
+
+    // installation-02: the request is claimed before the slow checks; removing it cancels before the swap.
+    func testClaimedRequestIsOwnedUntilCancelled() throws {
+        let files = PersoUpdateFiles(root: temp)
+        XCTAssertFalse(files.writeResult("r1", .init(state: PersoUpdateFiles.Result.claimed)), "no folder, nothing written")
+        try FileManager.default.createDirectory(at: files.request("r1"), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: files.request("r1").appendingPathComponent("request.json"))
+        XCTAssertTrue(files.writeResult("r1", .init(state: PersoUpdateFiles.Result.claimed)))
+        XCTAssertEqual(files.pendingRequests(), [], "a claimed request is not scanned again")
+        XCTAssertTrue(files.stillOwned("r1"))
+        XCTAssertTrue(files.writeResult("r1", .init(state: PersoUpdateFiles.Result.accepted)))
+        XCTAssertTrue(files.stillOwned("r1"))
+        try FileManager.default.removeItem(at: files.request("r1"))
+        XCTAssertFalse(files.stillOwned("r1"), "the script cancelled: no swap")
+    }
 }

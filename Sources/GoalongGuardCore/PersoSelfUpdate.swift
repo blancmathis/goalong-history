@@ -139,7 +139,10 @@ public struct PersoUpdateFiles: Sendable {
     }
 
     public struct Result: Codable, Equatable, Sendable {
-        public static let accepted = "accepted", refused = "refused", installed = "installed", rolledBack = "rolled_back"
+        /// `claimed`: the app took the request before its slow checks (installation-02); the script must then
+        /// wait for a final state, never fall back. Removing the request folder cancels it before the swap.
+        public static let claimed = "claimed", accepted = "accepted", refused = "refused", installed = "installed",
+                          rolledBack = "rolled_back"
         public var state: String
         public var reason: String?
         public init(state: String, reason: String? = nil) { self.state = state; self.reason = reason }
@@ -156,11 +159,17 @@ public struct PersoUpdateFiles: Sendable {
         return value.pid == pid && value.builtAt == builtAt
     }
 
-    /// Only into an existing request folder: a result never creates one.
-    public func writeResult(_ id: String, _ result: Result) {
+    /// Only into an existing request folder: a result never creates one. False when nothing was written.
+    @discardableResult public func writeResult(_ id: String, _ result: Result) -> Bool {
         guard PersoUpdate.isValidRequestID(id), FileManager.default.fileExists(atPath: request(id).path),
-              let data = try? JSONEncoder().encode(result) else { return }
-        try? data.write(to: self.result(id), options: .atomic)
+              let data = try? JSONEncoder().encode(result) else { return false }
+        return (try? data.write(to: self.result(id), options: .atomic)) != nil
+    }
+
+    /// The app still owns this request: its folder is there and its result is still ours (claimed or accepted).
+    public func stillOwned(_ id: String) -> Bool {
+        guard let state = readResult(id)?.state else { return false }
+        return [Result.claimed, Result.accepted].contains(state)
     }
 
     public func readResult(_ id: String) -> Result? {
