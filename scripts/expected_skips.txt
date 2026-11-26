@@ -17,6 +17,7 @@ AmbianceTests.AmbianceTests/testMappedPCM16MatchesOriginalDecodedSampler  # othe
 LocalHistoryAppTests.ActivityAnalysisRuntimeIncrementalTests/testOptInRealActivityDayLoaderHandlesCompactIntegrityReadOnly  # GOALONG_TEST_REAL_ACTIVITY_ROOT + GOALONG_TEST_REAL_ACTIVITY_DAY
 LocalHistoryAppTests.AgentActivityDiscoveryConsentTests/testCaseDistinctTombstoneDoesNotSuppressAnotherSource  # other: The fixture volume is case-insensitive
 LocalHistoryAppTests.AmbiancePageRenderingTests/testRenderAmbiancePage  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.BlockingActivationRegressionTests/testNativePanelStopsAFreeRunningRule  # other: Opt-in native blocking activation with an in-memory list
 LocalHistoryAppTests.BlockingActivationRegressionTests/testNativePanelSwitchStartsAndStopsBlocking  # other: Opt-in native blocking activation with an in-memory list
 LocalHistoryAppTests.BlockingPageRenderingTests/testRenderBlockingSurfaces  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.BlockingRuntimeCostTests/testSampleCost  # other: Opt-in measurement on this Mac
@@ -25,6 +26,7 @@ LocalHistoryAppTests.BraisePageRenderingTests/testRenderPanelAndEditor  # other:
 LocalHistoryAppTests.ChatGPTRecapTests/testOptInRealDailyAgentAnalysisCompletesFromOriginalCodexSources  # GOALONG_TEST_REAL_CODEX_SOURCE_ROOT + GOALONG_TEST_REAL_AGENT_DAY
 LocalHistoryAppTests.ConcentrationHubRenderingTests/testRenderConcentrationTabs  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.ConcentrationRenderingTests/testRenderConcentrationSurfaces  # other: Opt-in native rendering with fixed data only
+LocalHistoryAppTests.ConcentrationRenderingTests/testRenderGuidedDayWithParallelProcessesHeadlessly  # other: Requires the headless test harness and an explicit render directory
 LocalHistoryAppTests.ConcentrationRuntimeCostTests/testDetectionCPUCost  # other: Opt-in local CPU measurement
 LocalHistoryAppTests.DashboardDataReaderIncrementalTests/testOptInRealDashboardRootLoadsExistingDayWithoutEmptyReplacement  # GOALONG_TEST_REAL_DASHBOARD_ROOT + GOALONG_TEST_REAL_DASHBOARD_DAY
 LocalHistoryAppTests.ForegroundPresenceRuntimeTests/testLiveForegroundReadingProbeWithoutControlLabels  # other: Opt-in native foreground probe
