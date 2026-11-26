@@ -75,10 +75,7 @@ import LocalHistoryCore
         /// Set while a locked block refuses the stop: the popover says « Verrouillé jusqu'à HH:MM » and offers no stop.
         var lockedUntil: Date? = nil
         var lockedLine: String? {
-            lockedUntil.map {
-                let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "HH:mm"
-                return "Verrouillé jusqu’à \(f.string(from: $0))"
-            }
+            lockedUntil.map { "Verrouillé jusqu’à \(GoalongUIFormat.time($0))" }
         }
     }
     struct DayAction: Equatable {

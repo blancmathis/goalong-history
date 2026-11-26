@@ -144,9 +144,9 @@ import AppleScreenTime
         private var lastTodayRefresh: (day: Date, at: Date)?
 
         mutating func shouldRefreshToday(_ today: Date, at now: Date) -> Bool {
+            // A gap either way counts (WallClockThrottle, T-044 C4-02).
             if let last = lastTodayRefresh, last.day == today,
-                now.timeIntervalSince(last.at) >= 0,
-                now.timeIntervalSince(last.at) < Self.todayInterval - Self.tolerance
+                now.throttleElapsed(since: last.at) < Self.todayInterval - Self.tolerance
             {
                 return false
             }
