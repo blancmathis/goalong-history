@@ -316,13 +316,19 @@ struct FocusPanel: Equatable {
         guard let id, plan.items.contains(where: { $0.id == id && $0.status == .open }) else { return nil }
         return id
     }
+    /// The slot a start applies to: the one the member chose when the action has several, else the first unfinished one.
+    private func agendaSlot(forItem id: UUID, slotID: UUID?) -> FocusAgendaSlot? {
+        guard let slots = plan.agenda?.slots else { return nil }
+        if let slotID, let chosen = slots.first(where: { $0.id == slotID && $0.itemID == id && !$0.state.isFinished }) { return chosen }
+        return slots.first { $0.itemID == id && !$0.state.isFinished }
+    }
     func startSession(intent: String, mode: FocusMode, planItemId: UUID? = nil, blockListIds: [UUID] = [],
                       blockDuringBreaks: Bool = false, lock: Bool = false, ambiance: Bool = false,
-                      pause: PausePolicy? = nil) throws {
+                      pause: PausePolicy? = nil, planSlotId: UUID? = nil) throws {
         try admit(); refresh()
         guard currentSession == nil else { throw FocusFailure.invalidArgument }
         if let id = planItemId, !plan.items.contains(where: { $0.id == id && $0.status == .open }) { throw FocusFailure.notFound }
-        if let id = planItemId, let slot = plan.agenda?.slots.first(where: { $0.itemID == id && !$0.state.isFinished }) {
+        if let id = planItemId, let slot = agendaSlot(forItem: id, slotID: planSlotId) {
             _ = try preparedStart(slot.id, in: plan)
         }
         if !blockListIds.isEmpty {
@@ -342,7 +348,7 @@ struct FocusPanel: Equatable {
             value.events.append(.init(kind: .stop, at: now, reason: .member)); try persist(value); currentSession = nil; throw error
         }
         error = nil
-        if let id = planItemId, let slot = plan.agenda?.slots.first(where: { $0.itemID == id && !$0.state.isFinished }) {
+        if let id = planItemId, let slot = agendaSlot(forItem: id, slotID: planSlotId) {
             do { try applyDayPlan(preparedStart(slot.id, in: plan), expectedRevision: plan.effectiveRevision, reason: "Action démarrée") }
             catch { self.error = "La séance a démarré, mais son créneau n’a pas pu être mis à jour : \(FocusUIError.message(error))" }
         }
@@ -1131,16 +1137,16 @@ extension ConcentrationController {
         if agenda.autoAdjust { value = adjusted(value) }
         return value
     }
-    func startPlannedItem(_ id: UUID, mode: FocusMode? = nil) throws {
+    func startPlannedItem(_ id: UUID, mode: FocusMode? = nil, slotID: UUID? = nil) throws {
         guard let item = plan.items.first(where: { $0.id == id && $0.status == .open }) else { throw FocusFailure.notFound }
         // The agenda supplies the next transition. An explicit Pomodoro/timer remains available unchanged.
-        try startSession(intent: item.title, mode: mode ?? FocusMode(minutes: nil), planItemId: id)
+        try startSession(intent: item.title, mode: mode ?? FocusMode(minutes: nil), planItemId: id, planSlotId: slotID)
     }
     func startAgendaSlot(_ id: UUID) throws {
         guard currentSession == nil else { throw FocusFailure.invalidArgument }
         let value = try preparedStart(id, in: plan)
         guard let slot = value.agenda?.slots.first(where: { $0.id == id }) else { throw FocusFailure.notFound }
-        if let itemID = slot.itemID { try startPlannedItem(itemID) }
+        if let itemID = slot.itemID { try startPlannedItem(itemID, slotID: id) }
         else { try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Créneau démarré") }
         dismissPanel()
     }

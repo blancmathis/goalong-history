@@ -144,6 +144,22 @@ final class FocusDayControllerTests: XCTestCase {
         XCTAssertEqual(c.plan.items.first?.status, .open)
         XCTAssertEqual(c.plan.agenda?.slots.first?.state, .active)
     }
+    @MainActor func testStartingTheSecondSlotOfAnActionDoesNotResumeTheFirst() throws {
+        let s = try store()
+        let instant = FocusDayPlanner.date(day: day, minute: 665, timeZoneID: "UTC")!
+        let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
+        let item = FocusPlanItem(title: "Montage")
+        var value = FocusPlan(day: day, items: [item])
+        let first = FocusAgendaSlot(itemID: item.id, title: item.title, startMinute: 540, endMinute: 600, fixed: true)
+        let second = FocusAgendaSlot(itemID: item.id, title: item.title, startMinute: 660, endMinute: 720, fixed: true)
+        value.agenda = FocusAgenda(timeZoneID: "UTC", slots: [first, second])
+        try c.applyDayPlan(value, expectedRevision: 0)
+        try c.startAgendaSlot(second.id)
+        XCTAssertNotNil(c.currentSession)
+        let slots = try XCTUnwrap(c.plan.agenda?.slots)
+        XCTAssertEqual(slots.first { $0.id == second.id }?.state, .active)
+        XCTAssertNotEqual(slots.first { $0.id == first.id }?.state, .active)
+    }
     @MainActor func testGuidanceBudgetPersistsAndDoesNotReplayMissedSlots() throws {
         let s = try store(guided: true); var instant = now
         let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
