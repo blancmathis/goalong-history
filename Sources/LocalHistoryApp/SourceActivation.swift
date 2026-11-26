@@ -423,8 +423,8 @@ import LocalHistoryCore
             validation = request
             guard consents.isEnabled(capability), !showingActivation else { return }
             checkAccess(capability) { status in
-                guard validation == request, consents.isEnabled(capability), !showingActivation,
-                      status != .ready else { return }
+                guard validation == request, consents.isEnabled(capability), !showingActivation else { return }
+                // A ready check must reach the memory too, or a second identical loss stays filtered.
                 guard SourceAccessAlertMemory.shared.shouldAlert(capability, status) else { return }
                 activationStatus = status
                 accessIssue = status.message + " Votre choix de source est inchangé. Aucune nouvelle donnée tant que l’accès ne fonctionne pas."
