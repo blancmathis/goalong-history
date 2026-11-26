@@ -213,7 +213,7 @@ write_build "$TARGET_DIR/$APP_NAME.app" 30000000.4266167.303702
 GOALONG_LOCAL_TRY=1 refuse_local_try_downgrade "$TEST_ROOT/downgrade-src.app"
 # make local never force-quits and never installs over a scheduled lock.
 set +e
-sigkill_output="$(GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 /bin/bash -c '
+sigkill_output="$(GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 GOALONG_LATE_RELAUNCH_WAIT_SECONDS=0 /bin/bash -c '
   source "$1"; /usr/bin/pgrep() { return 0; }; /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
   quit_running_goalong goalong-test-never' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
 sigkill_status=$?
