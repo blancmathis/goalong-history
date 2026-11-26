@@ -132,7 +132,9 @@ import LocalHistoryQueryCLI
         self.guardClient = guardClient; self.redScreen = redScreen
         if let store {
             do {
-                let loaded = try store.loadRecovering()
+                // T-057 L4 (blocage-04): what is over is judged in the trusted frame of the samples kept.
+                let loaded = try store.loadRecovering(now: clock(), // wall: the raw clock passed in, lowered by the samples
+                                                      trusted: { BlockingClock.trusted(wall: clock(), continuous: continuous(), boot: boot(), last: $0) }) // wall: measured from a kept sample
                 self.document = loaded.document
                 switch loaded.recovery {
                 case .none: break
@@ -145,7 +147,9 @@ import LocalHistoryQueryCLI
         }
         let migratedDays = migrateLegacyDayKeys()
         if migratePauses() || migratedDays, let store, !storeFailed {
-            do { try store.save(self.document) } catch { failStore() }
+            let wall = clock() // wall: the raw clock passed in, lowered by the loaded sample
+            let now = min(wall, BlockingClock.trusted(wall: wall, continuous: continuous(), boot: boot(), last: self.document.clock))
+            do { try store.save(self.document, now: now) } catch { failStore() }
         }
         lastGood = self.document
         lastClock = BlockingClock.upgraded(self.document.clock, wall: wallClock(), continuous: continuous(), boot: boot()) // wall: the format upgrade sample
@@ -191,7 +195,7 @@ import LocalHistoryQueryCLI
             // block survives too: only its typed text ends it (C8-01).
             document.sessions.removeAll { $0.start <= clock() && $0.lock == .free }
             if hadSessions, let store {
-                do { try store.save(document) } catch { failStore() }
+                do { try store.save(document, now: clock()) } catch { failStore() }
             }
         }
         timer?.invalidate(); timer = nil
@@ -1370,7 +1374,7 @@ import LocalHistoryQueryCLI
         // minute must not lose it (C8-03).
         let locksChanged = locksBefore != (document.sessions, document.heldPrograms, document.freeze, document.lists)
         if !storeFailed, let store, (triggersChanged || locksChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
-            do { try store.save(document); lastGood = document; lastSavedAt = now }
+            do { try store.save(document, now: now); lastGood = document; lastSavedAt = now }
             catch BlockingStore.Failure.floorUnavailable { error = ProtectedFloor.unsavedText } // retried at the next save
             catch { failStore() }
         }
@@ -1522,7 +1526,8 @@ import LocalHistoryQueryCLI
     /// A file changed under a running Goalong: the running state is the reference and is written back.
     private func restoreStore(_ store: BlockingStore) {
         do {
-            try store.replaceDamaged(with: document); lastGood = document; lastSavedAt = clock()
+            let now = clock()
+            try store.replaceDamaged(with: document, now: now); lastGood = document; lastSavedAt = now
             error = "Le fichier de blocage a été modifié hors de Goalong : Goalong l’a remis dans son état en cours."
         } catch { failStore() }
     }
@@ -1530,7 +1535,8 @@ import LocalHistoryQueryCLI
     private func commit(reenforce: Bool = true) {
         backend?.invalidateSiteActions()
         if let store {
-            do { error = try store.save(document) ? nil : ProtectedFloor.staleText; lastGood = document; lastSavedAt = clock() }
+            let now = clock()
+            do { error = try store.save(document, now: now) ? nil : ProtectedFloor.staleText; lastGood = document; lastSavedAt = now }
             catch BlockingStore.Failure.floorUnavailable { if let lastGood { document = lastGood }; error = ProtectedFloor.unsavedText }
             catch { if let lastGood { document = lastGood }; failStore() }
         } else { error = nil }
@@ -1707,6 +1713,12 @@ import LocalHistoryQueryCLI
         }
         let blockedSite = false
         var slowCandidates: [(BlockList, BlockingActiveBlock)] = []
+        // One unreadable-address clock per observation, outside the lists: a list without site rules
+        // never restarts it (blocage-01). A read address, a proven internal page or an activation
+        // (no address read, by design: a fresh 3 s window) resets it.
+        let addressUnreadable = target.isBrowser && !target.isActivation && !target.isInternalPage && target.url == nil
+        if !addressUnreadable { unreadableSince[target.pid] = nil }
+        var siteRulesSeen = false
         for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
             guard let block = rulingBlock(for: list.id) else { continue }
             let usage = todayUsage()
@@ -1715,13 +1727,11 @@ import LocalHistoryQueryCLI
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
             var special: BlockingVeilPresentation.Reason?
-            // An activation reads no address (by design), so it is not an unreadable read: it starts
-            // a fresh 3 s window instead of reusing one left over from an earlier visit.
-            if siteRules && target.isActivation && target.url == nil { unreadableSince[target.pid] = nil }
-            else if siteRules && !target.isInternalPage && target.url == nil {
+            if siteRules { siteRulesSeen = true }
+            if siteRules && addressUnreadable {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
                 if !siteBlockingAvailable || target.at.throttleElapsed(since: first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
-            } else { unreadableSince[target.pid] = nil }
+            }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
             // Unreadable addresses cannot establish eligible quota use: fail closed.
             let quotaLeft = BlockingRules.effectiveQuotaSeconds(list, usage: usage).map { (usage.quotaSecondsUsed[list.id] ?? 0) < $0 } ?? true
@@ -1749,6 +1759,8 @@ import LocalHistoryQueryCLI
             }
             return
         }
+        // No site list ruled this observation: a later one starts its own 3 s window.
+        if !siteRulesSeen { unreadableSince[target.pid] = nil }
         if target.isForeground { presentedAttempt = nil } else { presentedAppAttempts[target.pid] = nil }
         if !blockedSite { backend.clearSite() }
         if let (list, _) = slowCandidates.first(where: { !isFrictionAllowed(target, list: $0.0) }) {

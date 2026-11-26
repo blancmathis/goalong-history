@@ -3402,14 +3402,14 @@ public struct HistoryLocalStoreReader {
         guard interval.end.addingTimeInterval(reach) > start,
             interval.start.addingTimeInterval(-reach) < endExclusive
         else { return false }
-        // The margin ignores late flushes into a closed day and early rows of the next one.
-        let margin: TimeInterval = 3_600
+        // No margin: a write time inside the window is enough (a margin hid real rows after a
+        // time-zone change). Row timestamps keep the final filter exact.
         if interval.end <= start {
             guard let lastWrite else { return false }
-            return lastWrite >= start.addingTimeInterval(margin)
+            return lastWrite >= start
         }
         guard let firstWrite, let lastWrite, firstWrite <= lastWrite else { return false }
-        return firstWrite.addingTimeInterval(margin) <= endExclusive
+        return firstWrite < endExclusive
     }
 
     private func localDayInterval(from fileName: String) -> DateInterval? {

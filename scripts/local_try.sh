@@ -207,13 +207,19 @@ perso_handoff() {
       # Accepted: the swap, the restart and the health check (the relauncher gives up after 120 s).
       accepted) [[ -n "$accepted" ]] || { accepted=1; step "Hand-off checks (Goalong)" "$t0"; deadline=$(( $(date +%s) + 150 )); } ;;
     esac
+    # A request Goalong claimed (file `claimed`, written before the slow copy) is being installed: never fall back
+    # to the classic installer (two installs at once) and never delete the request. Wait for a final result.
+    if [[ -z "$accepted" && -e "$request/claimed" ]]; then
+      accepted=1; step "Hand-off checks (Goalong)" "$t0"; deadline=$(( $(date +%s) + 150 ))
+    fi
     if (( $(date +%s) >= deadline )); then
       [[ -n "$accepted" ]] && break
       rm -rf "$request"; echo "Goalong did not answer the hand-off; using the installer." >&2; return 10
     fi
     sleep 0.2
   done
-  rm -rf "$request"
+  # Final answer, or Goalong still working on a claimed request: keep the request in the second case.
+  case "$state" in refused|installed|rolled_back) rm -rf "$request" ;; esac
   case "$state" in
     installed) step "Self-update (swap, restart)" "$t0"; return 0 ;;
     refused) echo "Goalong refused this build: $reason" >&2; return 3 ;;

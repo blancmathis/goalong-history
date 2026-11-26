@@ -725,6 +725,14 @@ struct RedScreenRefusal: LocalizedError, Equatable {
         return weakeningStop(for: next)
     }
 
+    /// The stop `writes` needs once the windows in progress are ended, read before ending any (T-057 L4, blocage-05:
+    /// the page « Blocages » refuses a stronger stop before it stops a running « Mot de passe » window). Throws the
+    /// refusal of an unusable range.
+    func idleWeakeningStop(_ writes: [RangeWrite], deleting removed: Set<UUID> = []) throws -> BlockLock? {
+        let next = try staged(writes, deleting: removed)
+        return RedScreenRules.weakeningStop(from: brought(clock()).value, to: next, hasPassword: passwordAvailable())
+    }
+
     private func commitRanges(_ next: RedScreenProgram, asking: Bool = true) throws {
         // A stopped engine says so: a silent no-op would let the page show a rule that was never written.
         guard running else { throw Self.stopped }

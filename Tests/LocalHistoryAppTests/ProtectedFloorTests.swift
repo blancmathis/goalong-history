@@ -332,6 +332,30 @@ import XCTest
         XCTAssertEqual(store.check(.delete(b.id), now: now, calendar: paris), .allow, "removing the free one stays free")
     }
 
+    /// jev-03: a session started while a « Verrouillé » surveillance runs may not apply a weaker effect (85 % → 45 %);
+    /// one at least as strong stays allowed. Nothing written when refused.
+    func testJevSessionMarkCannotWeakenALockedSurveillance() {
+        var a = jevRange(.locked); a.settings = fallingStages
+        let d = defaults(), store = JevSurveillanceStore(defaults: d)
+        store.save(JevSurveillanceDocument(ranges: [a]))
+        var weakStages = fallingStages; weakStages.stages[0].intensity = 45; weakStages.stages[1].intensity = 60
+        XCTAssertTrue(JevSurveillanceStore.score(weakStages) > JevSurveillanceStore.score(a.settings), "B wins by sum")
+        for kind in [JevSessionMark.Kind.own, .focus] {
+            let weak = JevSessionMark(id: UUID(), kind: kind, on: true, start: now, end: now.addingTimeInterval(3600), lock: .free, settings: weakStages)
+            XCTAssertFalse(store.mark(weak, now: now, alive: JevRunningSessions(focus: weak.id)))
+            XCTAssertEqual(store.markRefusal, JevSurveillanceStore.combinedText)
+            XCTAssertTrue(store.document.marks.isEmpty, "nothing written")
+            XCTAssertFalse(store.document.sessionDefault)
+        }
+        let off = JevSessionMark(id: UUID(), kind: .own, on: false, lock: .free, settings: weakStages)
+        XCTAssertTrue(store.mark(off, now: now, alive: JevRunningSessions()), "a session without surveillance is not a weakening")
+        var stronger = fallingStages; stronger.stages[1].intensity = 30 // valid range is 10...85
+        XCTAssertTrue(stronger.isValid && JevSurveillanceStore.isAtLeast(stronger, fallingStages))
+        let ok = JevSessionMark(id: UUID(), kind: .focus, on: true, lock: .free, settings: stronger)
+        XCTAssertTrue(store.mark(ok, now: now, alive: JevRunningSessions(focus: ok.id)))
+        XCTAssertNil(store.markRefusal)
+    }
+
     /// F5: a keychain that cannot read is said, not taken for « nothing protected »; one that cannot write refuses a
     /// change the launch would undo (a stop passed), and lets a hardening through.
     func testKeychainFailureIsToldAndNeverUndoesAStopLater() throws {
@@ -358,6 +382,75 @@ import XCTest
         let d = defaults(), jevFloor = ProtectedFloor.memory()
         (jevFloor.backing as? MemoryFloorBacking)?.failsReads = true
         XCTAssertEqual(JevSurveillanceStore(defaults: d, floor: jevFloor).restoredNotice, ProtectedFloor.unavailableText)
+    }
+    // MARK: Trusted clock (T-057 L4, blocage-04)
+
+    /// 12:00: a « Verrouillé » session until 13:00. The Mac clock is set to 14:00 in the same boot (trusted time stays
+    /// near 12:00). The copy must keep the session, and a recovery from an older generation, or from no file at all,
+    /// must put it back: the lock stays applied.
+    func testAWallClockSetForwardInTheSameBootNeverDropsALockFromTheCopy() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let floor = ProtectedFloor.memory()
+        var wall = now, continuous = 10_000.0
+        let games = list(nil)
+        try BlockingStore(directory: directory, floor: floor).save(BlockingDocument(lists: [games]), now: now)
+        func controller() -> BlockingController {
+            let c = BlockingController(clock: { wall }, store: BlockingStore(directory: directory, floor: floor), calendar: paris,
+                                       continuous: { continuous }, boot: { "boot-1" })
+            addTeardownBlock { @MainActor in c.shutdown() }
+            return c
+        }
+        let first = controller()
+        let before = first.snapshot
+        let id = UUID(), end = now.addingTimeInterval(3_600)
+        try first.startFocusBlock(id: id, listIDs: [games.id], until: end, lock: .locked)
+        XCTAssertTrue(first.activeBlocks.contains { $0.lock == .locked })
+
+        wall = now.addingTimeInterval(7_200); continuous += 70 // 14:00 on the wall, 12:01 in trusted time
+        first.refresh()
+        XCTAssertTrue(first.activeBlocks.contains { $0.lock == .locked }, "the block keeps its trusted end")
+        let copy = try XCTUnwrap(floor.read(BlockingFloor.self, key: ProtectedFloor.blockingKey).value)
+        XCTAssertEqual(copy.sessions.map(\.id), [id], "a save at 14:00 on the wall keeps the session in the copy")
+        first.shutdown()
+
+        // The current file is lost; the previous generation predates the session.
+        let plain = BlockingStore(directory: directory)
+        try plain.save(before, now: now); try plain.save(before, now: now)
+        try Data("abîmé".utf8).write(to: directory.appendingPathComponent("blocking.json"))
+        continuous += 10
+        let second = controller()
+        XCTAssertEqual(second.snapshot.sessions.first { $0.id == id }?.lock, .locked, "the copy puts the session back")
+        XCTAssertEqual(second.snapshot.sessions.first { $0.id == id }?.end, end)
+        XCTAssertTrue(second.activeBlocks.contains { $0.lock == .locked })
+        second.shutdown()
+
+        // Both files lost: the copy's own clock sample decides what is over.
+        for name in ["blocking.json", "blocking.previous.json"] {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            try Data("abîmé".utf8).write(to: directory.appendingPathComponent(name))
+        }
+        continuous += 10
+        let third = controller()
+        XCTAssertEqual(third.snapshot.sessions.first { $0.id == id }?.lock, .locked, "no file: the lock still comes back")
+        XCTAssertTrue(third.activeBlocks.contains { $0.lock == .locked })
+    }
+
+    /// The store alone: a save whose « now » is the trusted time keeps a session the wall clock would call over.
+    func testTheCopyIsJudgedAtTheTrustedNow() throws {
+        let directory = try root().appendingPathComponent("Blocking")
+        let floor = ProtectedFloor.memory(), games = list(nil)
+        var document = BlockingDocument(lists: [games])
+        document.sessions = [BlockSession(listIDs: [games.id], start: now, end: now.addingTimeInterval(3_600), lock: .locked)]
+        document.clock = BlockingClockState(wall: now, continuous: 10_000, boot: "boot-1")
+        try BlockingStore(directory: directory, floor: floor).save(document, now: now)
+        var lost = document; lost.sessions = []
+        try BlockingStore(directory: directory).save(lost, now: now) // the file, by hand
+        let later = now.addingTimeInterval(7_200)
+        let loaded = try BlockingStore(directory: directory, floor: floor).loadRecovering(now: later, trusted: {
+            BlockingClock.trusted(wall: later, continuous: 10_060, boot: "boot-1", last: $0)
+        })
+        XCTAssertEqual(loaded.document.sessions.map(\.lock), [.locked], "same boot: trusted 12:01, the session runs")
+        XCTAssertEqual(try BlockingStore(directory: directory).loadRecovering(now: later).document.sessions.count, 1, "written back")
     }
 }
 #endif

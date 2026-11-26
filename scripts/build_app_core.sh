@@ -329,7 +329,8 @@ fi
 # omit them rather than adding Mach-service exceptions or network entitlements.
 rm -rf "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/XPCServices"
 rm -f "$CONTENTS/Frameworks/Sparkle.framework/XPCServices"
-if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -q '@rpath/Sparkle.framework'; then
+# grep -q exits on the first match; otool then dies of SIGPIPE and pipefail fails the check at random.
+if ! /usr/bin/otool -L "$CONTENTS/MacOS/$EXECUTABLE_NAME" | /usr/bin/grep -F '@rpath/Sparkle.framework' >/dev/null; then
   echo "The app did not link the real Sparkle updater." >&2
   exit 1
 fi

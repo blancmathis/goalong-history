@@ -381,7 +381,14 @@ enum JevRangeWrite: Equatable {
     /// default of the next ones (correction 8: a Blocage session never changes it).
     /// `alive` = the sessions that still exist (the Concentration one, every block, a later one included). Only finished
     /// marks are removed: a mark of a running session is never dropped, however many sessions start (correction 4).
-    func mark(_ mark: JevSessionMark, now: Date, alive: JevRunningSessions) {
+    /// jev-03: refused (false, nothing written, `markRefusal` says why) when the session's settings would lower the effect
+    /// a « Verrouillé » surveillance applies at the same time. The session then runs without its own surveillance.
+    @discardableResult func mark(_ mark: JevSessionMark, now: Date, alive: JevRunningSessions) -> Bool {
+        if error == nil, Self.markWeakens(mark, in: document) {
+            markRefusal = Self.combinedText
+            return false
+        }
+        markRefusal = nil
         var next = error == nil ? document : JevSurveillanceDocument()
         next.marks = Self.pruned(next.marks.filter { $0.id != mark.id }, now: now, alive: alive)
         next.marks.append(mark)
@@ -389,7 +396,36 @@ enum JevRangeWrite: Equatable {
             next.sessionDefault = mark.on
             if mark.on { next.sessionSettings = mark.settings }
         }
-        save(next)
+        return save(next)
+    }
+
+    /// Why the last `mark` was refused; nil when it was written.
+    private(set) var markRefusal: String?
+
+    /// The applied settings (`strongest`) of a locked rule or mark would fall once `mark` is added. A session can run at
+    /// any hour, so every hour of the locked rule counts. Pure; only hardening passes.
+    static func markWeakens(_ mark: JevSessionMark, in document: JevSurveillanceDocument) -> Bool {
+        guard mark.on else { return false }
+        let others = document.marks.filter { $0.id != mark.id && $0.on }
+        var protected: [(settings: JevInterventionSettings, minutes: Set<Int>?)] = []
+        for range in document.ranges where range.lock != .free {
+            protected.append((range.settings, BlockingController.programCoverage(BlockProgram(ranges: [range.program]))))
+        }
+        for other in others where other.lock != .free { protected.append((other.settings, nil)) }
+        for item in protected {
+            var before: [JevInterventionSettings] = []
+            for range in document.ranges {
+                let cover = BlockingController.programCoverage(BlockProgram(ranges: [range.program]))
+                if item.minutes == nil || !cover.isDisjoint(with: item.minutes!) { before.append(range.settings) }
+            }
+            if document.sessionDefault { before.append(document.sessionSettings) }
+            before += others.map(\.settings)
+            guard let was = strongest(before), was == item.settings else { continue }
+            var after = before
+            after.append(mark.settings)
+            if let now = strongest(after), !isAtLeast(now, was) { return true }
+        }
+        return false
     }
 
     /// The marks of sessions that still run. Pure.

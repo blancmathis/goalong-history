@@ -100,6 +100,43 @@ final class PauseRuleTests: XCTestCase {
         XCTAssertEqual(request(policy, usage, at: date(12, 0)).0, .granted(end: date(12, 0, 5), extra: false), "new week, new budget")
     }
 
+    /// T-057 L4 (blocage-03): at 22:00 in Paris, a locked rule's daily budget is used. Moving to Tokyo (already the
+    /// next day) or back, or to New York (same date, later midnight), never hands it back before it would be renewed.
+    func testATimeZoneChangeNeverRenewsAUsedBudgetEarly() {
+        func zone(_ id: String) -> Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: id)!; return c }
+        let paris = calendar, tokyo = zone("Asia/Tokyo"), newYork = zone("America/New_York")
+        let policy = PausePolicy(budgetMinutes: 10)
+        let used = "Les pauses de cette période sont prises. Verrouillé : aucune pause en plus."
+        func ask(_ usage: PauseUsage?, _ now: Date, _ cal: Calendar) -> (PauseDecision, PauseUsage) {
+            PauseEngine.request(policy, usage: usage, lock: .locked, hasPassword: true, proof: .passed, now: now, calendar: cal)
+        }
+        let ten = date(5, 22)
+        var (decision, usage) = ask(nil, ten, paris)
+        XCTAssertEqual(decision, .granted(end: date(5, 22, 10), extra: false))
+        usage = PauseEngine.current(usage, policy: policy, now: date(5, 22, 20), calendar: paris)
+        XCTAssertEqual(ask(usage, date(5, 22, 20), paris).0, .refused(used))
+        // Tokyo: already 2026-10-06 there. The Paris day is not over: no new budget.
+        (decision, usage) = ask(usage, date(5, 22, 30), tokyo)
+        XCTAssertEqual(decision, .refused(used), "an eastern zone does not renew the budget before Paris midnight")
+        XCTAssertEqual(PauseEngine.budgetText(policy, usage: usage, now: date(5, 22, 30), calendar: tokyo).hasPrefix("Pauses : 0 min"), true)
+        // Back to Paris before midnight: still used.
+        XCTAssertEqual(ask(usage, date(5, 23, 50), paris).0, .refused(used))
+        // New York: same date, its midnight is 06:00 in Paris. The budget stays used until then.
+        usage = PauseEngine.current(usage, policy: policy, now: date(5, 23, 55), calendar: newYork)
+        XCTAssertEqual(ask(usage, date(6, 3), newYork).0, .refused(used), "a western zone keeps the period up to its later midnight")
+        // Renewal at the real end of the period.
+        XCTAssertEqual(ask(usage, date(6, 6, 1), newYork).0, .granted(end: date(6, 6, 11), extra: false))
+        // Week and month pools: the same absolute end.
+        for period in [PausePolicy.Period.week, .month] {
+            let pool = PausePolicy(budgetMinutes: 5, period: period)
+            let last = period == .week ? date(11, 23) : date(31, 23)
+            var (_, u) = PauseEngine.request(pool, usage: nil, lock: .locked, hasPassword: true, proof: .passed, now: last, calendar: paris)
+            u = PauseEngine.current(u, policy: pool, now: last.addingTimeInterval(600), calendar: tokyo)
+            XCTAssertEqual(PauseEngine.request(pool, usage: u, lock: .locked, hasPassword: true, proof: .passed,
+                                               now: last.addingTimeInterval(600), calendar: tokyo).0, .refused(used), "\(period)")
+        }
+    }
+
     // Point 4: before each pause: nothing, a wait (1 min to 1 day), a text to retype, or the password.
     func testPoint4Gates() {
         let now = date()

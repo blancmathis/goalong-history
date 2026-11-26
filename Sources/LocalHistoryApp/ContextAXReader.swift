@@ -232,9 +232,13 @@
 
             var urlSnapshot: URLSnapshot?
             if isBrowser, config.captureURLs {
+                // Under a website exclusion or include-only scope, the address is read fresh on every
+                // capture: the same window may show another page, and its new title must not be kept
+                // under the cached, allowed address (capture-01).
                 let shouldProbeURL =
                     cachedBrowserIdentity != windowIdentity
                     || clock.date().throttleElapsed(since: lastURLProbe) >= 1.25
+                    || !config.allowsWebsite(host: nil)
 
                 if shouldProbeURL {
                     let rawURL = AXReader.browserURL(
@@ -330,8 +334,9 @@
                     || lower.hasPrefix("chrome://newtab") || lower.hasPrefix("edge://newtab")
                 result.url = result.isInternalPage ? lower.components(separatedBy: "?")[0].components(separatedBy: "#")[0] : BlockingRules.blockingAddress(raw)
             } else if known, result.bundleIdentifier == "com.apple.Safari" {
-                // An empty Safari start page has no web area. Missing address on real content fails closed.
-                result.isInternalPage = !AXReader.containsWebArea(window)
+                // An empty Safari start page has no web area. Missing address on real content fails closed,
+                // and so does an AX error or a cut walk: only a proven absence is an internal page (blocage-02).
+                result.isInternalPage = AXReader.webAreaPresence(window) == false
             }
             if result.isBrowser, !result.isInternalPage {
                 result.titleKeywordMatches = BlockingRules.matchingTitleKeywords(parameters.blockingKeywords,

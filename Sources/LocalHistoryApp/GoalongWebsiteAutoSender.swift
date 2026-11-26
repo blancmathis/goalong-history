@@ -132,6 +132,17 @@ import AppleScreenTime
     }
     private let hiddenApplications: () -> (String?, String) -> Bool
     /// True when the options select no application and no site, so a send would carry an empty day.
+    /// What the « Masqué » rules hide among the chosen websites and applications, as a comparable value. A prepared
+    /// export is only valid while this stays the same: a rule changed during the preparation revokes it (jev-02).
+    nonisolated static func hiddenSelection(_ options: GoalongSiteExportOptions, isHidden: (String) -> Bool,
+                                            isApplicationHidden: (String?, String) -> Bool,
+                                            names: [String: String] = [:]) -> [String] {
+        var result: [String] = []
+        for domain in options.selectedWebsiteDomains ?? [] where isHidden(domain) { result.append("w:" + domain) }
+        for id in options.selectedApplicationIDs ?? [] where isApplicationHidden(id, names[id] ?? id) { result.append("a:" + id) }
+        return result.sorted()
+    }
+
     nonisolated static func selectsNothing(_ options: GoalongSiteExportOptions) -> Bool {
         !(options.includeApplications && !(options.selectedApplicationIDs ?? []).isEmpty)
             && !(options.includeWebsites && !(options.selectedWebsiteDomains ?? []).isEmpty)
@@ -281,7 +292,17 @@ import AppleScreenTime
             busy = true; status = "Préparation locale du \(GoalongUIFormat.day(key: day))…"
             defer { busy = false }
             let root = root, exporter = exporter, sender = sender, snapshot = current
+            let hiddenBefore = Self.hiddenSelection(daily, isHidden: hiddenWebsites(), isApplicationHidden: hiddenApplications())
             let payload = try await Task.detached { try exporter(root, day, snapshot.options) }.value
+            // A « Masqué » rule changed (or became unreadable) while the export was prepared: this payload is not sent.
+            guard sharingRulesReadable() else {
+                restoreAttempt(previousAttempt, of: current)
+                stopAutomatically(Self.sharingRulesUnreadableReason); return
+            }
+            guard Self.hiddenSelection(daily, isHidden: hiddenWebsites(), isApplicationHidden: hiddenApplications()) == hiddenBefore else {
+                // The day stays to send: the next pass prepares it again under the new rules.
+                restoreAttempt(previousAttempt, of: current); return
+            }
             guard enabled, configuration()?.identifier == snapshot.identifier,
                   configuration()?.origin == snapshot.origin, configuration()?.tokenPath == snapshot.tokenPath else {
                 // Paused or changed during the preparation: nothing was sent, so the day stays to send.

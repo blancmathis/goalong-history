@@ -61,6 +61,8 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         let createdAt: Date
         var privacyRevision: String = "none"
         var pauseRevision: String = "initial"
+        /// What the « Masqué » rules hid among the chosen sources when the export was prepared (jev-02).
+        var hiddenSelection: [String]? = nil
         var transmittedCounts: (devices: Int, applications: Int, websites: Int) {
             guard let value = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
                   let day = (value["days"] as? [[String: Any]])?.first,
@@ -277,6 +279,7 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         busy = true
         defer { busy = false }
         let root = root, exporter = exporter
+        let hiddenBefore = hiddenSelectionNow(snapshot.options, names: catalogNames)
         let privacyRevision = GoalongPrivacyPolicy.load(in: root).revision
         let pause = GoalongGlobalPause.load(in: root)
         do {
@@ -291,12 +294,23 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             try GoalongGlobalPause.revalidate(pause.revision, in: root)
             _ = try GoalongReadableShareData(payload: bytes)
             guard generation == ticket, draft == snapshot, sourceConsent(options),
-                  GoalongPrivacyPolicy.load(in: root).revision == privacyRevision else {
+                  GoalongPrivacyPolicy.load(in: root).revision == privacyRevision,
+                  hiddenSelectionNow(snapshot.options, names: catalogNames) == hiddenBefore else {
                 error = "Les choix ou les autorisations ont changé. Préparez un nouvel aperçu."; return
             }
             preview = Preview(payload: bytes, draft: snapshot, origin: target, tokenPath: tokenPath,
-                              credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision, pauseRevision: pause.revision)
+                              credentialFingerprint: fingerprint, createdAt: Date(), privacyRevision: privacyRevision, pauseRevision: pause.revision,
+                              hiddenSelection: hiddenBefore)
         } catch { self.error = "Aperçu non préparé : \(goalongUserMessage(error))" }
+    }
+    private func catalogNamesNow() -> [String: String] {
+        Dictionary((catalog?.devices ?? []).flatMap { $0.applications }.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
+    /// The « Masqué » rules over the chosen sources now; nil when the rules cannot be read (never equal to a prepared value).
+    private func hiddenSelectionNow(_ options: GoalongSiteExportOptions, names: [String: String]) -> [String]? {
+        guard sharingRulesReadable() else { return nil }
+        return GoalongWebsiteAutoSender.hiddenSelection(options, isHidden: hiddenWebsites(),
+                                                        isApplicationHidden: hiddenApplications(), names: names)
     }
     func confirm(origin: String, tokenPath: String) async {
         guard !busy, reviewed, let approved = preview else { return }
@@ -306,7 +320,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         guard approved.draft == draft, approved.origin == origin.trimmingCharacters(in: .whitespacesAndNewlines),
               approved.tokenPath == tokenPath, Date().timeIntervalSince(approved.createdAt) >= 0, Date().timeIntervalSince(approved.createdAt) <= 900,
               sourceConsent(approved.draft.options),
-              GoalongPrivacyPolicy.load(in: root).revision == approved.privacyRevision else {
+              GoalongPrivacyPolicy.load(in: root).revision == approved.privacyRevision,
+              approved.hiddenSelection == nil || approved.hiddenSelection == hiddenSelectionNow(
+                  approved.draft.options, names: catalogNamesNow()) else {
             invalidate(); error = "L’aperçu ou les autorisations ont changé. Préparez un nouvel aperçu avant l’envoi."; return
         }
         busy = true; error = nil

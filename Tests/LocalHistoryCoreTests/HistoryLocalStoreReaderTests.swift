@@ -97,6 +97,30 @@ final class HistoryLocalStoreReaderTests: XCTestCase {
         XCTAssertEqual(loaded.issues.first?.line, 2)
     }
 
+    func testDayReadAfterTravelKeepsRowsWrittenJustBeforeTheLocalDayStart() throws {
+        // core-01: journal of the London day 2027-01-15, last write 23:59Z; read in Paris
+        // for 16 January, whose first hour is 23:00Z-00:00Z (the row is at 23:30Z).
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("goalong-reader-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let events = root.appendingPathComponent("events", isDirectory: true)
+        try FileManager.default.createDirectory(at: events, withIntermediateDirectories: true)
+        let originalZone = NSTimeZone.default
+        defer { NSTimeZone.default = originalZone }
+        let paris = TimeZone(identifier: "Europe/Paris")!
+        let event = fixtureEvent(id: "london-late", sequence: 1, offset: 15.5 * 3600, kind: .heartbeat)  // 23:30Z
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var data = try encoder.encode(event); data.append(0x0A)
+        let file = events.appendingPathComponent("2027-01-15.jsonl")
+        try data.write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: event.timestamp.addingTimeInterval(29 * 60)], ofItemAtPath: file.path)
+        NSTimeZone.default = paris
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = paris
+        let start = calendar.date(from: DateComponents(year: 2027, month: 1, day: 16))!
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!.addingTimeInterval(-0.001)
+        XCTAssertEqual(HistoryLocalStoreReader(rootDirectory: root).load(start: start, end: end).events.map(\.id), ["london-late"])
+    }
+
     func testDayReadFromAnotherTimeZoneIncludesTheWritersNeighbourJournal() throws {
         // R4-donnees-03: a journal named after the Paris day, read from Tokyo the next day.
         let root = FileManager.default.temporaryDirectory

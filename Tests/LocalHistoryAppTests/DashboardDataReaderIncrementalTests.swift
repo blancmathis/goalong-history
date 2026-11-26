@@ -123,6 +123,30 @@
             XCTAssertEqual(discarded.cachedReceiptDirectoryEstimatedBytes, 0)
         }
 
+        func testDayStaysReadableAfterOtherDaysFilledTheCache() throws {
+            // activite-01: two days of two rows each, cap of three cached rows.
+            let fixture = try makeFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let day1 = makeDay(year: 2026, month: 8, day: 24)
+            let day2 = makeDay(year: 2026, month: 8, day: 25)
+            for (name, day) in [("2026-08-24", day1), ("2026-08-25", day2)] {
+                var data = Data()
+                for index in 0..<2 {
+                    data.append(try line(event(id: "\(name)-\(index)", timestamp: day.addingTimeInterval(TimeInterval(index)))))
+                }
+                try data.write(to: fixture.events.appendingPathComponent(name + ".jsonl"))
+            }
+            var limits = DashboardDataReader.Limits.production
+            limits.maximumCachedRows = 3
+            limits.maximumCachedEstimatedBytes = .max
+            let reader = DashboardDataReader(rootDirectory: fixture.root, limits: limits)
+            XCTAssertEqual(reader.snapshot(for: day1).eventCount, 2)
+            XCTAssertEqual(reader.snapshot(for: day2).eventCount, 2)
+            reader.discardTransientCaches()
+            XCTAssertEqual(reader.snapshot(for: day2).eventCount, 2)
+            XCTAssertEqual(reader.snapshot(for: day1).eventCount, 2)
+        }
+
         func testTypedJournalsShareOneGlobalBudgetWithoutLosingIncrementalRefresh() throws {
             let fixture = try makeFixture()
             defer { try? FileManager.default.removeItem(at: fixture.root) }

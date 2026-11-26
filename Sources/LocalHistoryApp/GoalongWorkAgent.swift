@@ -172,6 +172,16 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
         backgroundTimer = timer
     }
 
+    /// The verdicts the agent may read: only the contexts that pass the sharing filter, each with the answer that
+    /// applies to it (own, rule or agent). Rules are not sent as such: an excluded app's rule would name its task.
+    nonisolated static func networkProjection(_ verdicts: GoalongWorkVerdicts, allowed: [String: GoalongWorkContext.Label]) -> GoalongWorkVerdicts {
+        var contexts: [String: GoalongWorkAssignment] = [:]
+        for (key, label) in allowed {
+            if let assignment = verdicts.resolution(key: key, label: label)?.assignment { contexts[key] = assignment }
+        }
+        return GoalongWorkVerdicts(contexts)
+    }
+
     func stopBackgroundSchedule() { backgroundTimer?.invalidate(); backgroundTimer = nil }
 
     func backgroundTick(now: Date = Date()) {
@@ -371,12 +381,18 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                       GoalongAnalysisSelection.load(root: root).revision == selectionRevision else {
                     throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
                 }
-                let knownTasks = try store.knownTasks.prefix(GoalongWorkClassification.maximumKnownTasks).map {
-                    try maskedTasks[$0] ?? filter.text($0)
-                }
-                let verdicts = try filter.verdicts(store.verdicts, cache: &maskedTasks)
                 // Newest first, so equal scores keep the most recent answers.
                 let candidates = try filter.candidates(store.corrections).reversed().map { $0 }
+                // Only what the exclusions and the selection allow leaves the Mac: task names and neighbour rows come
+                // from the contexts that pass the filter, never from an excluded app or site (jev-01).
+                var allowedLabels: [String: GoalongWorkContext.Label] = [:]
+                for entry in readable { for (key, label) in entry.observation.labels where filter.label(label) != nil { allowedLabels[key] = label } }
+                let projected = Self.networkProjection(store.verdicts, allowed: allowedLabels)
+                var allowedTasks = Set(projected.contexts.values.compactMap(\.task))
+                for candidate in candidates { if let task = candidate.assignment.task { allowedTasks.insert(task) } }
+                let knownTasks = try store.knownTasks.filter { allowedTasks.contains($0) }
+                    .prefix(GoalongWorkClassification.maximumKnownTasks).map { try maskedTasks[$0] ?? filter.text($0) }
+                let verdicts = try filter.verdicts(projected, cache: &maskedTasks)
                 // One call: the longest groups that fit in the tokens left today.
                 var batch = Array(pending.keys.prefix(GoalongWorkClassification.maximumContextsPerRequest))
                 var request: GoalongWorkClassification.Request
@@ -396,6 +412,18 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                 let privacyRevision = filter.policy.revision
                 guard store.markAsked(batch, revision: revision, day: dayName) else { throw GoalongWorkClassification.Failure.invalid("La tentative n’a pas pu être enregistrée. Rien n’a été envoyé.") }
                 let sentPrompt = prompt
+                // Read again on the main actor right before `turn/start`: a consent, a definition or a run that changed
+                // while the app server answered `thread/start` stops the send (jev-04).
+                let beforeSend: () throws -> Void = { [weak self] in
+                    try DispatchQueue.main.sync {
+                        try MainActor.assumeIsolated {
+                            guard let self, self.operation == id, self.readiness == .ready, self.store.revision == revision,
+                                  userInitiated || self.store.backgroundConsent else {
+                                throw GoalongWorkClassification.Failure.invalid("Une autorisation a changé : classement arrêté avant l’envoi.")
+                            }
+                        }
+                    }
+                }
                 // Counted when sent, at the larger of its estimate and the margin (the mean real cost of a call): a call
                 // that fails (timeout, refused answer, server error) still counts in the cap and in the calls of the day,
                 // so failing calls never pass the 24 000 tokens, however many times a pass is asked by hand.
@@ -406,7 +434,8 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                         let directory = try GoalongSiteAnalysisModel.makeWorkingDirectory()
                         defer { try? FileManager.default.removeItem(at: directory) }
                         return try session.generateWorkClassification(prompt: sentPrompt, privacyRevision: privacyRevision,
-                                                                      selectionRevision: selectionRevision, workingDirectory: directory)
+                                                                      selectionRevision: selectionRevision, workingDirectory: directory,
+                                                                      beforeSend: beforeSend)
                     }.value
                 }
                 let after = await Task.detached(priority: .utility) { session.readAccountLimits() }.value

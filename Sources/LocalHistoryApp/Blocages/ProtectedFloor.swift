@@ -148,6 +148,9 @@ struct BlockingFloor: Codable, Equatable {
     var password: BlockPasswordLock?
     var pauses: [UUID: PauseUsage]?
     var programSkips: [UUID: Date]?
+    /// T-057 L4 (blocage-04): the document's trusted-clock sample at this save. With both files lost, the load still
+    /// measures « now » in the frame the ends were written in. Nil in a copy of an older build.
+    var clock: BlockingClockState?
 
     var isEmpty: Bool { lists.isEmpty && sessions.isEmpty && freeze == nil && password == nil }
 
@@ -166,12 +169,16 @@ struct BlockingFloor: Codable, Equatable {
         guard !floor.isEmpty else { return nil }
         floor.pauses = document.pauses
         floor.programSkips = document.programSkips
+        floor.clock = document.clock
         return floor
     }
 
     /// `document` with every protected item of `floor` it lost or weakened put back. Hardening kept. Count = items restored.
     static func restore(_ document: BlockingDocument, floor: BlockingFloor, now: Date) -> (document: BlockingDocument, restored: Int) {
         var next = document, count = 0
+        // T-057 L4 (blocage-04): a file without a clock sample (lost, reset) takes the copy's, so the ends put back
+        // stay in the trusted frame they were written in.
+        if next.clock == nil { next.clock = floor.clock }
         let used = Set(floor.sessions.filter { $0.end > now }.flatMap(\.listIDs))
         for old in floor.lists where isProtected(old, now: now) || used.contains(old.id) {
             guard let index = next.lists.firstIndex(where: { $0.id == old.id }) else { next.lists.append(old); count += 1; continue }
