@@ -647,6 +647,7 @@ private struct FocusDayAgendaRow: View {
     @State private var agenda: FocusAgenda
     private let newAgenda: Bool
     @State private var repeatAnchors = false
+    @State private var usePlanContext = false
     @State private var optionsOpen = false
     @State private var error: String?
 
@@ -658,6 +659,7 @@ private struct FocusDayAgendaRow: View {
         localAgenda.timeZoneID = TimeZone.current.identifier
         _agenda = State(initialValue: localAgenda)
         _repeatAnchors = State(initialValue: controller.settings.agendaTemplate != nil)
+        _usePlanContext = State(initialValue: controller.settings.usePlanContext == true)
     }
 
     var body: some View {
@@ -715,7 +717,7 @@ private struct FocusDayAgendaRow: View {
                     Toggle("Replacer les actions souples après un changement", isOn: $agenda.autoAdjust)
                     Stepper("Rappels maximum par jour : \(agenda.reminderLimit)", value: $agenda.reminderLimit, in: 1...32)
                     VStack(alignment: .leading, spacing: 5) {
-                        Toggle("Donner à Jev l’action en cours", isOn: planContextBinding)
+                        Toggle("Donner à Jev l’action en cours", isOn: $usePlanContext)
                         Text("Si vous avez déjà consenti au service Jev, seuls le titre et la première action de la séance choisie lui seront transmis. Les questions des agents et la documentation restent exclues.")
                             .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                         Text("Si l’action ne tient pas entière dans l’envoi, elle sera omise et Goalong vous l’indiquera.")
@@ -733,15 +735,6 @@ private struct FocusDayAgendaRow: View {
                 }.padding(.top, 12)
             }.font(.system(size: 13))
         }
-    }
-
-    private var planContextBinding: Binding<Bool> {
-        Binding(get: { controller.settings.usePlanContext == true }, set: { enabled in
-            var settings = controller.settings
-            settings.usePlanContext = enabled
-            do { try controller.updateSettings(settings) }
-            catch { self.error = FocusDayUI.message(error) }
-        })
     }
 
     private func append(item: FocusPlanItem?) {
@@ -768,10 +761,9 @@ private struct FocusDayAgendaRow: View {
         }
         var updated = plan; updated.agenda = agenda
         do {
-            try controller.applyDayPlan(updated, expectedRevision: plan.effectiveRevision, reason: "Agenda préparé")
+            try controller.saveAgendaDraft(updated, expectedRevision: plan.effectiveRevision,
+                                           repeatTemplate: repeatAnchors ? template : nil, usePlanContext: usePlanContext)
             plan = controller.plan
-            if repeatAnchors { try controller.updateAgendaTemplate(template) }
-            else if controller.settings.agendaTemplate != nil { try controller.updateAgendaTemplate(nil) }
             dismiss()
         } catch { self.error = FocusDayUI.message(error) }
     }

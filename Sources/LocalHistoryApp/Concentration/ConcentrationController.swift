@@ -1116,6 +1116,17 @@ extension ConcentrationController {
             try applyDayPlan(value, expectedRevision: plan.effectiveRevision, reason: "Repères quotidiens installés")
         }
     }
+    /// The agenda editor's Save: day, Jev context choice and repeated anchors apply together on Save only.
+    /// Cancelling the editor never reaches this method, so a draft choice is never kept by Cancel.
+    func saveAgendaDraft(_ updated: FocusPlan, expectedRevision: Int, repeatTemplate: FocusAgenda?, usePlanContext: Bool) throws {
+        guard repeatTemplate?.validTemplate ?? true else { throw FocusFailure.invalidArgument }
+        try applyDayPlan(updated, expectedRevision: expectedRevision, reason: "Agenda préparé")
+        if usePlanContext != (settings.usePlanContext == true) {
+            var next = settings; next.usePlanContext = usePlanContext; try updateSettings(next)
+        }
+        if let repeatTemplate { try updateAgendaTemplate(repeatTemplate) }
+        else if settings.agendaTemplate != nil { try updateAgendaTemplate(nil) }
+    }
     private func preparedStart(_ id: UUID, in source: FocusPlan) throws -> FocusPlan {
         guard var agenda = source.agenda, let i = agenda.slots.firstIndex(where: { $0.id == id }),
               !agenda.slots[i].state.isFinished,
