@@ -880,7 +880,9 @@
                         .accessibilityIdentifier("menubar-red-screen-intensity")
                     Text(GoalongUIFormat.percent(model.redScreen.intensity * 100))
                         .font(.system(size: 12).monospacedDigit())
-                        .frame(width: 36, alignment: .trailing)
+                        .lineLimit(1)
+                        .frame(minWidth: 36, alignment: .trailing)
+                        .fixedSize(horizontal: true, vertical: false)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
@@ -896,7 +898,9 @@
                         .accessibilityIdentifier("menubar-red-screen-brightness")
                     Text(GoalongUIFormat.percent(model.redScreen.filterBrightness * 100))
                         .font(.system(size: 12).monospacedDigit())
-                        .frame(width: 36, alignment: .trailing)
+                        .lineLimit(1)
+                        .frame(minWidth: 36, alignment: .trailing)
+                        .fixedSize(horizontal: true, vertical: false)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
