@@ -63,7 +63,8 @@ let package = Package(
         .testTarget(name: "AmbianceTests", dependencies: ["Ambiance", "OndeCore", "GoalongHeadlessTestSupport"], path: "Features/Ambiance/Tests"),
         .executableTarget(name: "GoalongRelauncher", dependencies: ["GoalongGuardCore"], path: "Sources/GoalongRelauncher"),
         // Kill protection during a severe block (spec K): pure logic shared by the guard and the app.
-        .target(name: "GoalongGuardCore", path: "Sources/GoalongGuardCore"),
+        .target(name: "GoalongGuardCore", path: "Sources/GoalongGuardCore",
+                linkerSettings: [.linkedFramework("Security", .when(platforms: [.macOS]))]),
         .executableTarget(
             name: "GoalongGuard",
             dependencies: ["GoalongGuardCore"],

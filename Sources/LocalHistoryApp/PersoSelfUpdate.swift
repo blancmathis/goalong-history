@@ -98,10 +98,12 @@ import GoalongGuardCore
         if let reason = policy(candidate, target: target) { return reason }
         // installation-02: claim before the slow copy and signature check. A claimed request is ours; the
         // script must not fall back to the installer, and removing the request cancels before the swap.
-        guard files.writeResult(request, .init(state: PersoUpdateFiles.Result.claimed)) else {
+        // L1L2-02: the claim is the atomic rename; the result only reports it.
+        guard files.claim(request) else {
             busy = false
-            return nil // the request vanished: nothing to answer
+            return nil // the script cancelled it (or it vanished): never install it
         }
+        files.writeResult(request, .init(state: PersoUpdateFiles.Result.claimed))
         // Check the copy we install, in a folder beside us (same volume, so the swap is atomic).
         let staged = PersoStage.stagedApp(for: target, request: request)
         let stageDir = staged.deletingLastPathComponent()
@@ -161,14 +163,20 @@ import GoalongGuardCore
                 self.finishRefused(request, stageDir: stageDir, reason: "demande annulée")
                 return
             }
+            // One installation at a time: never swap while Sparkle relaunches for its own update (L1L2-08).
+            guard SoftwareUpdateManager.shared.acquirePersoRelaunch() else {
+                self.process?.terminate()
+                self.finishRefused(request, stageDir: stageDir, reason: "une mise à jour Sparkle est en cours")
+                return
+            }
             do { try PersoStage.swap(target, staged) } catch {
+                SoftwareUpdateManager.shared.abandonPersoRelaunch()
                 self.process?.terminate()
                 self.finishRefused(request, stageDir: stageDir, reason: error.localizedDescription)
                 return
             }
             // The guard waits while the relauncher (now at the installed path) lives (installation-05).
             GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration, request: request)
-            SoftwareUpdateManager.shared.markRelaunchingForPersoUpdate()
             // `finish` runs inside a main-queue block: quitting from there would hang in `terminate` (2026-11-22).
             AppDelegate.terminateFromRunLoop()
         }

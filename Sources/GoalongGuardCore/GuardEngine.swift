@@ -15,6 +15,8 @@ public struct GuardEnvironment {
     public var resume: (Int32) -> Void = { _ = kill($0, SIGCONT) }
     /// The proof process of a lease reason is alive (Autoupdate or goalong-relauncher of this bundle).
     public var proofAlive: (GuardLease) -> Bool = { _ in false }
+    /// Longest total wait for one planned relaunch (tests shorten it).
+    public var leaseMaximum: TimeInterval = GuardLease.maximumDuration
     /// False once the app bundle is gone (Info.plist missing): the guard ends for good.
     public var bundlePresent: () -> Bool = { true }
     /// True when the guard's own executable was replaced (update): exit 75 so launchd starts the new one.
@@ -80,6 +82,11 @@ public final class GuardEngine {
     private var relaunching = false
     private var leaseTimes: [TimeInterval] = []
     private var leaseHonoured = false
+    /// Continuous time the current lease wait began: the cap counts from here and is never renewed (L1L2-01).
+    private var leaseHonouredAt: TimeInterval?
+    /// The perso lease honoured for a death, and when. A candidate the guard found after that honour and saw
+    /// die before the relauncher moved the lease to it continues the same transaction (L1L2-07).
+    private var persoTransaction: (request: String, parentPID: Int32, honouredAt: TimeInterval)?
     /// Last honoured `session_end`: the dead pid and the continuous time of that death.
     private var sessionEndHonoured: (pid: Int32, at: TimeInterval)?
     /// Continuous times of loginwindow's last session-end and cancel announcements (this process only).
@@ -162,7 +169,17 @@ public final class GuardEngine {
         input.death = death
         input.release = death == nil && watchedPID != nil ? nil : files.readRelease()
         input.lease = watchedPID != nil ? nil : files.readLease()
+        if appSpeaks { persoTransaction = nil }
+        // L1L2-07: the lease still names the parent of a perso transaction whose candidate just died: same
+        // transaction, same proof, same cap. Never any other lease.
+        if var lease = input.lease, let transaction = persoTransaction, let death, death.pid != lease.pid,
+           lease.reason == GuardLease.persoUpdate, lease.request == transaction.request, lease.pid == transaction.parentPID {
+            lease.pid = death.pid
+            input.lease = lease
+        }
         if let lease = input.lease { input.leaseProofAlive = environment.proofAlive(lease) }
+        input.leaseMaximum = environment.leaseMaximum
+        input.leaseWaited = leaseHonoured ? leaseHonouredAt.map { continuous - $0 } ?? 0 : 0
         leaseTimes.removeAll { continuous - $0 >= 3600 }
         input.leasesInLastHour = leaseTimes.count - (leaseHonoured ? 1 : 0)
         input.sessionEndWaitOver = death != nil && continuous - deathContinuous >= environment.sessionEndWait
@@ -199,7 +216,13 @@ public final class GuardEngine {
             startPolling()
             scheduleWake(after: deathContinuous + environment.sessionEndWait - continuous)
         case .waitForLease(let until):
-            if !leaseHonoured { leaseHonoured = true; leaseTimes.append(continuous); environment.log("waiting for a planned relaunch") }
+            if !leaseHonoured {
+                leaseHonoured = true; leaseHonouredAt = continuous; leaseTimes.append(continuous)
+                if let lease = input.lease, lease.reason == GuardLease.persoUpdate, let request = lease.request {
+                    persoTransaction = (request, lease.pid, continuous)
+                }
+                environment.log("waiting for a planned relaunch")
+            }
             startPolling()
             scheduleWake(after: until - wall.timeIntervalSince1970)
         }
@@ -251,7 +274,13 @@ public final class GuardEngine {
         watchedPID = nil
         death = GuardInput.Death(pid: pid, at: wall.timeIntervalSince1970)
         deathContinuous = continuous
-        leaseHonoured = false
+        // A candidate seen after the perso lease was honoured, dead before the lease moved to it: the wait
+        // goes on as one transaction (no new quota, same cap). Any other death starts afresh.
+        if let transaction = persoTransaction, leaseHonoured, watchedSince >= transaction.honouredAt {
+            environment.log("perso candidate \(pid) ended: same planned relaunch")
+        } else {
+            leaseHonoured = false; leaseHonouredAt = nil; persoTransaction = nil
+        }
         gapStart = wall.timeIntervalSince1970
         environment.log("app \(pid) ended (healthy: \(healthy))")
         evaluate()
@@ -260,6 +289,7 @@ public final class GuardEngine {
     private func relaunch() {
         guard !relaunching else { return }
         relaunching = true
+        persoTransaction = nil
         attemptLaunch(attempt: 0)
     }
 

@@ -49,6 +49,8 @@ jobs:
           bash scripts/test_verify_published_update_feed.sh
           bash scripts/test_build_number_policy.sh
           bash scripts/test_local_try.sh
+          bash scripts/test_perso_handoff.sh
+          bash scripts/test_install_relaunch.sh
           xcrun swiftc -typecheck scripts/verify_update_archive.swift
           python3 scripts/test_update_policy.py
           python3 scripts/test_permission_requirement_policy.py

@@ -1,5 +1,6 @@
 #if os(macOS)
     import XCTest
+    import GoalongGuardCore
     import Sparkle
     @testable import LocalHistoryApp
 
@@ -83,6 +84,36 @@
             XCTAssertFalse(SoftwareUpdateManager.isHeldSessionRefusal(nil))
             XCTAssertFalse(SoftwareUpdateManager.isHeldSessionRefusal(
                 NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue))))
+        }
+
+        /// L1L2-08: a perso swap holds the guard lease; Sparkle's willRelaunch then its abort (« no update »)
+        /// leave that lease untouched, on the real files. Sparkle starts no install while perso owns the relaunch.
+        func testSparkleNeverOverwritesAPersoLease() throws {
+            let root = GuardSystem.realPath(FileManager.default.temporaryDirectory)
+                .appendingPathComponent("perso-lease-\(UUID().uuidString)", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let files = GuardFiles(directory: root.appendingPathComponent("Blocking", isDirectory: true))
+            XCTAssertTrue(files.writeMarker(until: Date().addingTimeInterval(600)))
+            var ownership = UpdateRelaunchOwnership()
+            XCTAssertTrue(ownership.mark(.perso))
+            GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration, request: "req-7", files: files)
+            let perso = try XCTUnwrap(files.readLease())
+
+            SoftwareUpdateManager.sparkleWillRelaunch(&ownership, files: files)
+            XCTAssertEqual(files.readLease(), perso, "willRelaunch kept the perso lease")
+            SoftwareUpdateManager.sparkleDidAbort(&ownership, files: files)
+            XCTAssertEqual(files.readLease()?.reason, GuardLease.persoUpdate)
+            XCTAssertEqual(files.readLease()?.request, "req-7")
+            XCTAssertFalse(SoftwareUpdateManager.sparkleMayRun(.updates, persoOwnsRelaunch: true))
+
+            // Sparkle alone: its own lease, removed by its own abort.
+            files.removeLease(reason: GuardLease.persoUpdate, request: "req-7")
+            var sparkle = UpdateRelaunchOwnership()
+            SoftwareUpdateManager.sparkleWillRelaunch(&sparkle, files: files)
+            XCTAssertEqual(files.readLease()?.reason, GuardLease.update)
+            XCTAssertFalse(sparkle.mark(.perso), "no perso swap while Sparkle relaunches")
+            SoftwareUpdateManager.sparkleDidAbort(&sparkle, files: files)
+            XCTAssertNil(files.readLease())
         }
 
         func testClickOnDetectedUpdateReadsTheFeedAgainAndKeepsTheNewestVersion() {

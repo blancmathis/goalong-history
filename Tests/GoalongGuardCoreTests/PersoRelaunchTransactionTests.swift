@@ -158,7 +158,8 @@ final class PersoGuardLeaseTests: XCTestCase {
         ownership.mark(.sparkle)
         XCTAssertFalse(ownership.sparkleAborted(), "Sparkle never takes over a perso swap")
         var sparkle = UpdateRelaunchOwnership()
-        sparkle.mark(.sparkle)
+        XCTAssertTrue(sparkle.mark(.sparkle))
+        XCTAssertFalse(sparkle.mark(.perso), "one installation at a time (L1L2-08)")
         XCTAssertTrue(sparkle.sparkleAborted())
         XCTAssertFalse(sparkle.isRelaunching)
     }

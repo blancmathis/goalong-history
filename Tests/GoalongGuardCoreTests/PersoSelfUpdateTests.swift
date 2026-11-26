@@ -166,4 +166,39 @@ final class PersoSelfUpdateTests: XCTestCase {
         try FileManager.default.removeItem(at: files.request("r1"))
         XCTAssertFalse(files.stillOwned("r1"), "the script cancelled: no swap")
     }
+
+    // L1L2-02: one atomic rename decides ownership between scripts/perso_handoff.sh and the app.
+    private func handoffCancel(_ request: URL) throws -> Int32 {
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("scripts/perso_handoff.sh")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "source \"$1\"; perso_handoff_cancel \"$2\"", "bash", script.path, request.path]
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
+    private func makeRequest(_ files: PersoUpdateFiles, _ id: String) throws {
+        try FileManager.default.createDirectory(at: files.request(id), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: files.request(id).appendingPathComponent(PersoUpdateFiles.requestFile))
+    }
+
+    func testScriptCancelBeforeClaimMeansTheAppNeverInstalls() throws {
+        let files = PersoUpdateFiles(root: temp)
+        try makeRequest(files, "r2")
+        XCTAssertEqual(try handoffCancel(files.request("r2")), 0, "the script took it back")
+        XCTAssertFalse(files.claim("r2"), "a cancelled request is never claimed")
+        XCTAssertEqual(files.pendingRequests(), [])
+    }
+
+    func testClaimBeforeScriptCancelKeepsTheRequestWithTheApp() throws {
+        let files = PersoUpdateFiles(root: temp)
+        try makeRequest(files, "r3")
+        XCTAssertEqual(files.pendingRequests(), ["r3"])
+        XCTAssertTrue(files.claim("r3"))
+        XCTAssertFalse(files.claim("r3"), "claimed once")
+        XCTAssertNotEqual(try handoffCancel(files.request("r3")), 0, "the script must not fall back")
+        XCTAssertEqual(files.pendingRequests(), [], "a claimed request is not scanned again")
+    }
 }

@@ -57,32 +57,48 @@ func endLease() {
 }
 /// One deadline per phase (installation-04): the parent's quit deadline ends with the parent.
 var timeline = RelauncherTimeline(perso: persoRequest != nil, now: GuardSystem.continuousSeconds())
-/// Puts the old app back, reopens it in the background and reports. Called once at most.
+/// Open requests still without an answer from LaunchServices (left on its own queue, never on main).
+let pendingOpens = DispatchGroup()
+/// Puts the old app back, reopens it in the background and reports. Called once at most (L1L2-03, L1L2-06).
 func persoRollBack(_ reason: String, newApp: NSRunningApplication?) -> Never {
     timeline.finish()
     guard let request = persoRequest, let target = persoTarget else { exit(72) }
-    if let newApp, !newApp.isTerminated {
-        // The guard must not reopen the candidate we stop (its pid now holds the lease).
-        holdLease(pid: newApp.processIdentifier)
-        // A normal quit could ask for the blocking password; the old app comes straight back.
-        newApp.forceTerminate()
-        let until = Date().addingTimeInterval(5)
-        while !newApp.isTerminated, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
-    }
     let staged = PersoStage.stagedApp(for: target, request: request)
-    let restored = (try? PersoSwapFinish.finish(target: target, staged: staged, healthy: false)) != nil
-    if restored {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        configuration.createsNewApplicationInstance = false
-        let done = DispatchSemaphore(value: 0)
-        NSWorkspace.shared.openApplication(at: target, configuration: configuration) { _, _ in done.signal() }
-        _ = done.wait(timeout: .now() + 10)
-    }
-    // The guard watches the restored app (or reopens it) from here.
-    endLease()
-    persoFiles.writeResult(request, .init(state: PersoUpdateFiles.Result.rolledBack,
-                                          reason: restored ? reason : reason + " ; retour arrière impossible"))
+    let executableName = Bundle(url: target)?.infoDictionary?["CFBundleExecutable"] as? String ?? ""
+    let targetExecutable = target.appendingPathComponent("Contents/MacOS/\(executableName)").path
+    var rollback = PersoRollback(
+        parentPID: parentPID,
+        candidates: {
+            var pids = executableName.isEmpty ? [] : GuardProcesses.pids(executable: targetExecutable)
+            if let newApp, !pids.contains(newApp.processIdentifier) { pids.append(newApp.processIdentifier) }
+            return pids
+        },
+        holdLease: { holdLease(pid: $0) },
+        // A normal quit could ask for the blocking password; the old app comes straight back.
+        terminate: { kill($0, SIGKILL) },
+        isAlive: { GuardProcesses.isAlive($0) },
+        restore: { (try? PersoSwapFinish.finish(target: target, staged: staged, healthy: false)) != nil },
+        parentAlive: { GuardProcesses.isAlive(parentPID) },
+        endLease: { endLease() },
+        report: { restored in
+            persoFiles.writeResult(request, .init(state: PersoUpdateFiles.Result.rolledBack,
+                                                  reason: restored ? reason : reason + " ; retour arrière impossible"))
+        },
+        open: {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            configuration.createsNewApplicationInstance = false
+            let done = DispatchSemaphore(value: 0)
+            var opened: Int32?
+            NSWorkspace.shared.openApplication(at: target, configuration: configuration) { app, _ in
+                if let app, !app.isTerminated { opened = app.processIdentifier }
+                done.signal()
+            }
+            return done.wait(timeout: .now() + 10) == .success ? opened : nil
+        })
+    // A launch whose answer is late still creates its process: wait for it, then the scan stops it.
+    rollback.settleOpen = { _ = pendingOpens.wait(timeout: .now() + 35) }
+    _ = rollback.run()
     exit(73)
 }
 var openedApp: NSRunningApplication?
@@ -130,7 +146,9 @@ func reopen(attempt: Int) {
     // macOS may also reopen after its permission prompt. Reuse that copy, never start two recorders.
     configuration.createsNewApplicationInstance = false
     configuration.arguments = persoRequest == nil ? ["--permission-recovery-complete"] : []
+    pendingOpens.enter()
     NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { app, error in
+        pendingOpens.leave()
         DispatchQueue.main.async {
             // A late answer after the reopen deadline: the rollback already decided.
             guard timeline.phase == .reopening else { return }

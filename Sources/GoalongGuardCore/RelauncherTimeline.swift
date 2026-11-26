@@ -95,10 +95,17 @@ public struct UpdateRelaunchOwnership: Equatable, Sendable {
 
     public var isRelaunching: Bool { owner != nil }
 
-    public mutating func mark(_ owner: Owner) {
-        // A perso swap is final: Sparkle never takes it over.
-        if self.owner == .perso { return }
+    /// True when `owner` now holds the relaunch (L1L2-08). One installation at a time: a perso swap is
+    /// final and Sparkle never takes it over; a perso swap never starts while Sparkle relaunches.
+    @discardableResult public mutating func mark(_ owner: Owner) -> Bool {
+        if let current = self.owner { return current == owner }
         self.owner = owner
+        return true
+    }
+
+    /// A perso swap that failed before it happened gives the state back.
+    public mutating func persoAbandoned() {
+        if owner == .perso { owner = nil }
     }
 
     /// True when the caller must also remove Sparkle's lease.

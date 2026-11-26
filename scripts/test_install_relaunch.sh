@@ -1,68 +1,116 @@
 #!/bin/bash
-# L1 (T-057): after the quit request, every exit of install_from_source.sh reopens the app in the background
-# (open -g -j). No real Goalong, no /Applications, no window: pgrep/pkill/open are shell functions.
+# L1 (T-057) and L1L2-04/05: after the quit request, every exit of install_from_source.sh reopens the app in the
+# background (open -g -j); a failed open of the new app puts the old one back and opens it; a quit after the
+# password timeout reopens the app with no time limit, unless a newer run took that duty over.
+# No real Goalong, no /Applications, no window: pgrep/pkill/open are shell functions; "Goalong" is a sleep.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_ROOT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/goalong-relaunch-test.XXXXXX")"
-trap '/bin/rm -rf "$TEST_ROOT"' EXIT
+APP_PIDS=()
+trap 'for p in "${APP_PIDS[@]:-}"; do [[ -z "$p" ]] || kill "$p" 2>/dev/null || true; done; /bin/rm -rf "$TEST_ROOT"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-run_case() { # NAME BODY  -> prints OPEN_CALLS lines and STATUS
+# Each case: HOME, a target app holding a marker file, OPEN_LOG lines "open <args> marker=<marker seen>".
+# The fake open fails when OPEN_FAILS_FOR equals the marker it sees.
+run_case() { # NAME BODY [LATE_DIR]
   local name="$1" body="$2" dir="$TEST_ROOT/$1"
   /bin/mkdir -p "$dir/Home/Library/Logs" "$dir/Applications/Goalong History.app"
+  echo new >"$dir/Applications/Goalong History.app/marker"
   HOME="$dir/Home" OPEN_LOG="$dir/open.log" TARGET="$dir/Applications/Goalong History.app" \
-    GOALONG_LATE_RELAUNCH_WAIT_SECONDS=5 /bin/bash -c '
+    GOALONG_LATE_QUIT_DIR="${3:-$dir/late}" GOALONG_LATE_RELAUNCH_WAIT_SECONDS=1 /bin/bash -c '
     source "$1"; shift
     LOG_FILE="$HOME/Library/Logs/i.log"; : >"$LOG_FILE"
-    /usr/bin/open() { echo "open $*" >>"$OPEN_LOG"; }
-    /bin/sleep() { :; }
+    /usr/bin/open() {
+      local seen; seen="$(/bin/cat "${@: -1}/marker" 2>/dev/null || echo none)"
+      echo "open $* marker=$seen" >>"$OPEN_LOG"
+      [[ "$seen" != "${OPEN_FAILS_FOR:-}" ]]
+    }
+    /bin/sleep() { command /bin/sleep 0.02; }
     TARGET_APP="$TARGET"
     trap cleanup EXIT
     eval "$1"' _ "$SCRIPT_DIR/install_from_source.sh" "$body" >"$dir/out.log" 2>&1 && echo 0 >"$dir/status" || echo $? >"$dir/status"
 }
 opens() { /bin/cat "$TEST_ROOT/$1/open.log" 2>/dev/null || true; }
+status_of() { /bin/cat "$TEST_ROOT/$1/status"; }
+marker_of() { /bin/cat "$TEST_ROOT/$1/Applications/Goalong History.app/marker" 2>/dev/null || echo none; }
+wait_for_open() { # LOG_NAME TENTHS: 0 when an open appears
+  local i; for (( i = 0; i < $2; i++ )); do [[ -s "$TEST_ROOT/$1/open.log" ]] && return 0; /bin/sleep 0.1; done; return 1
+}
+start_app() { /bin/sleep 300 & APP_PID=$!; APP_PIDS+=("$APP_PID"); }
+# Replacement in progress: the old app is the backup (marker old), the new one is at the target (marker new).
+REPLACED='/usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
+  quit_running_goalong "Goalong History"
+  BACKUP_APP="$TARGET.bak"; INSTALL_STAGE_ROOT="$(dirname "$TARGET")/stage"; /bin/mkdir -p "$INSTALL_STAGE_ROOT" "$BACKUP_APP"
+  echo old >"$BACKUP_APP/marker"; ORIGINAL_TARGET_PRESENT=1; REPLACEMENT_ACTIVE=1'
 
 # 1. A step fails after the quit (under set -e): the app is reopened with -g -j, status kept.
-run_case fail_after_quit 'pgrep() { :; }; /usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
+run_case fail_after_quit '/usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
   quit_running_goalong "Goalong History"; false'
-grep -Fq -- 'open -g -j' <<<"$(opens fail_after_quit)" || fail "no background reopen after a failure post-quit: $(opens fail_after_quit)"
-[[ "$(/bin/cat "$TEST_ROOT/fail_after_quit/status")" != 0 ]] || fail "failure status was swallowed"
+grep -F -- 'open -g -j' <<<"$(opens fail_after_quit)" >/dev/null || fail "no background reopen after a failure post-quit: $(opens fail_after_quit)"
+[[ "$(status_of fail_after_quit)" != 0 ]] || fail "failure status was swallowed"
 [[ "$(opens fail_after_quit | wc -l | tr -d ' ')" == 1 ]] || fail "open called more than once"
 
 # 2. Failure before the quit: no reopen (nothing was closed).
 run_case fail_before_quit 'false'
 [[ -z "$(opens fail_before_quit)" ]] || fail "reopened although Goalong was never asked to quit"
 
-# 3. Rollback after a failed replacement: old app restored, then reopened in background.
-run_case rollback '/usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
-  BACKUP_APP="$TARGET.bak"; INSTALL_STAGE_ROOT="$(dirname "$TARGET")/stage"; /bin/mkdir -p "$INSTALL_STAGE_ROOT" "$BACKUP_APP"
-  /bin/rm -rf "$TARGET"; /bin/mkdir -p "$TARGET"
-  quit_running_goalong "Goalong History"; ORIGINAL_TARGET_PRESENT=1; REPLACEMENT_ACTIVE=1; false'
-grep -Fq -- 'open -g -j' <<<"$(opens rollback)" || fail "no reopen after rollback"
-[[ -d "$TEST_ROOT/rollback/Applications/Goalong History.app" ]] || fail "old app not restored by rollback"
+# 3. Rollback after a failed step: the OLD app is back at the target and it is the one opened.
+run_case rollback "$REPLACED"'; false'
+[[ "$(marker_of rollback)" == old ]] || fail "rollback left marker '$(marker_of rollback)' at the target"
+[[ "$(opens rollback)" == *"-g -j"*"marker=old" ]] || fail "rollback did not open the old app: $(opens rollback)"
 
-# 4. 120 s password timeout (never quits): exit 1, never SIGKILL, background reopen; and a late quit reopens.
-run_case timeout 'export GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 GOALONG_LATE_RELAUNCH_SYNC=1
-  N=0; /usr/bin/pgrep() { N=$((N+1)); (( N <= 4 )); }   # running through both waits, gone afterwards
+# 4. L1L2-05: the new app cannot be opened (3 tries): exit 1, old app put back and opened.
+run_case open_fails "$REPLACED"'; OPEN_FAILS_FOR=new; complete_installation'
+[[ "$(status_of open_fails)" == 1 ]] || fail "failed open of the new app did not fail the install: $(status_of open_fails)"
+[[ "$(marker_of open_fails)" == old ]] || fail "failed open kept the new app (marker '$(marker_of open_fails)')"
+[[ -d "$TEST_ROOT/open_fails/Applications/Goalong History.app.bak" ]] && fail "backup consumed but not restored"
+[[ "$(opens open_fails | grep -c 'marker=new')" == 3 ]] || fail "new app not tried 3 times: $(opens open_fails)"
+[[ "$(opens open_fails | tail -n 1)" == *"marker=old" ]] || fail "old app not reopened last: $(opens open_fails)"
+
+# 5. Success: the new app is opened once, the backup removed, no rollback.
+run_case success "$REPLACED"'; safe_remove_backup_bundle() { /bin/rm -rf "$1"; }
+  remove_verified_legacy_bundle() { return 1; }; complete_installation'
+[[ "$(status_of success)" == 0 ]] || fail "success path failed: $(cat "$TEST_ROOT/success/out.log")"
+[[ "$(opens success)" == *"-g -j"*"marker=new" && "$(opens success | wc -l | tr -d ' ')" == 1 ]] || fail "success open: $(opens success)"
+[[ "$(marker_of success)" == new ]] || fail "success rolled back"
+
+# Password timeout: "Goalong" ignores SIGTERM. Exit 1, never SIGKILL, no reopen while it still runs.
+TIMEOUT='export GOALONG_LOCAL_TRY=1 GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1
+  /usr/bin/pgrep() { kill -0 "$APP_PID" 2>/dev/null && echo "$APP_PID"; }
   /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
   quit_running_goalong "Goalong History"'
-[[ "$(/bin/cat "$TEST_ROOT/timeout/status")" == 1 ]] || fail "timeout path did not exit 1"
-grep -Fq KILLED "$TEST_ROOT/timeout/out.log" && fail "timeout path force-killed Goalong"
-grep -Fq 'open -g -j' <<<"$(opens timeout)" || fail "no reopen after the password timeout / late quit"
 
-# 5. Success path: finalize never rolls back, cleanup warnings are not exits, one background open.
-run_case success '/usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
-  quit_running_goalong "Goalong History"
-  BACKUP_APP="$TARGET.none"; REPLACEMENT_ACTIVE=1; ORIGINAL_TARGET_PRESENT=1
-  safe_remove_backup_bundle() { return 1; }
-  finalize_replacement; [[ "$REPLACEMENT_ACTIVE" == 0 ]]
-  remove_verified_legacy_bundle() { return 1; }; post_install_cleanup
-  relaunch_installed_app'
-[[ "$(/bin/cat "$TEST_ROOT/success/status")" == 0 ]] || fail "cleanup warning became an exit: $(cat "$TEST_ROOT/success/out.log")"
-[[ "$(opens success | wc -l | tr -d ' ')" == 1 ]] || fail "success path should open exactly once"
-grep -Fq -- 'open -g -j' <<<"$(opens success)" || fail "success open is not background"
+# 6. L1L2-04: Goalong quits long after the old 120 s cap (here: cap set to 1 s, quit after 2 s): still reopened.
+start_app; export APP_PID
+run_case late_quit "$TIMEOUT"
+[[ "$(status_of late_quit)" == 1 ]] || fail "timeout path did not exit 1"
+grep -F KILLED "$TEST_ROOT/late_quit/out.log" >/dev/null && fail "timeout path force-killed Goalong"
+[[ -z "$(opens late_quit)" ]] || fail "reopened while Goalong still runs: $(opens late_quit)"
+/bin/sleep 2; [[ -z "$(opens late_quit)" ]] || fail "reopened while Goalong still runs (late)"
+kill "$APP_PID"
+wait_for_open late_quit 50 || fail "late quit after the old cap was not reopened"
+[[ "$(opens late_quit)" == *"-g -j"* ]] || fail "late reopen not in background"
 
-# 6. No plain `open` left in the installer, and local_try keeps a claimed request.
+# 7. L1L2-04: a newer run takes the pending quit over; the old watcher never opens, the newer run does.
+start_app; export APP_PID
+run_case watcher_a "$TIMEOUT" "$TEST_ROOT/shared-late"
+run_case run_b 'take_late_quit_obligation; [[ "$INHERITED_PIDS" == *"$APP_PID"* ]] || { echo no-inherit; exit 9; }
+  kill "$APP_PID"; command /bin/sleep 1
+  /usr/bin/pgrep() { return 1; }; /usr/bin/pkill() { return 0; }
+  quit_running_goalong "Goalong History"; false' "$TEST_ROOT/shared-late"
+[[ "$(status_of run_b)" == 1 ]] || fail "run B: $(cat "$TEST_ROOT/run_b/out.log")"
+[[ -z "$(opens watcher_a)" ]] || fail "the superseded watcher reopened during run B: $(opens watcher_a)"
+[[ "$(opens run_b | wc -l | tr -d ' ')" == 1 ]] || fail "run B must reopen exactly once: $(opens run_b)"
+
+# 8. Run B takes the quit over but stops before quitting while Goalong still runs: it hands the duty back.
+start_app; export APP_PID
+run_case watcher_c "$TIMEOUT" "$TEST_ROOT/handback-late"
+run_case run_d 'take_late_quit_obligation; false' "$TEST_ROOT/handback-late"
+[[ -z "$(opens run_d)" ]] || fail "run D reopened while Goalong still runs"
+kill "$APP_PID"
+wait_for_open run_d 50 || fail "handed-back quit was not reopened"
+[[ -z "$(opens watcher_c)" ]] || fail "superseded watcher C reopened"
+
+# 9. No plain `open` left in the installer.
 grep -nE '/usr/bin/open( |$)' "$SCRIPT_DIR/install_from_source.sh" | grep -v -- '-g -j' && fail "foreground open in installer"
-grep -Fq 'request/claimed' "$SCRIPT_DIR/local_try.sh" || fail "local_try ignores the claimed marker"
 echo "test_install_relaunch: OK"
