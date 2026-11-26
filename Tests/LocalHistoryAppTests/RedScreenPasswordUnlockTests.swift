@@ -120,6 +120,32 @@ import XCTest
         XCTAssertFalse(grant.covers(.password), "the grant ends with the change")
     }
 
+    /// T-057 L4 (blocage-05): a joined rule (list + red, both « Mot de passe ») running at 23:00. Deleting it with the
+    /// right password is refused by the running list: the red window must not be ended first. A refusal changes nothing.
+    func testARefusedDeletionOfAJoinedRuleKeepsTheRedScreenRunning() throws {
+        let (c, _) = try braise()
+        let grant = RuleStopGrant(uptime: { 1_000 }, verifyPassword: { [password] in $0 == password ? .ok : .wrong(remaining: 3) })
+        c.stopGrant = grant
+        let range = BlockProgramRange(weekdays: Set(1...7), startMinute: 21 * 60, endMinute: 6 * 60, lock: .password)
+        let lists = blocking([BlockList(name: "Jeux", sites: [BlockSiteRule(pattern: "jeux.example")], program: BlockProgram(ranges: [range]))])
+        lists.stopGrant = grant
+        let rule = try XCTUnwrap(BlockRules.current(blocking: lists, braise: c, now: now, calendar: paris).first { $0.red?.rangeID == night })
+        XCTAssertFalse(rule.lists.isEmpty, "the list and the red range form one rule")
+        let before = (lists.lists, c.ranges)
+        let writes = BlockRulePlan.writes(nil, replacing: rule, lists: lists.lists, red: c.ranges)
+        let refusal = BlockRulePlan.apply(writes, blocking: lists, braise: c, grant: grant, confirmStop: { _ in false },
+                                          askPassword: { _ in self.password })
+        if refusal != nil {
+            XCTAssertEqual(c.guardUntil, end, "the red window still runs: \(refusal ?? "")")
+            XCTAssertNotNil(c.protectedWindow)
+            XCTAssertEqual(c.ranges, before.1, "no skip written"); XCTAssertEqual(lists.lists, before.0)
+        } else {
+            XCTAssertFalse(c.ranges.program.ranges.contains { $0.id == night })
+            XCTAssertTrue(lists.lists.allSatisfy { $0.program.ranges.isEmpty }, "both parts gone together")
+        }
+        XCTAssertFalse(grant.covers(.password), "the grant ends with the change")
+    }
+
     func testARunningLockedRuleIsNotOfferedThePassword() throws {
         let (c, _) = try braise(lock: "locked")
         let writes = BlockRulePlan.writes(nil, replacing: try nightRule(c), lists: [], red: c.ranges)

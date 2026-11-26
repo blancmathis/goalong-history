@@ -53,11 +53,17 @@ struct BlockingStore {
     /// deleted. When neither is usable the store starts empty. Only an unusable directory throws.
     /// Then the protected rules the files lost or weakened come back from `floor` (`restored` > 0), and are written.
     /// `copyUnavailable`: the copy could not be read (F5), the files are taken as they are and the member is told.
-    func loadRecovering(now: Date = Date()) throws -> (document: BlockingDocument, recovery: Recovery, restored: Int, copyUnavailable: Bool) { // wall: the document's ends are wall dates
+    /// T-057 L4 (blocage-04): the ends live in the trusted frame. `trusted` gives the trusted now measured from a
+    /// clock sample (the loaded file's, the copy's); the earliest of them and `now` decides what is over, so a wall
+    /// clock set forward in the same boot never drops a protected session still running.
+    func loadRecovering(now: Date = Date(), // wall: the fallback; the trusted samples below can only lower it
+                        trusted: (BlockingClockState?) -> Date = { _ in .distantFuture }) throws
+        -> (document: BlockingDocument, recovery: Recovery, restored: Int, copyUnavailable: Bool) {
         let copy = floor?.read(BlockingFloor.self, key: ProtectedFloor.blockingKey) ?? .absent
         let loaded = try loadFile()
         if case .unavailable = copy { return (loaded.document, loaded.recovery, 0, true) }
         guard let kept = copy.value else { return (loaded.document, loaded.recovery, 0, false) }
+        let now = [now, trusted(loaded.document.clock), trusted(kept.clock)].min() ?? now
         let result = BlockingFloor.restore(loaded.document, floor: kept, now: now)
         if result.restored > 0 { try save(result.document, now: now) }
         return (result.document, loaded.recovery, result.restored, false)
@@ -77,12 +83,12 @@ struct BlockingStore {
     }
 
     /// The running state replaces a file changed under it; the changed file is set aside.
-    func replaceDamaged(with document: BlockingDocument) throws {
+    func replaceDamaged(with document: BlockingDocument, now: Date = Date()) throws { // wall: tests; the controller passes its trusted now
         if let directoryFD = try openDirectory(create: false) {
             defer { close(directoryFD) }
             guard setAside(Self.current, in: directoryFD) else { throw Failure.unsafePath }
         }
-        try save(document)
+        try save(document, now: now)
     }
 
     private func setAside(_ name: String, in directoryFD: Int32) -> Bool {
