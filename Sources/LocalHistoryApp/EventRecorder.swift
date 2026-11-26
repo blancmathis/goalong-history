@@ -599,12 +599,14 @@
             let now = clock()
             guard now >= interruption.nextAttemptAt else { return false }
             var uncertainRowWasComplete = false
+            var recoveredTail: HistoryEvent?
             do {
                 try store.recoverAfterUncertainWrite { [integrityJournal] tail in
                     guard let tail else { return }
                     do {
                         // True when the row that reported an error was in fact fully written.
                         uncertainRowWasComplete = try integrityJournal.reconcilePersistedTail(tail)
+                        if uncertainRowWasComplete { recoveredTail = tail }
                     } catch IntegrityStateError.eventStateAheadOfJournal {
                         // Explicit deletion can remove the newest rows. Launch keeps the
                         // live cursor in this case; so does in-process recovery.
@@ -613,6 +615,12 @@
             } catch {
                 handleStorageFailure(error, lostEventAt: nil)
                 return false
+            }
+            // The recovered row was never published (publication follows a successful append):
+            // hand its root to the sealer once, or the minute seal would miss it.
+            if let recoveredTail {
+                JevIngress.shared.receive(recoveredTail)
+                minuteSealer.receive(recoveredTail)
             }
             if uncertainRowWasComplete, interruption.lostEventCount > 0 {
                 interruption.lostEventCount -= 1
