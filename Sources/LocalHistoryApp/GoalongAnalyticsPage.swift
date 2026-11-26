@@ -162,7 +162,8 @@ struct GoalongAnalyticsPage: View {
                                 workStatus: previewActive ? .preview : workStatus,
                                 recording: previewActive ? nil : recordingKind,
                                 storageStop: previewActive ? nil : runtimeStore.runtime.storageFailure.map {
-                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: runtimeStore.runtime.storageInterruptedSince)
+                                    GoalongActivityEmptyCopy.StorageStop(kind: $0, since: runtimeStore.runtime.storageInterruptedSince,
+                                        loss: runtimeStore.runtime.storageLoss)
                                 },
                                 onDay: { day in updateSelection { $0.openDay(day) } },
                                 onWork: { showingWork = true },
@@ -170,6 +171,7 @@ struct GoalongAnalyticsPage: View {
                                 // No button starts the classification here: Activité shows where it stands and asks only what it needs.
                                 onClarify: { showingClarify = true },
                                 onHistory: { openHistory(selection.day) },
+                                onRetry: refresh,
                                 onProjects: { if !previewActive { showingAnalysisChoice = true } },
                                 onHistoryDay: openHistory,
                                 onRecap: openRecap,

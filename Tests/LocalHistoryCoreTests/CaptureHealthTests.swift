@@ -37,11 +37,13 @@ final class CaptureHealthTests: XCTestCase {
         accumulator.markTapEnabled(at: now.addingTimeInterval(-50))
         accumulator.markCallback(kind: .mouseClick, at: now.addingTimeInterval(-1))
         accumulator.markStorageInterrupted(.unavailable, at: now.addingTimeInterval(-30))
-        accumulator.markStorageInterrupted(.diskFull, at: now)
+        accumulator.markStorageInterrupted(.diskFull, at: now,
+            loss: CaptureStorageLoss(count: 5, first: now.addingTimeInterval(-20), last: now.addingTimeInterval(-2)))
 
         let interrupted = accumulator.snapshot(now: now)
         XCTAssertEqual(interrupted.storageInterruptedSince, now.addingTimeInterval(-30), "The first failure time is kept")
         XCTAssertEqual(interrupted.storageFailureKind, .diskFull)
+        XCTAssertEqual(interrupted.storageLoss?.count, 5, "T-057 U1: the loss rides on the snapshot until writing resumes")
         let assessment = CaptureHealthEvaluator.assess(interrupted, now: now)
         XCTAssertEqual(assessment.state, .storageUnavailable)
         XCTAssertFalse(assessment.captureProven, "Callbacks do not prove anything is being saved")
@@ -51,6 +53,7 @@ final class CaptureHealthTests: XCTestCase {
         accumulator.setPaused(false)
 
         accumulator.markStorageRestored()
+        XCTAssertNil(accumulator.snapshot(now: now).storageLoss)
         XCTAssertEqual(CaptureHealthEvaluator.assess(accumulator.snapshot(now: now), now: now).state, .ready)
     }
 

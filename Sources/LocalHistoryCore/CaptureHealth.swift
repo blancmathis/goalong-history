@@ -208,6 +208,8 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
     /// recorder retries on its own; this is never restored from an earlier launch.
     public let storageInterruptedSince: Date?
     public let storageFailureKind: CaptureStorageFailureKind?
+    /// Interactions seen but not written during the interruption (T-057 U1, idea 7). Never restored from an earlier launch.
+    public let storageLoss: CaptureStorageLoss?
 
     public init(
         schemaVersion: Int = 1,
@@ -237,7 +239,8 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
         expectedInputAfter: Date?,
         inputCallbackObservedThisLaunch: Bool? = nil,
         storageInterruptedSince: Date? = nil,
-        storageFailureKind: CaptureStorageFailureKind? = nil
+        storageFailureKind: CaptureStorageFailureKind? = nil,
+        storageLoss: CaptureStorageLoss? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
@@ -267,6 +270,7 @@ public struct CaptureHealthSnapshot: Codable, Equatable {
         self.inputCallbackObservedThisLaunch = inputCallbackObservedThisLaunch
         self.storageInterruptedSince = storageInterruptedSince
         self.storageFailureKind = storageFailureKind
+        self.storageLoss = storageLoss
     }
 }
 
@@ -509,6 +513,7 @@ public final class CaptureHealthAccumulator {
     private var inputCallbackObservedThisLaunch = false
     private var recentKinds: [TimedKind] = []
     private var storageInterruptedSince: Date?
+    private var storageLoss: CaptureStorageLoss?
     private var storageFailureKind: CaptureStorageFailureKind?
 
     public init(
@@ -644,10 +649,12 @@ public final class CaptureHealthAccumulator {
     }
 
     /// Keeps the first interruption time; a later, different failure only refines the cause.
-    public func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date()) {
+    public func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date(),
+                                       loss: CaptureStorageLoss? = nil) {
         withLock {
             if storageInterruptedSince == nil { storageInterruptedSince = date }
             storageFailureKind = kind
+            storageLoss = loss
         }
     }
 
@@ -655,6 +662,7 @@ public final class CaptureHealthAccumulator {
         withLock {
             storageInterruptedSince = nil
             storageFailureKind = nil
+            storageLoss = nil
         }
     }
 
@@ -691,7 +699,8 @@ public final class CaptureHealthAccumulator {
             expectedInputAfter: expectedInputAfter,
             inputCallbackObservedThisLaunch: inputCallbackObservedThisLaunch,
             storageInterruptedSince: storageInterruptedSince,
-            storageFailureKind: storageFailureKind
+            storageFailureKind: storageFailureKind,
+            storageLoss: storageLoss
         )
     }
 
@@ -704,5 +713,22 @@ public final class CaptureHealthAccumulator {
     private func prune(now: Date, windowSeconds: Int = 300) {
         let cutoff = now.addingTimeInterval(-TimeInterval(max(1, windowSeconds)))
         recentKinds.removeAll { $0.timestamp < cutoff }
+    }
+}
+
+/// Interactions the recorder saw but could not write, with the first and last time seen.
+public struct CaptureStorageLoss: Codable, Equatable, Sendable {
+    public let count: UInt64
+    public let first: Date
+    public let last: Date
+    public init(count: UInt64, first: Date, last: Date) { self.count = count; self.first = first; self.last = last }
+
+    /// « 12 interactions non enregistrées entre 14:02 et 14:09 » (idea 7). nil when nothing was lost.
+    public func line(timeZone: TimeZone = .current) -> String? {
+        guard count > 0 else { return nil }
+        let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.timeZone = timeZone; f.dateFormat = "HH:mm"
+        let noun = count == 1 ? "interaction non enregistrée" : "interactions non enregistrées"
+        let a = f.string(from: min(first, last)), b = f.string(from: max(first, last))
+        return a == b ? "\(count) \(noun) à \(a)" : "\(count) \(noun) entre \(a) et \(b)"
     }
 }

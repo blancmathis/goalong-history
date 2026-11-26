@@ -1142,7 +1142,8 @@ import AppleScreenTime
                     ? configManager.config.verificationServerURL
                     : nil,
                 captureHealth: health,
-                storageInterruptedSince: health.state == .storageUnavailable ? healthSnapshot.storageInterruptedSince : nil
+                storageInterruptedSince: health.state == .storageUnavailable ? healthSnapshot.storageInterruptedSince : nil,
+                storageLoss: health.state == .storageUnavailable ? healthSnapshot.storageLoss : nil
             )
             runtimeStore.setRuntime(next)
         }

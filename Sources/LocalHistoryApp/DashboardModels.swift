@@ -139,6 +139,8 @@
         let captureHealth: CaptureHealthAssessment?
         /// When writes started to fail; set only while the state is `.storageUnavailable`.
         var storageInterruptedSince: Date? = nil
+        /// Interactions lost while writes fail; the page says how many and between which times.
+        var storageLoss: CaptureStorageLoss? = nil
 
         /// Publishing re-renders every view observing the dashboard model, so equality ignores
         /// the assessment's English diagnostic detail (it counts idle seconds). The live
@@ -151,6 +153,7 @@
                 && a.captureHealth?.captureProven == b.captureHealth?.captureProven
                 && a.captureHealth?.limitations == b.captureHealth?.limitations
                 && a.storageInterruptedSince == b.storageInterruptedSince
+                && a.storageLoss == b.storageLoss
         }
 
         static let unavailable = RuntimePresentation(
