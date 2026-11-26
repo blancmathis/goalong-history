@@ -370,6 +370,29 @@ final class BlockingEngineTests: XCTestCase {
             XCTAssertNil(c.snapshot.usage?.quotaSecondsUsed[list.id])
         }
     }
+    /// blocage-01: a locked app-only list (unrelated app) beside a locked site list must not restart the
+    /// unreadable-address clock: the browser is covered after 3 s, in both list orders, normal and private.
+    @MainActor func testAppOnlyListKeepsTheUnreadableAddressDelay() {
+        for reversed in [false, true] {
+            for privateWindow in [false, true] {
+                var now = date(); let backend = FakeBlockingBackend()
+                let sites = BlockList(name: "Sites", sites: [BlockSiteRule(pattern: "youtube.com")])
+                let apps = BlockList(name: "Apps", apps: [BlockAppRule(bundleIdentifier: "game", name: "Jeu")])
+                let lists = reversed ? [apps, sites] : [sites, apps]
+                let c = BlockingController(document: BlockingDocument(lists: lists), clock: { now }, backend: backend, continuous: { now.timeIntervalSince1970 })
+                c.start(listIDs: lists.map(\.id), until: now.addingTimeInterval(3600), lock: .locked)
+                var t = target(now, url: nil); t.privateWindow = privateWindow
+                for second in 0...4 {
+                    c.observe(t)
+                    if second < 3 { XCTAssertNil(backend.lastReason, "reversed=\(reversed) private=\(privateWindow) at \(second) s") }
+                    now = now.addingTimeInterval(1); t.at = now
+                }
+                guard case .unsupportedBrowser? = backend.lastReason else {
+                    return XCTFail("reversed=\(reversed) private=\(privateWindow): no cover after 3 s, got \(String(describing: backend.lastReason))")
+                }
+            }
+        }
+    }
     /// Aside regression: an activation (address not read yet) left an unreadable clock behind when the
     /// member switched away before the first read; every later activation then covered the browser at once.
     @MainActor func testActivationDoesNotReuseAnEarlierUnreadableClock() {

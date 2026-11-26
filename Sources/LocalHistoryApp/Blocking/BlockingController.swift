@@ -1707,6 +1707,12 @@ import LocalHistoryQueryCLI
         }
         let blockedSite = false
         var slowCandidates: [(BlockList, BlockingActiveBlock)] = []
+        // One unreadable-address clock per observation, outside the lists: a list without site rules
+        // never restarts it (blocage-01). A read address, a proven internal page or an activation
+        // (no address read, by design: a fresh 3 s window) resets it.
+        let addressUnreadable = target.isBrowser && !target.isActivation && !target.isInternalPage && target.url == nil
+        if !addressUnreadable { unreadableSince[target.pid] = nil }
+        var siteRulesSeen = false
         for list in lists.sorted(by: { $0.effectiveAction == .block && $1.effectiveAction != .block }) {
             guard let block = rulingBlock(for: list.id) else { continue }
             let usage = todayUsage()
@@ -1715,13 +1721,11 @@ import LocalHistoryQueryCLI
                !list.apps.contains(where: { $0.bundleIdentifier == target.bundleIdentifier }) { continue }
             let siteRules = target.isBrowser && BlockingRules.hasSites(list)
             var special: BlockingVeilPresentation.Reason?
-            // An activation reads no address (by design), so it is not an unreadable read: it starts
-            // a fresh 3 s window instead of reusing one left over from an earlier visit.
-            if siteRules && target.isActivation && target.url == nil { unreadableSince[target.pid] = nil }
-            else if siteRules && !target.isInternalPage && target.url == nil {
+            if siteRules { siteRulesSeen = true }
+            if siteRules && addressUnreadable {
                 let first = unreadableSince[target.pid] ?? target.at; unreadableSince[target.pid] = first
                 if !siteBlockingAvailable || target.at.throttleElapsed(since: first) >= 3 { special = .unsupportedBrowser(NSRunningApplication(processIdentifier: target.pid)?.localizedName ?? target.bundleIdentifier) }
-            } else { unreadableSince[target.pid] = nil }
+            }
             guard special != nil || BlockingRules.wouldBlock(target, list: list) else { continue }
             // Unreadable addresses cannot establish eligible quota use: fail closed.
             let quotaLeft = BlockingRules.effectiveQuotaSeconds(list, usage: usage).map { (usage.quotaSecondsUsed[list.id] ?? 0) < $0 } ?? true
@@ -1749,6 +1753,8 @@ import LocalHistoryQueryCLI
             }
             return
         }
+        // No site list ruled this observation: a later one starts its own 3 s window.
+        if !siteRulesSeen { unreadableSince[target.pid] = nil }
         if target.isForeground { presentedAttempt = nil } else { presentedAppAttempts[target.pid] = nil }
         if !blockedSite { backend.clearSite() }
         if let (list, _) = slowCandidates.first(where: { !isFrictionAllowed(target, list: $0.0) }) {

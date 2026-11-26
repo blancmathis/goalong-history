@@ -210,24 +210,46 @@
         /// maintained bundle list. It intentionally looks only for an accessibility web area;
         /// it does not depend on an application name such as Safari, Chrome, or any wrapper.
         static func containsWebArea(_ window: AXUIElement, maxNodes: Int = 220) -> Bool {
+            webAreaPresence(window, maxNodes: maxNodes) == true
+        }
+
+        /// Tri-state web area probe: `true` found, `false` proven absent (every role and child
+        /// list read, whole tree walked), `nil` undetermined (an AX error, or the node or queue
+        /// limit cut the walk). Only a proven absence may exempt a page (blocage-02).
+        static func webAreaPresence(_ window: AXUIElement, maxNodes: Int = 220) -> Bool? {
             var queue: [AXUIElement] = [window]
             var index = 0
             var visited = 0
+            var complete = true
 
-            while index < queue.count, visited < maxNodes {
+            func proven(_ error: AXError) -> Bool {
+                error == .success || error == .noValue || error == .attributeUnsupported
+            }
+
+            while index < queue.count {
+                guard visited < maxNodes else { complete = false; break }
                 let element = queue[index]
                 index += 1
                 visited += 1
 
-                let role = string(element, attribute: AXAttribute.role) ?? ""
+                var roleValue: CFTypeRef?
+                let roleError = AXAccess.copyAttributeValue(element, AXAttribute.role, &roleValue)
+                if !proven(roleError) { complete = false }
+                let role = roleError == .success ? (roleValue as? String ?? "") : ""
                 if role == "AXWebArea" { return true }
                 if role == "AXStaticText" { continue }
 
+                var childrenValue: CFTypeRef?
+                let childrenError = AXAccess.copyAttributeValue(element, AXAttribute.children, &childrenValue)
+                if !proven(childrenError) { complete = false; continue }
+                let children = childrenError == .success ? (childrenValue as? [AXUIElement] ?? []) : []
                 if queue.count < maxNodes * 2 {
-                    queue.append(contentsOf: elements(element))
+                    queue.append(contentsOf: children)
+                } else if !children.isEmpty {
+                    complete = false
                 }
             }
-            return false
+            return complete ? false : nil
         }
 
         static func browserURL(
