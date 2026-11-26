@@ -67,11 +67,12 @@ final class RunningApplicationCatalog {
 
     /// Reads properties only for applications that were not known yet.
     private func reconcileMembership() {
-        let current = source.currentProcessIdentifiers()
+        // Clear the flag before reading the members: a launch or quit notified during the read marks it stale again.
         lock.lock()
         membershipStale = false
         let known = entries
         lock.unlock()
+        let current = source.currentProcessIdentifiers()
         var next: [pid_t: ForegroundAXApplication] = [:]
         next.reserveCapacity(current.count)
         for pid in current {
