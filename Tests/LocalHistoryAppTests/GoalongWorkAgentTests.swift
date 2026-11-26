@@ -35,6 +35,23 @@ final class GoalongWorkAgentTests: XCTestCase {
                      "Applications removed from the selection stay on the Mac")
     }
 
+    /// jev-01: a task named only by an excluded app (own verdict or app rule) never reaches the request.
+    func testNetworkProjectionKeepsOnlyAllowedContextsAndTheirTasks() throws {
+        let mail = GoalongWorkContext.Label(application: "Mail", bundleIdentifier: "com.apple.mail", host: nil, title: "Zéphyr")
+        var reviewed = GoalongAnalysisSelection(); reviewed.reviewed = true
+        var policy = GoalongPrivacyPolicy(); policy.applications = ["com.apple.mail": "Mail"]
+        let filter = GoalongWorkSharingFilter(policy: policy, selection: reviewed)
+        XCTAssertNil(filter.label(mail))
+        var allowed: [String: GoalongWorkContext.Label] = [:]
+        for (key, label) in ["m": mail, "d": docs] where filter.label(label) != nil { allowed[key] = label }
+        let verdicts = GoalongWorkVerdicts([
+            "m": GoalongWorkAssignment(verdict: .work, task: "Projet confidentiel Zéphyr", byOwner: true),
+            "d": GoalongWorkAssignment(verdict: .work, task: "Lancement", byOwner: false)])
+        let projected = GoalongWorkAgent.networkProjection(verdicts, allowed: allowed)
+        XCTAssertEqual(Set(projected.contexts.keys), ["d"])
+        XCTAssertEqual(projected.contexts["d"]?.task, "Lancement")
+    }
+
     func testExamplesDefinitionNoteAndTasksFollowTodaysChoices() throws {
         var reviewed = GoalongAnalysisSelection()
         reviewed.reviewed = true

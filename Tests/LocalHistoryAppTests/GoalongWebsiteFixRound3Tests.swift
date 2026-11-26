@@ -74,6 +74,23 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
         XCTAssertEqual(exported.last?.selectedApplicationIDs, ["a"])
     }
 
+    /// jev-02: a « Masqué » rule changed while the export is prepared: the prepared payload is never sent.
+    @MainActor func testRuleChangedDuringPreparationSendsNothing() async throws {
+        let (defaults, root, token) = try env()
+        var hidden = false
+        let ok = okPayload
+        var sent = 0
+        let sender = GoalongWebsiteAutoSender(defaults: defaults, root: root,
+            exporter: { _, _, _ in hidden = true; return ok },
+            sender: { _, _, _, _ in sent += 1; return Data(#"{"imported":1}"#.utf8) },
+            sourceConsent: { _ in true }, hiddenWebsites: { { _ in hidden } }, hiddenApplications: { { _, _ in false } })
+        let options = GoalongSiteExportOptions(deviceIDs: ["mac"], includeApplications: false, includeWebsites: true,
+                                               selectedWebsiteDomains: ["secret.example", "other.example"])
+        try sender.enable(origin: "https://goalong.example", tokenPath: token.path, options: options, hour: 0, minute: 0)
+        await sender.tick(now: Date().addingTimeInterval(86_400))
+        XCTAssertEqual(sent, 0)
+    }
+
     @MainActor func testPlanWhoseSubjectsAreAllHiddenPausesWithAReasonAndSendsNothing() async throws {
         let (defaults, root, token) = try env()
         var hidden = false
