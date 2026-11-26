@@ -984,13 +984,13 @@
         /// contexts already filtered by the current exclusions, whose revision must not change
         /// before sending.
         func generateWorkClassification(prompt: String, privacyRevision: String, selectionRevision: String? = nil,
-                                        workingDirectory: URL) throws -> (response: GoalongWorkClassification.Response, tokens: Int?) {
+                                        workingDirectory: URL, beforeSend: (() throws -> Void)? = nil) throws -> (response: GoalongWorkClassification.Response, tokens: Int?) {
             let (data, tokens) = try generateSelectedAnalysis(prompt: prompt,
                 schema: GoalongWorkClassification.outputSchema, workingDirectory: workingDirectory,
                 maximumResponseBytes: 128 * 1024, filteredForPrivacyRevision: privacyRevision,
                 filteredForSelectionRevision: selectionRevision,
                 model: CodexWorkClassificationContract.model, reasoningEffort: CodexWorkClassificationContract.reasoningEffort,
-                baseInstructions: GoalongWorkClassification.baseInstructions)
+                baseInstructions: GoalongWorkClassification.baseInstructions, beforeSend: beforeSend)
             return (try GoalongWorkClassification.parse(data), tokens)
         }
 
