@@ -40,6 +40,10 @@ private struct AgentPendingDiscovery: Sendable {
 private struct AgentUnavailableRetryState: Sendable {
     var failureCount: Int
     var nextRetryAt: Date
+    /// An analysis scan may retry a source once right after a metadata-only scan saw it fail
+    /// (the selected day must not miss a transient failure). After an analysis scan has itself
+    /// failed, analysis scans honor the same backoff as metadata scans.
+    var failedDuringAnalysis = false
 }
 
 private struct AgentProviderSignalProgress: Sendable {
@@ -91,6 +95,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
     private var signalProgressByProvider: [AgentProvider: AgentProviderSignalProgress] = [:]
     private var unavailableRetryByFolderID: [String: AgentUnavailableRetryState] = [:]
     private var unavailableRetryByEntryID: [String: AgentUnavailableRetryState] = [:]
+    private let failureLogLock = NSLock()
+    /// Last logged failure signature per source, so one failing source logs once per change of
+    /// error (or once per `failureLogRepeatSeconds`) instead of on every scan and every message.
+    private var loggedFailureByKey: [String: (signature: String, loggedAt: Date)] = [:]
+    private var loggedScanFailureCount = 0
+    private static let failureLogRepeatSeconds: TimeInterval = 60 * 60
+    private static let maximumLoggedFailureKeys = 4_096
     private var pendingFolderMutations: [AgentFolderScanMutation] = []
     private var lastCycleMetrics = AgentScannerCycleMetrics()
     private var hasAnalysisSelection = false
@@ -887,7 +898,11 @@ public final class AgentActivityScanner: @unchecked Sendable {
                             )
                             continue
                         }
-                        recordUnavailableRetry(entryID: resolution.entry.id, at: observedAt)
+                        recordUnavailableRetry(
+                            entryID: resolution.entry.id,
+                            at: observedAt,
+                            duringAnalysis: analyzeContent
+                        )
                         availabilityUpdates.append(
                             AgentAvailabilityObservation(
                                 entryID: resolution.entry.id,
@@ -1185,7 +1200,11 @@ public final class AgentActivityScanner: @unchecked Sendable {
                     result.skippedSourceCount += 1
                 }
                 if let previous {
-                    recordUnavailableRetry(entryID: previous.id, at: observedAt)
+                    recordUnavailableRetry(
+                        entryID: previous.id,
+                        at: observedAt,
+                        duringAnalysis: shouldAnalyzeContent
+                    )
                     seenStableIDs.insert(previous.id)
                     availabilityUpdates.append(
                         AgentAvailabilityObservation(
@@ -1416,7 +1435,12 @@ public final class AgentActivityScanner: @unchecked Sendable {
         ignoreUnavailableBackoff: Bool
     ) -> Bool {
         guard entry.availability != .available else { return true }
-        if ignoreUnavailableBackoff { return true }
+        if ignoreUnavailableBackoff {
+            guard let state = unavailableRetryByEntryID[entry.id], state.failedDuringAnalysis else {
+                return true
+            }
+            return retryIsAllowed(state, at: observedAt)
+        }
         return observedAt.timeIntervalSince(entry.lastObservedAt) >= Self.unavailableSourceRetrySeconds
             && retryIsAllowed(unavailableRetryByEntryID[entry.id], at: observedAt)
     }
@@ -1433,11 +1457,13 @@ public final class AgentActivityScanner: @unchecked Sendable {
         )
     }
 
-    private func recordUnavailableRetry(entryID: String, at observedAt: Date) {
-        unavailableRetryByEntryID[entryID] = nextRetryState(
+    private func recordUnavailableRetry(entryID: String, at observedAt: Date, duringAnalysis: Bool) {
+        var state = nextRetryState(
             after: unavailableRetryByEntryID[entryID],
             observedAt: observedAt
         )
+        state.failedDuringAnalysis = duringAnalysis
+        unavailableRetryByEntryID[entryID] = state
         if unavailableRetryByEntryID.count > Self.maximumUnavailableRetryStates,
             let earliest = unavailableRetryByEntryID.min(by: {
                 $0.value.nextRetryAt < $1.value.nextRetryAt
@@ -1839,11 +1865,10 @@ public final class AgentActivityScanner: @unchecked Sendable {
         category: "AgentActivityScanner"
     )
 
-    /// Short French sentence for the user. The raw system error goes to the log only.
+    /// Short French sentence for the user. The raw system error goes to the log only, once per
+    /// source and error (see `logScanFailure`), not once per call: one failure builds 2–3 texts.
     private func userMessage(for error: Error, path: String?, fallback: String? = nil) -> String {
-        Self.logger.error(
-            "Agent scan failure at \(path ?? "-", privacy: .private): \(String(describing: error), privacy: .private)"
-        )
+        logScanFailure(error, path: path, fallback: fallback)
         if let sourceError = error as? AgentSourceReadError, let description = sourceError.errorDescription {
             return description
         }
@@ -1862,6 +1887,32 @@ public final class AgentActivityScanner: @unchecked Sendable {
             return "Goalong ne trouve plus \(target)."
         }
         return "Goalong n’a pas pu lire \(target)."
+    }
+
+    private func logScanFailure(_ error: Error, path: String?, fallback: String?) {
+        let key = path ?? fallback ?? "-"
+        let signature = String(describing: error)
+        let now = Date()
+        failureLogLock.lock()
+        if let prior = loggedFailureByKey[key], prior.signature == signature,
+            now.timeIntervalSince(prior.loggedAt) < Self.failureLogRepeatSeconds
+        {
+            failureLogLock.unlock()
+            return
+        }
+        if loggedFailureByKey.count >= Self.maximumLoggedFailureKeys { loggedFailureByKey.removeAll() }
+        loggedFailureByKey[key] = (signature, now)
+        loggedScanFailureCount += 1
+        failureLogLock.unlock()
+        Self.logger.error(
+            "Agent scan failure at \(path ?? "-", privacy: .private): \(signature, privacy: .private)"
+        )
+    }
+
+    func loggedScanFailureCountForTesting() -> Int {
+        failureLogLock.lock()
+        defer { failureLogLock.unlock() }
+        return loggedScanFailureCount
     }
 
     private func appendFailure(_ failure: String, result: inout AgentScanResult) {

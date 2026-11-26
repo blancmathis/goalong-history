@@ -107,9 +107,10 @@
         }
 
         private static func liveParameters(config: RecorderConfig, accessibility: Bool, history: Bool, permissionRevision: UInt64 = 0) -> ContextReadParameters {
-            let applications = history ? NSWorkspace.shared.runningApplications.map(ForegroundAXApplication.init) : []
             let front = NSWorkspace.shared.frontmostApplication.map(ForegroundAXApplication.init)
-            var catalogue = Dictionary(applications.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { _, new in new })
+            // Cached catalogue (T-057 §1): reading every running app here stalled the main thread
+            // when LaunchServices was slow. Only the frontmost application is read live.
+            var catalogue = history ? RunningApplicationCatalog.shared.snapshot(frontmost: front) : [:]
             if let front { catalogue[front.processIdentifier] = front }
             var emptyPolicy = GoalongPrivacyPolicy(); emptyPolicy.revision = "none"
             return ContextReadParameters(foregroundApplication: front, applications: catalogue,

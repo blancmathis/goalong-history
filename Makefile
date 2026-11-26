@@ -20,6 +20,7 @@ test:
 	bash scripts/test_stable_release_identity.sh
 	bash scripts/test_skip_report.sh
 	bash scripts/test_clean_leaked_test_prefs.sh
+	bash scripts/test_perso_keep_symbols.sh
 	bash scripts/test_run_swift_tests.sh
 	bash scripts/test_headless_signal_cleanup.sh
 	bash scripts/test_gallery_script.sh

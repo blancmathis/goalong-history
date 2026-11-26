@@ -181,6 +181,15 @@ if [[ "$NO_INSTALL" == 1 ]]; then
   exit 0
 fi
 
+# Keep this build's executable and dSYM (last 3 perso builds, by commit) so stall offsets stay resolvable
+# with atos after the next build. Outside the worktree (it may be removed); a failure only warns.
+if [[ "$PERSO" == 1 ]]; then
+  symbols_root="${GOALONG_PERSO_SYMBOLS_DIR:-$(dirname "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)")/suivi/dsym}"
+  bash "$ROOT/scripts/perso_keep_symbols.sh" "$APP" \
+    "$WORK/scratch/build-$(uname -m)/$(uname -m)-apple-macosx/release/LocalHistory.dSYM" \
+    "$PERSO_COMMIT" "$symbols_root" 3 || echo "Note: symbols of this perso build were not kept." >&2
+fi
+
 # make perso with a running perso Goalong that reported health: hand the bundle to it (it installs itself, also
 # during a locked block, at most once per 10 minutes then). It re-checks the signature against its own, swaps in
 # a few seconds and rolls back unless the new build starts. Any other case uses the installer below.
