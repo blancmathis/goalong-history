@@ -3277,3 +3277,7 @@ blocages/depliants-   # T-056 : lignes de règle dépliées, interrupteur seul �
 blocages/editeur-maintenant   # T-057 : séance sans « Début », durée « Autre… » à la place de « Jusqu’à… »
 blocages/editeur-seance   # T-057 : séances sans la ligne « Début » (plus courtes)
 settings/accueil-   # T-060 : la hauteur de l’accueil grandit du groupe « Clavier » (accueil-etat-inconnu, accueil-ouverture-desactivee, accueil-clavier nouveau)
+
+# T-057 U1 : popover « Verrouillé jusqu’à HH:MM » sans bouton Arrêter ; Activité : « Lecture incomplète » avec « Réessayer », pertes de capture lisibles.
+menubar/seance-verrouillee--   # T-057 U1 idée 3 : nouvelle image
+activite-etats/   # T-057 U1 idées 7 et 10 : nouvelles images

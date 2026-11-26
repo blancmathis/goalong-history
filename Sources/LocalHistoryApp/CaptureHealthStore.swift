@@ -153,8 +153,8 @@
             mutateAndSchedule { accumulator.markTapDisabled(error) }
         }
 
-        func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date()) {
-            mutateAndSchedule { accumulator.markStorageInterrupted(kind, at: date) }
+        func markStorageInterrupted(_ kind: CaptureStorageFailureKind, at date: Date = Date(), loss: CaptureStorageLoss? = nil) {
+            mutateAndSchedule { accumulator.markStorageInterrupted(kind, at: date, loss: loss) }
         }
 
         func markStorageRestored() {

@@ -111,6 +111,8 @@ struct GoalongAnalyticsContent: View {
     /// « À préciser (N) » opens the sheet of questions.
     var onClarify: () -> Void = {}
     var onHistory: () -> Void = {}
+    /// « Réessayer » of an unreadable day: reads the sources again (T-057 U1, idea 10).
+    var onRetry: () -> Void = {}
     var onProjects: () -> Void = {}
     var onHistoryDay: (Date) -> Void = { _ in }
     var onRecap: (Date) -> Void = { _ in }
@@ -1041,6 +1043,10 @@ struct GoalongAnalyticsContent: View {
             storage: storageStop)
         VStack(alignment: .leading, spacing: 12) {
             GoalongEmptyState(title: copy.title, kind: copy.kind, message: copy.message) {
+                if copy.offersRetry {
+                    Button("Réessayer", action: onRetry).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
+                        .accessibilityIdentifier("activity-retry-read")
+                }
                 if copy.offersHistory {
                     Button("Consulter l’historique", action: onHistory).buttonStyle(LHSecondaryButtonStyle()).disabled(payload.isPreview)
                 }
@@ -1165,11 +1171,16 @@ enum GoalongActivityEmptyCopy {
         var showsObservationCount = false
         /// R4e-2: a stop, an unreadable day or a missing app is « indisponible »; only a day that may still start is « pas encore ».
         var kind: GoalongStateKind = .notYet
+        /// An unreadable reading is not an empty day: it offers to read again.
+        var offersRetry: Bool { title == GoalongActivityEmptyCopy.unreadableTitle }
     }
+    static let unreadableTitle = "Lecture incomplète"
 
     struct StorageStop: Equatable {
         let kind: CaptureStorageFailureKind
         let since: Date?
+        /// « X interactions non enregistrées entre HH:MM et HH:MM »; nil until something was lost.
+        var loss: CaptureStorageLoss? = nil
     }
 
     /// R-74 (déc. 1): today, recording off, paused or missing a permission, and nothing read: the recording banner
@@ -1209,7 +1220,8 @@ enum GoalongActivityEmptyCopy {
         if isDay && isToday, let storage {
             let stop = storage.since.map { "Aucune donnée depuis \(GoalongUIFormat.time($0))" } ?? "Aucune nouvelle donnée"
             // R-74 (R9C-40): the banner says it resumes on its own and stays visible; this says what it means for the day.
-            let message = "Une absence de données n’est pas une journée à zéro."
+            let message = [storage.loss?.line(), "Une absence de données n’est pas une journée à zéro."]
+                .compactMap { $0 }.joined(separator: ". ")
             // P-2: an unreadable day still says so, with the stop.
             if incompleteDays > 0 {
                 return Copy(title: "Lecture incomplète",

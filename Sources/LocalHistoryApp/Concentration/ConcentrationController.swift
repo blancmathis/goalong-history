@@ -130,6 +130,11 @@ struct FocusPanel: Equatable {
             if case .commitment = block.origin { return block.end > b.now }; return false
         }
     }
+    /// End of the locked block that refuses the stop of this session (nil when the stop is possible). Text only: the engine still decides.
+    var lockedPhaseBlockEnd: Date? {
+        guard let id = phaseBlockID, let b = blocking() else { return nil }
+        return b.activeBlocks.first { $0.id == id && $0.lock == .locked && $0.end > b.now }?.end
+    }
     private var hasLockedPhaseBlock: Bool {
         guard let id = phaseBlockID, let b = blocking() else { return false }
         return b.activeBlocks.contains { $0.id == id && $0.lock == .locked && $0.end > b.now }

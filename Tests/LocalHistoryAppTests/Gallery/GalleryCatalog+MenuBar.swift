@@ -29,6 +29,12 @@ extension GalleryCatalog {
                 model.live = [.init(id: "social", title: "Bloque Réseaux sociaux", detail: "En cours jusqu’à 10:30",
                                     lock: .free, stop: .now)]
             },
+            // T-057 U1 (idea 3): a locked phase says until when and offers no stop.
+            state("seance-verrouillee") { model in
+                model.focusRun = .init(phaseTitle: "Concentration", remaining: 1_122, elapsed: 378, progress: 0.25,
+                                       cycle: 2, cycles: 4, nextBreak: GalleryClock.at(10, 0), isPaused: false,
+                                       lockedUntil: GalleryClock.at(10, 30))
+            },
             state("pause") { model in
                 model.tracking = .paused(since: GalleryClock.at(9, 2)); model.trackingDetail = "Suivi en pause depuis 09:02"
                 model.focusAvailable = false; model.focusKind = .free

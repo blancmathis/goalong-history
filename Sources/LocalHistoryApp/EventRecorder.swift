@@ -693,13 +693,21 @@
             publishStorageInterruption()
         }
 
+        private var lastPublishedStorageLoss: CaptureStorageLoss?
+
         private func publishStorageInterruption() {
             guard let interruption = storageInterruption else { return }
             let changedKind = publishedStorageInterruption?.kind != interruption.kind
             mutateStatus {
                 publishedStorageInterruption = (interruption.since, interruption.kind, interruption.lostEventCount)
             }
-            if changedKind { captureHealth?.markStorageInterrupted(interruption.kind, at: interruption.since) }
+            let loss = interruption.firstLostAt.flatMap { first in
+                interruption.lastLostAt.map { CaptureStorageLoss(count: interruption.lostEventCount, first: first, last: $0) }
+            }
+            if changedKind || loss != lastPublishedStorageLoss {
+                lastPublishedStorageLoss = loss
+                captureHealth?.markStorageInterrupted(interruption.kind, at: interruption.since, loss: loss)
+            }
         }
 
         private static func unixMilliseconds(_ date: Date?) -> String {

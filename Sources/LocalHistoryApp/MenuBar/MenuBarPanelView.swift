@@ -587,8 +587,14 @@
                         .accessibilityHidden(true)
                     }
                     Spacer(minLength: 8)
-                    Button("Arrêter", action: model.stopFocus)
-                        .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                    if let line = run.lockedLine {
+                        Label(line, systemImage: "lock.fill")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(LHTheme.secondaryText)
+                            .accessibilityIdentifier("menubar-focus-locked")
+                    } else {
+                        Button("Arrêter", action: model.stopFocus)
+                            .buttonStyle(LHSecondaryButtonStyle()).controlSize(.small)
+                    }
                 }
             }
         }

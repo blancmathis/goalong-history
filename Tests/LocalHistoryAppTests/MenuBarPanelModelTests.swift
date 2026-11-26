@@ -394,6 +394,19 @@ final class MenuBarPanelModelTests: XCTestCase {
         XCTAssertNotNil(f.focus?.currentSession); XCTAssertNotNil(model.focusRun)
         XCTAssertEqual(f.opened.last, .concentration)
         XCTAssertEqual(f.blocking?.activeBlocks.first?.lock, .locked)
+        // T-057 U1 (idea 3): the panel says until when, and offers no stop. Text only: the refusal above is the engine's.
+        model.refreshRuntimeState()
+        let until = try XCTUnwrap(model.focusRun?.lockedUntil)
+        XCTAssertEqual(until, f.blocking?.activeBlocks.first?.end)
+        XCTAssertTrue(try XCTUnwrap(model.focusRun?.lockedLine).hasPrefix("Verrouillé jusqu’à "))
+    }
+
+    @MainActor func testFreeSessionShowsNoLockLine() throws {
+        let f = fixture()
+        try f.startFocusController()
+        try f.focus!.startSession(intent: "Écrire", mode: FocusMode(minutes: 25))
+        let model = f.model(); model.refreshRuntimeState()
+        XCTAssertNotNil(model.focusRun); XCTAssertNil(model.focusRun?.lockedUntil); XCTAssertNil(model.focusRun?.lockedLine)
     }
 
     /// T-050 B2c: the panel shows the running rules of « Blocages », the page's own objects, with the page's stop.

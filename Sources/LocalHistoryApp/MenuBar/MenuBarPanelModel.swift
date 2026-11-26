@@ -72,6 +72,14 @@ import LocalHistoryCore
         var isPaused: Bool
         var intent: String? = nil
         var nextAction: String? = nil
+        /// Set while a locked block refuses the stop: the popover says « Verrouillé jusqu'à HH:MM » and offers no stop.
+        var lockedUntil: Date? = nil
+        var lockedLine: String? {
+            lockedUntil.map {
+                let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR"); f.dateFormat = "HH:mm"
+                return "Verrouillé jusqu’à \(f.string(from: $0))"
+            }
+        }
     }
     struct DayAction: Equatable {
         var itemID: UUID?
@@ -408,7 +416,8 @@ import LocalHistoryCore
             elapsed: elapsed, progress: progress, cycle: session.mode.kind == .pomodoro ? phase.cycle : nil,
             cycles: session.mode.cycles, nextBreak: session.mode.kind == .pomodoro && phase.isWork ? phase.endsAt : nil,
             isPaused: false, intent: session.intent,
-            nextAction: controller.plan.items.first(where: { $0.id == session.planItemId })?.nextAction)
+            nextAction: controller.plan.items.first(where: { $0.id == session.planItemId })?.nextAction,
+            lockedUntil: controller.lockedPhaseBlockEnd)
     }
 
     private func refreshDayAction(_ controller: ConcentrationController) {
