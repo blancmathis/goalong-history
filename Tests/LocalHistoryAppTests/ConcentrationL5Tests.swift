@@ -84,10 +84,10 @@ final class ConcentrationL5Tests: XCTestCase {
         _ = try c.setCommitment(period: period, kind: .work, target: 180)
         now = FocusCalendar.dayInterval("2026-10-04", calendar: cal)!.start.addingTimeInterval(23 * 3600 + 300)
         uptime += 15.5 * 3600                      // proven: 00:30 the next day; wall: 23:05
-        c.refresh()
+        c.applyMeasurements([], hasDefinition: true)   // settlement runs from the measurement path, not refresh()
         let settled = c.commitments.first { $0.period == period }
         XCTAssertNotNil(settled?.result, "settled with a real result, not published empty")
-        c.refresh()
+        c.applyMeasurements([], hasDefinition: true)
         XCTAssertEqual(c.commitments.filter { $0.result != nil }.count, 1)
     }
 }

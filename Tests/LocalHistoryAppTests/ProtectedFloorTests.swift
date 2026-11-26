@@ -349,7 +349,8 @@ import XCTest
         }
         let off = JevSessionMark(id: UUID(), kind: .own, on: false, lock: .free, settings: weakStages)
         XCTAssertTrue(store.mark(off, now: now, alive: JevRunningSessions()), "a session without surveillance is not a weakening")
-        var stronger = fallingStages; stronger.stages[0].intensity = 95
+        var stronger = fallingStages; stronger.stages[1].intensity = 30 // valid range is 10...85
+        XCTAssertTrue(stronger.isValid && JevSurveillanceStore.isAtLeast(stronger, fallingStages))
         let ok = JevSessionMark(id: UUID(), kind: .focus, on: true, lock: .free, settings: stronger)
         XCTAssertTrue(store.mark(ok, now: now, alive: JevRunningSessions(focus: ok.id)))
         XCTAssertNil(store.markRefusal)
