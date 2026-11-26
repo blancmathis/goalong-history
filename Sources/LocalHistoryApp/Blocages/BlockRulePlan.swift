@@ -176,16 +176,18 @@ enum BlockRulePlan {
         defer { if asked { grant.revoke() } }
         // Mathis (2026-11-21): a running « Mot de passe » range ends with the password. Deleting or weakening its rule
         // asks it, stops the window in progress, then goes on; the same password passes the rule's stop below.
+        // T-057 L4 (blocage-05): every check that can refuse runs before that stop. A refusal of the lists (a joined
+        // rule whose list is still running) used to come after the red window was already ended: now nothing moves.
+        var runningRed: Set<UUID> = []
+        var password: String?
         if writes.touchesRed, let braise {
-            let running = braise.runningPasswordRanges(writes.red, deleting: writes.deleting)
-            if !running.isEmpty {
+            runningRed = braise.runningPasswordRanges(writes.red, deleting: writes.deleting)
+            if !runningRed.isEmpty {
                 let action = writes.red.isEmpty ? "Supprimer la règle" : "Modifier la règle"
-                guard let password = (askPassword ?? { RuleStopGrant.askPassword(action: $0) })(action) else { return RuleStopGrant.keptText }
-                if password.isEmpty { return BlockingController.emptyPasswordText }
-                for id in running.sorted(by: { $0.uuidString < $1.uuidString }) {
-                    if let refusal = RedScreenPasswordSheet.stopWords(braise.stopRange(id, password: password)) { return refusal }
-                }
-                if grant.pass(.password, proof: .password(password)) == nil { asked = true }
+                guard let given = (askPassword ?? { RuleStopGrant.askPassword(action: $0) })(action) else { return RuleStopGrant.keptText }
+                if given.isEmpty { return BlockingController.emptyPasswordText }
+                if let refusal = grant.pass(.password, proof: .password(given)) { return refusal }
+                asked = true; password = given
             }
         }
         var stop = BlockLock.free
@@ -198,7 +200,12 @@ enum BlockRulePlan {
             }
         }
         for list in writes.lists { raise(blocking?.weakeningStop(list)) }
-        if writes.touchesRed { raise(braise?.weakeningStop(writes.red, deleting: writes.deleting)) }
+        if writes.touchesRed, let braise {
+            // Before the running windows end: the stop the change needs once they are ended (never weaker than after).
+            do { raise(runningRed.isEmpty ? braise.weakeningStop(writes.red, deleting: writes.deleting)
+                                          : try braise.idleWeakeningStop(writes.red, deleting: writes.deleting)) }
+            catch { return words(error) }
+        }
         if stop == .locked { return RuleStopGrant.lockedText }
         // The stop is passed before the checks: each engine then reads the same grant, used for this change only.
         if stop != .free, !grant.covers(stop) {
@@ -215,6 +222,15 @@ enum BlockRulePlan {
         if let blocking {
             for list in writes.lists {
                 if case .refused(let reason) = blocking.editCheck(list) { return "« \(list.name) » : \(reason)" }
+            }
+        }
+        if let braise, let password {
+            for id in runningRed.sorted(by: { $0.uuidString < $1.uuidString }) {
+                if let refusal = RedScreenPasswordSheet.stopWords(braise.stopRange(id, password: password)) { return refusal }
+            }
+            // The windows just ended: the real stop of the red change, read again (a stricter one still refuses).
+            if let need = braise.weakeningStop(writes.red, deleting: writes.deleting), need != .free, !grant.covers(need) {
+                return need == .locked ? RuleStopGrant.lockedText : RuleStopGrant.needText(need)
             }
         }
         if writes.touchesRed, let braise {

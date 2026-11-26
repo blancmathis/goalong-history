@@ -89,6 +89,9 @@ struct PauseUsage: Codable, Hashable {
     var extra = false
     /// Start of the wait before a pause (« Attendre »).
     var waitStartedAt: Date?
+    /// T-057 L4 (blocage-03): the absolute end of `period`, fixed in the time zone it started in. A time-zone change
+    /// never renews the budget before it. Nil in a file of an older build (the key alone then decides).
+    var periodEnd: Date?
 }
 
 /// What the gate asked before a pause has given.
@@ -134,14 +137,21 @@ enum PauseEngine {
     }
 
     /// The usage in the current period: a new period starts from zero, a finished pause is counted.
+    /// T-057 L4 (blocage-03): the stored period is kept while its key is today's key in `calendar` *or* its absolute
+    /// end is not reached; a time-zone change, either way, never hands back a used budget early.
     static func current(_ usage: PauseUsage?, policy: PausePolicy, now: Date, calendar: Calendar) -> PauseUsage {
         let key = periodKey(policy.period, at: now, calendar: calendar)
-        guard var usage, usage.period == key else {
+        let end = bounds(policy.period, at: now, calendar: calendar).end
+        let sameKey = usage?.period == key
+        let notOver = usage?.periodEnd.map { now < $0 } ?? false
+        guard var usage, sameKey || notOver else {
             // A pause running across the reset keeps its end; it no longer counts in the new period.
-            var fresh = PauseUsage(period: key)
+            var fresh = PauseUsage(period: key, periodEnd: end)
             if let start = usage?.start, let end = usage?.end, end > now { fresh.start = start; fresh.end = end; fresh.extra = true }
             return fresh
         }
+        // The same key read in a zone further west ends later: the latest end is kept (never an earlier renewal).
+        if sameKey { usage.periodEnd = max(usage.periodEnd ?? end, end) }
         if let start = usage.start, let end = usage.end, end <= now {
             if !usage.extra { usage.usedSeconds += max(0, end.timeIntervalSince(start)) }
             usage.start = nil; usage.end = nil; usage.extra = false
