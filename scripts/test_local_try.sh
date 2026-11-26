@@ -7,7 +7,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 T="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/goalong-local-try-test.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/scripts" "$T/apps"
-cp "$SRC/local_try.sh" "$SRC/build_number_policy.sh" "$T/scripts/"
+cp "$SRC/local_try.sh" "$SRC/build_number_policy.sh" "$SRC/perso_handoff.sh" "$T/scripts/"
 cat >"$T/scripts/build_app.sh" <<'STUB'
 #!/bin/bash
 set -e

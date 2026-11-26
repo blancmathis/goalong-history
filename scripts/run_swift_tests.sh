@@ -195,6 +195,8 @@ case "$mode" in
         # Tests named after another script that cover this one too.
         case "$stem" in
           build_app_core) add_script "syntax:$f"; add_script scripts/test_build_number_policy.sh; found=1 ;;
+          install_from_source) add_script scripts/test_install_relaunch.sh; found=1 ;;
+          local_try|perso_handoff) add_script scripts/test_perso_handoff.sh; found=1 ;;
         esac
         [[ $found -eq 1 ]] || add_script "syntax:$f"
       }

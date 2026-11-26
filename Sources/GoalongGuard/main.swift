@@ -43,9 +43,15 @@ var environment = GuardEnvironment(
             completion(app.map { $0.isTerminated ? -1 : $0.processIdentifier }, error)
         }
     })
-environment.proofAlive = { reason in
-    guard let path = bundle.proofPath(for: reason) else { return false }
-    return !GuardProcesses.pids(executable: path).isEmpty
+// L1L2-01: a perso lease's proof must be a genuine relauncher signed like this guard; the stage path alone
+// proves nothing. Other leases keep their proofs inside the installed bundle.
+let proofRequirement = GuardProof.sameTeamRequirement()
+environment.proofAlive = { lease in
+    bundle.proofPaths(for: lease).contains { path in
+        guard lease.reason == GuardLease.persoUpdate else { return !GuardProcesses.pids(executable: path).isEmpty }
+        guard let proofRequirement else { return false }
+        return !GuardProof.authenticPids(executable: path, requirement: proofRequirement).isEmpty
+    }
 }
 environment.bundlePresent = { FileManager.default.fileExists(atPath: bundle.infoPlist.path) }
 environment.binaryReplaced = {

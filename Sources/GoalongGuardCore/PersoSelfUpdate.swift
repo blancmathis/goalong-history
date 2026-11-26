@@ -139,7 +139,10 @@ public struct PersoUpdateFiles: Sendable {
     }
 
     public struct Result: Codable, Equatable, Sendable {
-        public static let accepted = "accepted", refused = "refused", installed = "installed", rolledBack = "rolled_back"
+        /// `claimed`: the app took the request before its slow checks (installation-02); the script must then
+        /// wait for a final state, never fall back. Removing the request folder cancels it before the swap.
+        public static let claimed = "claimed", accepted = "accepted", refused = "refused", installed = "installed",
+                          rolledBack = "rolled_back"
         public var state: String
         public var reason: String?
         public init(state: String, reason: String? = nil) { self.state = state; self.reason = reason }
@@ -156,11 +159,31 @@ public struct PersoUpdateFiles: Sendable {
         return value.pid == pid && value.builtAt == builtAt
     }
 
-    /// Only into an existing request folder: a result never creates one.
-    public func writeResult(_ id: String, _ result: Result) {
+    /// L1L2-02: ownership of a request changes by one atomic rename of `request.json`, shared with
+    /// scripts/perso_handoff.sh. The app renames it to `claimed`; the script cancels by renaming it to `cancelled`.
+    /// Exactly one of the two succeeds, so a cancelled request is never installed and a claimed one never falls
+    /// back to the installer.
+    public static let requestFile = "request.json", claimFile = "claimed", cancelFile = "cancelled"
+
+    /// True when the app now owns the request. False when the script cancelled it (or it is gone).
+    public func claim(_ id: String) -> Bool {
+        guard PersoUpdate.isValidRequestID(id) else { return false }
+        let from = request(id).appendingPathComponent(Self.requestFile).path
+        let to = request(id).appendingPathComponent(Self.claimFile).path
+        return rename(from, to) == 0
+    }
+
+    /// Only into an existing request folder: a result never creates one. False when nothing was written.
+    @discardableResult public func writeResult(_ id: String, _ result: Result) -> Bool {
         guard PersoUpdate.isValidRequestID(id), FileManager.default.fileExists(atPath: request(id).path),
-              let data = try? JSONEncoder().encode(result) else { return }
-        try? data.write(to: self.result(id), options: .atomic)
+              let data = try? JSONEncoder().encode(result) else { return false }
+        return (try? data.write(to: self.result(id), options: .atomic)) != nil
+    }
+
+    /// The app still owns this request: its folder is there and its result is still ours (claimed or accepted).
+    public func stillOwned(_ id: String) -> Bool {
+        guard let state = readResult(id)?.state else { return false }
+        return [Result.claimed, Result.accepted].contains(state)
     }
 
     public func readResult(_ id: String) -> Result? {
@@ -171,7 +194,7 @@ public struct PersoUpdateFiles: Sendable {
     public func pendingRequests() -> [String] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: inbox.path)) ?? []
         return names.filter {
-            PersoUpdate.isValidRequestID($0) && FileManager.default.fileExists(atPath: request($0).appendingPathComponent("request.json").path)
+            PersoUpdate.isValidRequestID($0) && FileManager.default.fileExists(atPath: request($0).appendingPathComponent(Self.requestFile).path)
                 && !FileManager.default.fileExists(atPath: result($0).path)
         }.sorted()
     }

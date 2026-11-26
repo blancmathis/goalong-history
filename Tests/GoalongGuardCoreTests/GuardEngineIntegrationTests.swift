@@ -65,7 +65,7 @@ final class GuardEngineIntegrationTests: XCTestCase {
 
     private func startEngine(stopCheck: TimeInterval = 0.3, wall: (() -> Date)? = nil, bootTime: (() -> Double)? = nil,
                              sessionEndWait: TimeInterval? = nil, refusedSessionEndDelay: TimeInterval? = nil,
-                             continuityAllowed: Bool = true) {
+                             continuityAllowed: Bool = true, leaseMaximum: TimeInterval? = nil) {
         var environment = GuardEnvironment(locateApp: { [app] in app!.current }, launch: { [app] in app!.launch($0) })
         environment.continuityAllowed = continuityAllowed
         environment.observeSession = { [weak self] handler in self?.announce = handler }
@@ -73,6 +73,7 @@ final class GuardEngineIntegrationTests: XCTestCase {
         if let bootTime { environment.bootTime = bootTime }
         if let sessionEndWait { environment.sessionEndWait = sessionEndWait }
         if let refusedSessionEndDelay { environment.refusedSessionEndDelay = refusedSessionEndDelay }
+        if let leaseMaximum { environment.leaseMaximum = leaseMaximum }
         environment.proofAlive = { [weak self] _ in self?.proofAlive ?? false }
         environment.stopCheckInterval = stopCheck
         environment.retryDelay = 0.05
@@ -204,6 +205,64 @@ final class GuardEngineIntegrationTests: XCTestCase {
         usleep(800_000)
         XCTAssertEqual(app.launchCount, 0, "Sparkle reopens the app itself")
         XCTAssertNotNil(waitUntil(3) { app.launchCount == 1 }, "the lease ran out: the guard relaunches")
+    }
+
+    /// L1L2-07: the perso lease names the parent; the candidate the relauncher opened dies before the lease
+    /// moves to it. Same transaction: the guard keeps waiting for the relauncher (rollback), then relaunches.
+    func testAPersoCandidateDyingBeforeTheLeaseMovesKeepsTheTransaction() throws {
+        let parent = try app.spawn()
+        arm()
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == parent })
+        proofAlive = true
+        XCTAssertTrue(files.writeLease(GuardLease(pid: parent, reason: GuardLease.persoUpdate,
+                                                  until: Date().timeIntervalSince1970 + 2.5, request: "req-1")))
+        kill(parent, SIGKILL)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == nil })
+        usleep(100_000)
+        let candidate = try app.spawn()
+        XCTAssertNotNil(waitUntil(1.5) { snapshot()?.watchingPID == candidate }, "the guard sees the candidate")
+        kill(candidate, SIGKILL)
+        usleep(800_000)
+        XCTAssertEqual(app.launchCount, 0, "the relauncher still owns the transaction (it may roll back)")
+        XCTAssertNotNil(waitUntil(3) { app.launchCount == 1 }, "the lease ran out: the guard relaunches")
+    }
+
+    /// L1L2-07: the continuation is for that transaction only. A lease of another request is not carried over.
+    func testAnotherRequestsLeaseDoesNotCoverACandidateDeath() throws {
+        let parent = try app.spawn()
+        arm()
+        startEngine()
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == parent })
+        proofAlive = true
+        XCTAssertTrue(files.writeLease(GuardLease(pid: parent, reason: GuardLease.persoUpdate,
+                                                  until: Date().timeIntervalSince1970 + 2.5, request: "req-1")))
+        kill(parent, SIGKILL)
+        usleep(100_000)
+        let candidate = try app.spawn()
+        XCTAssertNotNil(waitUntil(1.5) { snapshot()?.watchingPID == candidate })
+        XCTAssertTrue(files.writeLease(GuardLease(pid: parent, reason: GuardLease.persoUpdate,
+                                                  until: Date().timeIntervalSince1970 + 2.5, request: "req-2")))
+        kill(candidate, SIGKILL)
+        XCTAssertNotNil(waitUntil(0.6) { app.launchCount == 1 }, "not the same transaction: immediate relaunch")
+    }
+
+    /// L1L2-01/cap: rewriting `until` never extends the wait past the cap counted from the first honour.
+    func testRewritingTheLeaseNeverExtendsTheWait() throws {
+        let pid = try app.spawn()
+        arm()
+        startEngine(leaseMaximum: 1.5)
+        XCTAssertNotNil(waitUntil(1) { snapshot()?.watchingPID == pid })
+        proofAlive = true
+        XCTAssertTrue(files.writeLease(GuardLease(pid: pid, reason: GuardLease.update, until: Date().timeIntervalSince1970 + 1.4)))
+        let killed = Date()
+        kill(pid, SIGKILL)
+        usleep(900_000)
+        XCTAssertTrue(files.writeLease(GuardLease(pid: pid, reason: GuardLease.update, until: Date().timeIntervalSince1970 + 1.4)))
+        XCTAssertNotNil(waitUntil(3) { app.launchCount == 1 })
+        let waited = (app.launches.first ?? Date()).timeIntervalSince(killed)
+        XCTAssertGreaterThan(waited, 1.0)
+        XCTAssertLessThan(waited, 2.0, "capped at 1.5 s from the first honour, not 0.9 + 1.4 s")
     }
 
     func testAnEarlyDeathLoopBacksOff() throws {

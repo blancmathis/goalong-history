@@ -8,7 +8,8 @@ import GoalongGuardCore
 /// perso build, signature against our own designated requirement and leaf certificate, and during a locked block
 /// at most one install per 10 minutes (counted from this instance's launch on a clock that runs during sleep).
 /// Then: staged copy beside us, staged relauncher ready, atomic swap, quit as for a Sparkle update. The
-/// relauncher reopens the new app and swaps back unless it reports health within 45 s.
+/// relauncher reopens the new app and swaps back unless it reports health within 45 s. Health is written only
+/// once `applicationDidFinishLaunching` completed, never after a fatal start (installation-03).
 @MainActor final class PersoSelfUpdate { // one instance per app
     static let shared = PersoSelfUpdate()
     private let files = PersoUpdateFiles.standard
@@ -17,11 +18,28 @@ import GoalongGuardCore
     private var busy = false
     private var process: Process?
     private var pipe: Pipe?
+    private var started = false
+    private var health = PersoStartupHealth()
 
     static func start() {
         #if GOALONG_PERSO
         shared.begin()
         #endif
+    }
+
+    /// A required component failed to start: this process never reports health.
+    static func startupFailed() { shared.health.startupFailed() }
+
+    /// `applicationDidFinishLaunching` finished: report health once the run loop turns (a later failure still wins).
+    static func startupSucceeded() {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let me = shared
+                guard me.started, me.health.startupSucceeded(),
+                      let builtAt = PersoBundleFacts.read(app: Bundle.main.bundleURL).builtAt else { return }
+                me.files.writeHealth(.init(pid: getpid(), builtAt: builtAt))
+            }
+        }
     }
 
     private var secondsSinceLaunch: TimeInterval {
@@ -34,11 +52,8 @@ import GoalongGuardCore
         let fm = FileManager.default
         try? fm.createDirectory(at: files.inbox, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         removeStaleStages()
-        // The relauncher waits for this before it keeps the new build.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [files] in
-            guard let builtAt = PersoBundleFacts.read(app: Bundle.main.bundleURL).builtAt else { return }
-            files.writeHealth(.init(pid: getpid(), builtAt: builtAt))
-        }
+        // The relauncher waits for health before it keeps the new build: see `startupSucceeded`.
+        started = true
         let fd = open(files.inbox.path, O_EVTONLY)
         guard fd >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename], queue: .main)
@@ -74,58 +89,104 @@ import GoalongGuardCore
         return runtime.protectedUntil() != nil || runtime.protectedRuleStop() != nil || JevStopGate.protectedStep() != .allow
     }
 
-    /// nil when the swap is done and Goalong is quitting; otherwise why the request was refused.
+    /// nil when the request is taken (it finishes asynchronously); otherwise why it was refused at once.
     private func install(_ request: String) -> String? {
         let fm = FileManager.default
         let target = Bundle.main.bundleURL.resolvingSymlinksInPath()
         let candidate = files.request(request).appendingPathComponent(target.lastPathComponent, isDirectory: true)
-        let running = PersoBundleFacts.read(app: target)
-        func policy(_ app: URL) -> String? {
-            if case .refuse(let reason) = PersoUpdatePolicy.decide(candidate: PersoBundleFacts.read(app: app), running: running,
-                                                                   protected: Self.protectedNow, secondsSinceLaunch: secondsSinceLaunch) {
-                return reason
-            }
-            return nil
-        }
         guard fm.fileExists(atPath: candidate.path) else { return "app absente de la demande" }
-        if let reason = policy(candidate) { return reason }
+        if let reason = policy(candidate, target: target) { return reason }
+        // installation-02: claim before the slow copy and signature check. A claimed request is ours; the
+        // script must not fall back to the installer, and removing the request cancels before the swap.
+        // L1L2-02: the claim is the atomic rename; the result only reports it.
+        guard files.claim(request) else {
+            busy = false
+            return nil // the script cancelled it (or it vanished): never install it
+        }
+        files.writeResult(request, .init(state: PersoUpdateFiles.Result.claimed))
         // Check the copy we install, in a folder beside us (same volume, so the swap is atomic).
         let staged = PersoStage.stagedApp(for: target, request: request)
+        let stageDir = staged.deletingLastPathComponent()
+        // Copy and signature off the main thread: recording and blocking go on meanwhile.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let failure = Self.prepareStage(candidate: candidate, staged: staged)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let `self` = PersoSelfUpdate.shared
+                    if let failure { return self.finishRefused(request, stageDir: stageDir, reason: failure) }
+                    // Checked again on the copy, with the block state of now.
+                    if let reason = self.policy(staged, target: target) {
+                        return self.finishRefused(request, stageDir: stageDir, reason: reason)
+                    }
+                    guard self.files.writeResult(request, .init(state: PersoUpdateFiles.Result.accepted)) else {
+                        return self.finishRefused(request, stageDir: stageDir, reason: "demande annulée")
+                    }
+                    self.handOver(request: request, target: target, staged: staged, stageDir: stageDir)
+                }
+            }
+        }
+        return nil
+    }
+
+    private func policy(_ app: URL, target: URL) -> String? {
+        if case .refuse(let reason) = PersoUpdatePolicy.decide(candidate: PersoBundleFacts.read(app: app),
+                                                               running: PersoBundleFacts.read(app: target),
+                                                               protected: Self.protectedNow, secondsSinceLaunch: secondsSinceLaunch) {
+            return reason
+        }
+        return nil
+    }
+
+    /// Copies the candidate beside us and checks its signature. nil when ready; otherwise why not.
+    nonisolated private static func prepareStage(candidate: URL, staged: URL) -> String? {
+        let fm = FileManager.default
         let stageDir = staged.deletingLastPathComponent()
         try? fm.removeItem(at: stageDir)
         do {
             try fm.createDirectory(at: stageDir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
             try fm.copyItem(at: candidate, to: staged)
-        } catch { try? fm.removeItem(at: stageDir); return "copie impossible à côté de l’app (\(error.localizedDescription))" }
-        let fail: (String) -> String = { reason in try? fm.removeItem(at: stageDir); return reason }
-        guard let reference = PersoSignature.selfStaticCode() else { return fail("signature de l’app introuvable") }
-        if let reason = PersoSignature.check(candidate: staged, reference: reference) { return fail(reason) }
-        if let reason = policy(staged) { return fail(reason) }
-        files.writeResult(request, .init(state: PersoUpdateFiles.Result.accepted))
+        } catch { return "copie impossible à côté de l’app (\(error.localizedDescription))" }
+        guard let reference = PersoSignature.selfStaticCode() else { return "signature de l’app introuvable" }
+        return PersoSignature.check(candidate: staged, reference: reference)
+    }
+
+    private func handOver(request: String, target: URL, staged: URL, stageDir: URL) {
         startRelauncher(staged: staged, request: request) { [weak self] error in
             guard let self else { return }
             if let error {
                 self.finishRefused(request, stageDir: stageDir, reason: error)
                 return
             }
+            // A cancelled request (folder removed, or another result) never reaches the swap.
+            guard self.files.stillOwned(request) else {
+                self.process?.terminate()
+                self.finishRefused(request, stageDir: stageDir, reason: "demande annulée")
+                return
+            }
+            // One installation at a time: never swap while Sparkle relaunches for its own update (L1L2-08).
+            guard SoftwareUpdateManager.shared.acquirePersoRelaunch() else {
+                self.process?.terminate()
+                self.finishRefused(request, stageDir: stageDir, reason: "une mise à jour Sparkle est en cours")
+                return
+            }
             do { try PersoStage.swap(target, staged) } catch {
+                SoftwareUpdateManager.shared.abandonPersoRelaunch()
                 self.process?.terminate()
                 self.finishRefused(request, stageDir: stageDir, reason: error.localizedDescription)
                 return
             }
-            // The guard waits while the relauncher (now at the installed path) lives (spec K §8).
-            GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
-            SoftwareUpdateManager.shared.markRelaunchingForPersoUpdate()
+            // The guard waits while the relauncher (now at the installed path) lives (installation-05).
+            GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration, request: request)
             // `finish` runs inside a main-queue block: quitting from there would hang in `terminate` (2026-11-22).
             AppDelegate.terminateFromRunLoop()
         }
-        return nil
     }
 
     private func finishRefused(_ request: String, stageDir: URL, reason: String) {
         try? FileManager.default.removeItem(at: stageDir)
         files.writeResult(request, .init(state: PersoUpdateFiles.Result.refused, reason: reason))
         busy = false
+        DispatchQueue.main.async { [weak self] in self?.scan() }
     }
 
     /// Same handshake as PermissionRecovery: the relauncher answers READY once it watches our exit.

@@ -140,9 +140,10 @@ enum GoalongGuardFiles {
 
     /// Sparkle or the relauncher will reopen this copy: the guard waits instead of racing them.
     /// Written only while the guard is armed, so nothing changes for a member without a severe block.
-    static func writeLease(_ reason: String, seconds: TimeInterval, files: GuardFiles = standard) {
+    static func writeLease(_ reason: String, seconds: TimeInterval, request: String? = nil, files: GuardFiles = standard) {
         guard files.markerExists() || files.continuityExists() else { return }
-        files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds)) // wall: guard protocol (spec K §4, wall)
+        files.writeLease(GuardLease(pid: getpid(), reason: reason, until: Date().timeIntervalSince1970 + seconds, // wall: guard protocol (spec K §4, wall)
+                                    request: request))
     }
 
     /// An installer runs with the documented override (`--unregister-guard` wrote `guard-override`):

@@ -182,9 +182,28 @@ import AppleScreenTime
 
         private var updaterController: SPUStandardUpdaterController?
         private var hasStarted = false
-        private(set) var isRelaunchingForUpdate = false
-        /// `make perso` self-update: the new build is already in place; quit like a Sparkle relaunch (no password).
-        func markRelaunchingForPersoUpdate() { isRelaunchingForUpdate = true }
+        /// Sparkle or a perso swap; Sparkle's abort ends only its own (sparkle-didAbort, audit 2026-11-26).
+        private var relaunchOwnership = UpdateRelaunchOwnership()
+        var isRelaunchingForUpdate: Bool { relaunchOwnership.isRelaunching }
+        /// `make perso` self-update, just before the swap: quit like a Sparkle relaunch (no password).
+        /// False while Sparkle relaunches for its own update: the swap must not happen (L1L2-08).
+        func acquirePersoRelaunch() -> Bool { relaunchOwnership.mark(.perso) }
+        /// The swap did not happen after all.
+        func abandonPersoRelaunch() { relaunchOwnership.persoAbandoned() }
+        /// Sparkle may not start an install while a perso swap owns the relaunch.
+        var persoOwnsRelaunch: Bool { relaunchOwnership.owner == .perso }
+
+        /// Sparkle's `willRelaunch`: its `update` lease only when Sparkle really owns the relaunch; a perso
+        /// swap's lease (reason, request) stays as it is (L1L2-08).
+        nonisolated static func sparkleWillRelaunch(_ ownership: inout UpdateRelaunchOwnership, files: GuardFiles) {
+            guard ownership.mark(.sparkle) else { return }
+            GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration, files: files)
+        }
+
+        /// Sparkle's abort (« no update » too) ends only its own state and lease.
+        nonisolated static func sparkleDidAbort(_ ownership: inout UpdateRelaunchOwnership, files: GuardFiles) {
+            if ownership.sparkleAborted() { files.removeLease(reason: GuardLease.update) }
+        }
         private var lastBackgroundCheck: Date?
         private var checkQueue = SoftwareUpdateCheckQueue()
         private var sparkleObservations: [NSKeyValueObservation] = []
@@ -376,8 +395,8 @@ import AppleScreenTime
 
         /// Sparkle may run user-initiated checks and probes. Its scheduled background update check
         /// would hold a quiet session open (gentle reminders) and freeze the found version: refused.
-        nonisolated static func sparkleMayRun(_ check: SPUUpdateCheck) -> Bool {
-            check != .updatesInBackground
+        nonisolated static func sparkleMayRun(_ check: SPUUpdateCheck, persoOwnsRelaunch: Bool = false) -> Bool {
+            check != .updatesInBackground && !persoOwnsRelaunch
         }
 
         nonisolated static func isHeldSessionRefusal(_ error: (any Error)?) -> Bool {
@@ -634,21 +653,20 @@ import AppleScreenTime
                 values[.availableVersion] = .symbol(version)
             }
             SupportDiagnostics.shared.record(.updateChanged, component: .updates, values: values)
-            isRelaunchingForUpdate = true
-            GoalongGuardFiles.writeLease(GuardLease.update, seconds: GuardLease.maximumDuration)
+            Self.sparkleWillRelaunch(&relaunchOwnership, files: GoalongGuardFiles.standard)
         }
 
         func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
             // Every cycle, refused or not, ends with `didFinishUpdateCycle` (`SPUUpdater.m:817-853`).
             checkQueue.cycleWillStart()
-            guard Self.sparkleMayRun(updateCheck) else {
+            guard Self.sparkleMayRun(updateCheck, persoOwnsRelaunch: persoOwnsRelaunch) else {
                 throw NSError(domain: Self.heldSessionRefusalDomain, code: 1)
             }
         }
 
         func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
-            isRelaunchingForUpdate = false
-            GoalongGuardFiles.standard.removeLease()
+            // « No update » also lands here: never end a perso swap's state or lease.
+            Self.sparkleDidAbort(&relaunchOwnership, files: GoalongGuardFiles.standard)
             if !Self.isNoUpdateResult(error), !Self.isHeldSessionRefusal(error) {
                 SupportDiagnostics.shared.failure(error, component: .updates)
             }

@@ -23,13 +23,21 @@ public struct GuardRelease: Codable, Equatable, Sendable {
 public struct GuardLease: Codable, Equatable, Sendable {
     public static let update = "update"
     public static let permissionRestart = "permission_restart"
+    /// A `make perso` swap (installation-05): the staged relauncher reopens the app and may roll back.
+    /// Proved by that relauncher, at the installed path or in the request's stage folder; the app keeps
+    /// this lease at launch, and the relauncher moves it to the candidate's pid, then removes it.
+    public static let persoUpdate = "perso_update"
     /// Longest wait the guard ever grants, from the moment it reads the lease.
     public static let maximumDuration: TimeInterval = 180
     public var pid: Int32
     public var reason: String
     /// Unix seconds.
     public var until: Double
-    public init(pid: Int32, reason: String, until: Double) { self.pid = pid; self.reason = reason; self.until = until }
+    /// `persoUpdate` only: the inbox request id, which names the stage folder of the proof.
+    public var request: String?
+    public init(pid: Int32, reason: String, until: Double, request: String? = nil) {
+        self.pid = pid; self.reason = reason; self.until = until; self.request = request
+    }
 }
 
 /// `guard-health`: written by the app once its blocking runtime runs.
@@ -178,6 +186,25 @@ public struct GuardFiles: Sendable {
     public func continuityExists() -> Bool { exists(Self.continuity) }
     /// Called by the app at launch: a token always belongs to the process that wrote it.
     public func clearTokens() { _ = remove(Self.release); _ = remove(Self.lease) }
+    /// At the app's launch: a token belongs to the process that wrote it, except a perso swap's lease,
+    /// which its relauncher owns until health or rollback (installation-05).
+    public func clearTokensAtLaunch() {
+        _ = remove(Self.release)
+        if readLease()?.reason != GuardLease.persoUpdate { _ = remove(Self.lease) }
+    }
+    /// The perso relauncher moves the swap's lease to the app it watches (the candidate, then the restored app),
+    /// so the guard waits instead of reopening a bundle the relauncher is about to swap. Only while the guard is
+    /// armed, like the app's own leases; bounded by `maximumDuration` and by the relauncher being alive.
+    @discardableResult public func holdPersoLease(pid: Int32, request: String, now: Double) -> Bool {
+        guard markerExists() || continuityExists() else { return false }
+        return writeLease(GuardLease(pid: pid, reason: GuardLease.persoUpdate, until: now + GuardLease.maximumDuration,
+                                     request: request))
+    }
+    /// Removes the lease only when it has this reason (and request, when given): an owner ends only its own.
+    @discardableResult public func removeLease(reason: String, request: String? = nil) -> Bool {
+        guard let lease = readLease(), lease.reason == reason, request == nil || lease.request == request else { return false }
+        return remove(Self.lease)
+    }
 
     /// True when `guard-until` exists as a name (cheap stat, no read): the refresh rewrites a deleted marker.
     public func markerExists() -> Bool { exists(Self.until) }

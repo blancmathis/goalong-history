@@ -207,26 +207,12 @@ perso_handoff() {
   mkdir -m 700 "$tmp" && cp -c -R "$APP" "$tmp/" && echo '{}' >"$tmp/request.json" && mv "$tmp" "$request" \
     || { rm -rf "$tmp"; return 10; }
   t0="$(date +%s)"
-  read_state() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["state"]+"\t"+(d.get("reason") or ""))' "$request/result.json" 2>/dev/null || true; }
-  local deadline=$((t0 + 20)) accepted=""
-  while :; do
-    IFS=$'\t' read -r state reason <<<"$(read_state)"
-    case "$state" in
-      refused|installed|rolled_back) break ;;
-      # Accepted: the swap, the restart and the health check (the relauncher gives up after 120 s).
-      accepted) [[ -n "$accepted" ]] || { accepted=1; step "Hand-off checks (Goalong)" "$t0"; deadline=$(( $(date +%s) + 150 )); } ;;
-    esac
-    # A request Goalong claimed (file `claimed`, written before the slow copy) is being installed: never fall back
-    # to the classic installer (two installs at once) and never delete the request. Wait for a final result.
-    if [[ -z "$accepted" && -e "$request/claimed" ]]; then
-      accepted=1; step "Hand-off checks (Goalong)" "$t0"; deadline=$(( $(date +%s) + 150 ))
-    fi
-    if (( $(date +%s) >= deadline )); then
-      [[ -n "$accepted" ]] && break
-      rm -rf "$request"; echo "Goalong did not answer the hand-off; using the installer." >&2; return 10
-    fi
-    sleep 0.2
-  done
+  # shellcheck source=perso_handoff.sh
+  source "$ROOT/scripts/perso_handoff.sh"
+  handoff_claimed() { step "Hand-off checks (Goalong)" "$t0"; }
+  perso_handoff_wait "$request" "${GOALONG_HANDOFF_ANSWER_SECONDS:-20}" 240 handoff_claimed || {
+    echo "Goalong did not answer the hand-off; using the installer." >&2; return 10; }
+  state="$PERSO_HANDOFF_STATE" reason="$PERSO_HANDOFF_REASON"
   # Final answer, or Goalong still working on a claimed request: keep the request in the second case.
   case "$state" in refused|installed|rolled_back) rm -rf "$request" ;; esac
   case "$state" in

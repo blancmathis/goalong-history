@@ -58,10 +58,14 @@ public struct GuardInput: Equatable, Sendable {
     public var death: Death?
     public var release: GuardRelease?
     public var lease: GuardLease?
-    /// The lease's proof process (Autoupdate or goalong-relauncher of this bundle) is alive.
+    /// The lease's proof process (Autoupdate or goalong-relauncher of this bundle, or of its perso stage) is alive.
     public var leaseProofAlive = false
     /// Leases already honoured in the last hour.
     public var leasesInLastHour = 0
+    /// L1L2-01: continuous seconds already spent waiting for the lease of this death (or of the transaction
+    /// it continues). The total wait never exceeds `leaseMaximum`, however often `until` is rewritten.
+    public var leaseWaited: TimeInterval = 0
+    public var leaseMaximum: TimeInterval = GuardLease.maximumDuration
     /// The 30 s session-end wait for this death is over and the guard still lives.
     public var sessionEndWaitOver = false
     /// False when another death's `session_end` was honoured less than `sessionEndCooldown` ago: a logout
@@ -141,7 +145,9 @@ public enum GuardDecision {
                 return .relaunch(after: max(0, input.budgetDelay, hold - input.sinceDeath))
             }
         }
-        if let lease = validLease(input) { return .waitForLease(until: lease.until) }
+        if let lease = validLease(input) {
+            return .waitForLease(until: min(lease.until, input.now + input.leaseMaximum - input.leaseWaited))
+        }
         return .relaunch(after: max(0, input.budgetDelay))
     }
 
@@ -163,8 +169,8 @@ public enum GuardDecision {
         // At the guard's own start (no death seen, e.g. after an update replaced it) the proof alone counts.
         guard let lease = input.lease, input.death.map({ lease.pid == $0.pid }) ?? true, input.leaseProofAlive,
               input.leasesInLastHour < leasesPerHour, lease.until > input.now,
-              lease.until <= input.now + GuardLease.maximumDuration,
-              [GuardLease.update, GuardLease.permissionRestart].contains(lease.reason) else { return nil }
+              lease.until <= input.now + input.leaseMaximum, input.leaseWaited < input.leaseMaximum,
+              [GuardLease.update, GuardLease.permissionRestart, GuardLease.persoUpdate].contains(lease.reason) else { return nil }
         return lease
     }
 

@@ -81,8 +81,19 @@ public struct GuardBundle: Equatable, Sendable {
     public func proofPath(for reason: String) -> String? {
         switch reason {
         case GuardLease.update: return autoupdate.path
-        case GuardLease.permissionRestart: return relauncher.path
+        case GuardLease.permissionRestart, GuardLease.persoUpdate: return relauncher.path
         default: return nil
         }
+    }
+
+    /// Every exact path whose live process proves this lease. A perso lease also accepts the relauncher in
+    /// its own request's stage folder: the rollback swaps it back there before reopening the old app.
+    public func proofPaths(for lease: GuardLease) -> [String] {
+        guard let main = proofPath(for: lease.reason) else { return [] }
+        guard lease.reason == GuardLease.persoUpdate else { return [main] }
+        guard let request = lease.request, PersoUpdate.isValidRequestID(request) else { return [] }
+        let staged = PersoStage.stagedApp(for: appURL, request: request)
+            .appendingPathComponent("Contents/MacOS/goalong-relauncher")
+        return [main, staged.path]
     }
 }
