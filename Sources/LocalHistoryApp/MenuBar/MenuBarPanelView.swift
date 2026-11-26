@@ -221,7 +221,7 @@
             } content: {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     // A running session owns the large figure: the day total steps down (UI-14, écran 7).
-                    WorkFigure(seconds: model.workSeconds, known: model.workKnown, compact: model.focusRun != nil)
+                    WorkFigure(seconds: model.workSeconds, known: model.workKnown, unavailable: model.dayUnavailable, compact: model.focusRun != nil)
                     Text(model.otherSeconds >= 60
                         ? "de travail, \(durationText(model.otherSeconds)) hors travail" : "de travail")
                         .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
@@ -236,6 +236,7 @@
     private struct WorkFigure: View {
         let seconds: TimeInterval
         let known: Bool
+        var unavailable = false
         var compact = false
         private var large: Font { .system(size: compact ? 20 : 28, weight: .bold) }
         private var small: Font { .system(size: compact ? 13 : 17, weight: .semibold) }
@@ -258,7 +259,9 @@
             }
             .goalongNumericTransition()
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui" : "Temps de travail aujourd’hui : à classer")
+                        .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui"
+                : unavailable ? "Temps de travail aujourd’hui : journée indisponible" : "Temps de travail aujourd’hui : à classer")
+            .help(unavailable && !known ? "Journée indisponible" : "")
         }
     }
 
@@ -370,8 +373,9 @@
                 if let minutes = item.pauseMinutes {
                     Button("Pause") { model.takeLivePause(item.id) }
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                        .help("Pause de \(minutes) min")
-                        .accessibilityLabel("Pause de \(minutes) min : \(item.title)")
+                        .help(item.pauseListName.map { "Pause de \(minutes) min : \($0) seulement" } ?? "Pause de \(minutes) min")
+                        .accessibilityLabel(item.pauseListName.map { "Pause de \(minutes) min : \($0) seulement, pas les autres listes de « \(item.title) »" }
+                            ?? "Pause de \(minutes) min : \(item.title)")
                         .accessibilityIdentifier("menubar-live-pause")
                 }
                 if item.extendable {
@@ -876,7 +880,9 @@
                         .accessibilityIdentifier("menubar-red-screen-intensity")
                     Text(GoalongUIFormat.percent(model.redScreen.intensity * 100))
                         .font(.system(size: 12).monospacedDigit())
-                        .frame(width: 36, alignment: .trailing)
+                        .lineLimit(1)
+                        .frame(minWidth: 36, alignment: .trailing)
+                        .fixedSize(horizontal: true, vertical: false)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)
@@ -892,7 +898,9 @@
                         .accessibilityIdentifier("menubar-red-screen-brightness")
                     Text(GoalongUIFormat.percent(model.redScreen.filterBrightness * 100))
                         .font(.system(size: 12).monospacedDigit())
-                        .frame(width: 36, alignment: .trailing)
+                        .lineLimit(1)
+                        .frame(minWidth: 36, alignment: .trailing)
+                        .fixedSize(horizontal: true, vertical: false)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(LHTheme.secondaryText)

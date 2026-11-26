@@ -254,6 +254,13 @@ struct FocusReviewPanelView: View {
 struct FocusFactsView: View {
     let facts: FocusFacts
 
+    /// Said only when it is established: no measure at all, nothing active, or under a minute measured.
+    static func unmeasuredText(_ facts: FocusFacts) -> String {
+        if !facts.available { return "Pas de mesure pour cette séance : enregistrement suspendu ou lecture indisponible." }
+        if facts.activeSeconds <= 0 { return "Aucune activité mesurée pendant cette séance." }
+        return "Moins d’une minute d’activité mesurée."
+    }
+
     var body: some View {
         if facts.available, facts.activeSeconds >= 60 {
             VStack(alignment: .leading, spacing: 8) {
@@ -281,7 +288,7 @@ struct FocusFactsView: View {
             }
             .accessibilityElement(children: .combine)
         } else {
-            Text("Pas de mesure : l’enregistrement était suspendu pendant cette séance.")
+            Text(Self.unmeasuredText(facts))
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }

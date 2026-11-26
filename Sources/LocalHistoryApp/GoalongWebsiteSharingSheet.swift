@@ -124,7 +124,7 @@ import LocalHistoryQueryCLI
                 HStack {
                     DatePicker("La veille, après", selection: scheduleTime, displayedComponents: .hourAndMinute).goalongDateField(label: "La veille, après")
                     Spacer()
-                    GoalongHelpButton(text: "Fuseau : \(model.draft.timezone). L’envoi se fait lorsque Goalong est ouvert et le Mac connecté. Seule la veille est envoyée. Les journées plus anciennes ne sont pas rattrapées. La sélection ne s’élargit jamais automatiquement.")
+                    GoalongHelpButton(text: "Fuseau : \(model.draft.timezone). L’envoi se fait lorsque Goalong est ouvert et le Mac connecté. Chaque jour, la veille est envoyée. Si les envois ont été interrompus, les journées enregistrées en attente sont envoyées à la reprise, au plus les trois dernières. Une journée sans relevé n’est pas envoyée. La sélection ne s’élargit jamais automatiquement.")
                 }
                 Text("Nouvelles applications, nouveaux sites et textes exclus.").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             }

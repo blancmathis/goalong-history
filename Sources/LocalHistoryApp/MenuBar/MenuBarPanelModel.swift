@@ -56,6 +56,8 @@ import LocalHistoryCore
     @Published var workSeconds: TimeInterval = 0
     /// Same rule as the Activity headline: work is unknown (« — »), never zero, until most active time is classified.
     @Published var workKnown = false
+    /// The last day read failed. Kept until a read succeeds; separate from the capture text, which refreshes every second.
+    @Published var dayUnavailable = false
     @Published var otherSeconds: TimeInterval = 0
     @Published var segments: [DaySegment] = []
     @Published var nowFraction: Double = 0
@@ -145,6 +147,8 @@ import LocalHistoryCore
         /// D1b: what is left of its pauses, and the list a « Pause » button takes one from (nil = no button now).
         var pauses: String? = nil
         var pauseList: UUID? = nil
+        /// Set only when the line covers several lists: « Pause » suspends this one, not the whole line.
+        var pauseListName: String? = nil
         var pauseMinutes: Int? = nil
         /// D1b: a session of the page that « + 15 min » prolongs in one click.
         var extendable = false
@@ -274,7 +278,7 @@ import LocalHistoryCore
         nowFraction = fraction(now)
         if displayedDay != day {
             stopRefreshing(); displayedDay = day
-            workSeconds = 0; workKnown = false; otherSeconds = 0; segments = []
+            workSeconds = 0; workKnown = false; otherSeconds = 0; segments = []; dayUnavailable = false
         }
         guard dayTask == nil, let loadDay else { return }
         let generation = dayGeneration
@@ -289,7 +293,7 @@ import LocalHistoryCore
                 guard let self, !Task.isCancelled, self.dayGeneration == generation else { return }
                 self.dayTask = nil
                 self.workSeconds = 0; self.workKnown = false; self.otherSeconds = 0; self.segments = []
-                self.trackingDetail += ", Journée indisponible"
+                self.dayUnavailable = true
             }
         }
     }
@@ -350,6 +354,7 @@ import LocalHistoryCore
     }
 
     func applyDay(_ day: GoalongLocalAnalytics.Day) {
+        dayUnavailable = false
         workSeconds = day.seconds(.work); otherSeconds = day.seconds(.other)
         let active = day.activeSeconds
         workKnown = workSeconds > 0 || (active > 0 && (workSeconds + otherSeconds) / active >= 0.5)
@@ -634,6 +639,7 @@ import LocalHistoryCore
             for id in block.listIDs where (block.breaksLeft[id] ?? 0) > 0 && block.breakEnds[id] == nil && block.pauses[id] != nil {
                 guard let minutes = controller.pauseMinutes(listID: id), minutes > 0 else { continue }
                 item.pauseList = id; item.pauseMinutes = minutes
+                if Set(blocks.flatMap(\.listIDs)).count > 1 { item.pauseListName = controller.lists.first { $0.id == id }?.name }
                 return
             }
         }
