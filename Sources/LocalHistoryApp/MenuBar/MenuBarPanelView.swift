@@ -259,7 +259,7 @@
             }
             .goalongNumericTransition()
             .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui"
+            .accessibilityLabel(known ? "\(durationText(seconds)) de travail aujourd’hui"
                 : unavailable ? "Temps de travail aujourd’hui : journée indisponible" : "Temps de travail aujourd’hui : à classer")
             .help(unavailable && !known ? "Journée indisponible" : "")
         }
