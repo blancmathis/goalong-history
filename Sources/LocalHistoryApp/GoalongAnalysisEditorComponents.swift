@@ -93,6 +93,11 @@ struct GoalongAnalysisHumanPreview: View {
     let text: String
     private let object: [String: Any]
     @State private var visibleLimits: [String: Int] = [:]
+    private static let tableKeys = ["applications_sur_ce_Mac", "temps_ecran_Apple", "details_autorises", "conversations_choisies"]
+    /// Every other section of the document that is sent (development, calls, calendar, health, note…), so nothing leaves unseen.
+    static func extraKeys(_ object: [String: Any]) -> [String] {
+        object.keys.filter { !tableKeys.contains($0) && !["date", "lecture", "limite"].contains($0) }.sorted()
+    }
     init(text: String) {
         self.text = text
         self.object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:]
@@ -129,9 +134,15 @@ struct GoalongAnalysisHumanPreview: View {
                     }
                 }
             }
+            ForEach(Self.extraKeys(object), id: \.self) { key in
+                GoalongSettingsGroup(title: label(key)) {
+                    Text(render(object[key] as Any)).font(.system(size: 13)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             if let limit = object["limite"] as? String { Label(limit, systemImage: "info.circle").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText) }
             if object.isEmpty { Text(text).font(.system(size: 13)).textSelection(.enabled) }
-            else if !["applications_sur_ce_Mac", "temps_ecran_Apple", "details_autorises", "conversations_choisies"].contains(where: { (object[$0] as? [Any])?.isEmpty == false }) {
+            else if Self.extraKeys(object).isEmpty, !Self.tableKeys.contains(where: { (object[$0] as? [Any])?.isEmpty == false }) {
                 Text("Aucune donnée de cette journée ne correspond aux choix actuels.").font(.system(size: 14)).foregroundStyle(LHTheme.secondaryText)
             }
         }
@@ -142,6 +153,12 @@ struct GoalongAnalysisHumanPreview: View {
         case "temps_ecran_Apple": return "Temps d’écran Apple"
         case "details_autorises": return "Titres, textes et événements choisis"
         case "conversations_choisies": return "Conversations choisies"
+        case "developpement": return "Développement"
+        case "usages_micro_camera": return "Micro et caméra"
+        case "agenda_rappels": return "Agenda et rappels"
+        case "autres_appareils": return "Autres appareils"
+        case "contexte_sante_importe": return "Santé importée"
+        case "note_du_jour": return "Note du jour"
         case "texte_affiche": return "Texte affiché"
         case "secondes_actives", "secondes": return "Secondes"
         case "titre": return "Titre"
