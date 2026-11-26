@@ -536,5 +536,27 @@ final class MenuBarPanelModelTests: XCTestCase {
         await Task.yield()
         XCTAssertEqual(model.workSeconds, 0)
     }
+
+    private struct DayReadFailure: Error {}
+
+    @MainActor func testFailedDayReadStaysFlaggedAfterRuntimeRefreshAndClearsOnSuccess() async {
+        let f = fixture()
+        var fail = true
+        let day = f.calendar.startOfDay(for: f.now)
+        let model = f.model(loadDay: { _ in
+            if fail { throw DayReadFailure() }
+            return GoalongLocalAnalytics.Day(date: day, end: day.addingTimeInterval(86400), state: .ready, segments: [], eventCount: 0, classifierVersions: [])
+        })
+        model.refresh()
+        for _ in 0..<20 where !model.dayUnavailable { await Task.yield() }
+        XCTAssertTrue(model.dayUnavailable)
+        model.refreshRuntimeState()
+        XCTAssertTrue(model.dayUnavailable)
+        XCTAssertFalse(model.trackingDetail.contains("Journée indisponible"))
+        fail = false
+        model.refresh()
+        for _ in 0..<20 where model.dayUnavailable { await Task.yield() }
+        XCTAssertFalse(model.dayUnavailable)
+    }
 }
 #endif
