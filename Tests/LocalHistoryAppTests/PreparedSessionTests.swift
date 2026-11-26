@@ -205,6 +205,19 @@ import LocalHistoryCore
         XCTAssertNil(d.object(forKey: PreparedSessionStore.storageKey))
     }
 
+    /// bugs-etat-ui-04: a double click on « Lancer » of a « Surveillance » alone session creates one watch.
+    func testDoubleClickOnWatchOnlySessionCreatesOneWatch() {
+        let store = PreparedSessionStore(defaults: defaults())
+        var watch = session(); watch.listIDs = []; watch.surveillance = JevInterventionSettings()
+        let ownBefore = JevSurveillanceStore.shared.document.marks.filter { $0.kind == .own }.count
+        for _ in 0..<2 {
+            XCTAssertEqual(PreparedSessionLauncher.launch(watch, blocking: nil, braise: nil, focus: nil, store: store), .started)
+        }
+        let own = JevSurveillanceStore.shared.document.marks.filter { $0.kind == .own }
+        XCTAssertEqual(own.count - ownBefore, 1)
+        XCTAssertEqual(own.filter { $0.id == watch.id }.count, 1)
+    }
+
     /// F3: unreadable data is copied before the next write replaces it; the copy is kept once.
     func testF3UnreadableStoreKeepsACopyBeforeTheNextWrite() {
         let d = defaults(), broken = Data("pas du json".utf8)
