@@ -18,6 +18,14 @@ final class Lot3aDayAndStateTests: XCTestCase {
         XCTAssertEqual(navigation.day, now)
     }
 
+    // bugs-etat-ui-05: a window reopened on a past Historique day opens Activité on that day, never after today.
+    func testActivityStartsOnTheSharedDayAfterReopening() {
+        let past = GoalongActivityNavigation(sharedDay: day(-1), period: 7, now: now)
+        XCTAssertEqual(past.day, day(-1))
+        XCTAssertEqual(past.period, 7)
+        XCTAssertEqual(GoalongActivityNavigation(sharedDay: day(3), now: now).day, now)
+    }
+
     // 1 (en plus): « Vérifier et corriger » follows the shared day only when it differs.
     func testReviewCardFollowsTheSharedDay() {
         XCTAssertNil(GoalongWorkReviewCard.dayFollowing(shared: now.addingTimeInterval(3600), current: now))

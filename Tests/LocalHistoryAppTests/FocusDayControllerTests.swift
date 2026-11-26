@@ -144,6 +144,40 @@ final class FocusDayControllerTests: XCTestCase {
         XCTAssertEqual(c.plan.items.first?.status, .open)
         XCTAssertEqual(c.plan.agenda?.slots.first?.state, .active)
     }
+    @MainActor func testStartingTheSecondSlotOfAnActionDoesNotResumeTheFirst() throws {
+        let s = try store()
+        let instant = FocusDayPlanner.date(day: day, minute: 665, timeZoneID: "UTC")!
+        let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
+        let item = FocusPlanItem(title: "Montage")
+        var value = FocusPlan(day: day, items: [item])
+        let first = FocusAgendaSlot(itemID: item.id, title: item.title, startMinute: 540, endMinute: 600, fixed: true)
+        let second = FocusAgendaSlot(itemID: item.id, title: item.title, startMinute: 660, endMinute: 720, fixed: true)
+        value.agenda = FocusAgenda(timeZoneID: "UTC", slots: [first, second])
+        try c.applyDayPlan(value, expectedRevision: 0)
+        try c.startAgendaSlot(second.id)
+        XCTAssertNotNil(c.currentSession)
+        let slots = try XCTUnwrap(c.plan.agenda?.slots)
+        XCTAssertEqual(slots.first { $0.id == second.id }?.state, .active)
+        XCTAssertNotEqual(slots.first { $0.id == first.id }?.state, .active)
+    }
+    @MainActor func testAgendaDraftAppliesContextChoiceAndAnchorsOnlyOnSave() throws {
+        let s = try store(), instant = now
+        let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
+        let item = FocusPlanItem(title: "Montage")
+        var value = FocusPlan(day: day, items: [item])
+        value.agenda = FocusAgenda(timeZoneID: "UTC", slots: [
+            .init(itemID: item.id, title: item.title, startMinute: 600, endMinute: 660),
+            .init(title: "Repas", startMinute: 720, endMinute: 780, fixed: true, state: .done)])
+        XCTAssertNotEqual(c.settings.usePlanContext, true)
+        // A refused template writes nothing: neither the day nor the settings.
+        XCTAssertThrowsError(try c.saveAgendaDraft(value, expectedRevision: 0, repeatTemplate: value.agenda, usePlanContext: true))
+        XCTAssertNotEqual(c.settings.usePlanContext, true)
+        XCTAssertNil(c.plan.agenda)
+        try c.saveAgendaDraft(value, expectedRevision: 0, repeatTemplate: value.agenda?.repeatableTemplate, usePlanContext: true)
+        XCTAssertEqual(c.settings.usePlanContext, true)
+        XCTAssertEqual(c.settings.agendaTemplate?.slots.map(\.title), ["Repas"])
+        XCTAssertEqual(c.plan.agenda?.slots.count, 2)
+    }
     @MainActor func testGuidanceBudgetPersistsAndDoesNotReplayMissedSlots() throws {
         let s = try store(guided: true); var instant = now
         let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)

@@ -35,6 +35,12 @@ struct GoalongActivityNavigation: Equatable {
         seenTodayKey = GoalongCalendarDay(seenToday, calendar: calendar)
     }
 
+    /// A navigation built when the window opens starts on the day the app already shares (Historique's choice),
+    /// never after today; `now` is the reference for today.
+    init(sharedDay: Date, period: Int = 1, now: Date = GoalongToday.now, calendar: Calendar = .current) {
+        self.init(day: min(calendar.startOfDay(for: sharedDay), calendar.startOfDay(for: now)), period: period, now: now, calendar: calendar)
+    }
+
     func interval(calendar: Calendar = .current) -> DateInterval {
         let start = calendar.date(byAdding: .day, value: 1 - period, to: day) ?? day
         let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day

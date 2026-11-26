@@ -175,6 +175,15 @@ struct FocusAgenda: Codable, Equatable {
             && slots.filter { $0.state == .active }.count <= 1
     }
     var validTemplate: Bool { valid && slots.allSatisfy { $0.itemID == nil && $0.state == .planned } }
+    /// What a daily repeat keeps: only the anchors with no linked action, all back to "planned".
+    /// The dated plan keeps its real states; the repeated template must satisfy `validTemplate`.
+    var repeatableTemplate: FocusAgenda {
+        var copy = self
+        copy.slots = slots.filter { $0.itemID == nil }.map { slot in
+            var anchor = slot; anchor.state = .planned; return anchor
+        }
+        return copy
+    }
     func valid(forDay day: String, items: [FocusPlanItem]) -> Bool {
         guard valid else { return false }
         let itemIDs = Set(items.map(\.id))
