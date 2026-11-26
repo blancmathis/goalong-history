@@ -35,6 +35,10 @@ LATE_QUIT_DIR="${GOALONG_LATE_QUIT_DIR:-$HOME/Library/Caches/goalong-install-lat
 LATE_POLL_SECONDS="${GOALONG_LATE_POLL_SECONDS:-1}"
 QUIT_PIDS=""      # Goalong processes this run asked to quit
 INHERITED_PIDS="" # processes whose pending quit this run took over from a late watcher
+# F2: the duty taken over stays on disk as this run's own `owner.<token>` until it is settled or handed back,
+# so a run killed by SIGKILL leaves it to the next installation instead of losing it.
+INHERITED_TOKEN=""
+DEFERRED_SIGNAL="" # F6: a signal received while the new app is being opened; honoured once that is settled
 
 bundle_identifier_from_plist() {
   /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist" 2>/dev/null
@@ -403,19 +407,40 @@ start_late_quit_watch() { # PID...
   fi
 }
 
-# At the start of an installation: take over a quit left pending by an earlier run, so its watcher can never
-# reopen the old bundle in the middle of this replacement. A reopen already firing finishes first.
-take_late_quit_obligation() {
-  local waited=0 taken="$LATE_QUIT_DIR/taken.$$" owner
+# A reopen already firing finishes first (it takes a few seconds). Only a `firing` left for 30 s is stale (its
+# watcher died): only then is it removed.
+wait_late_quit_firing() {
+  local waited=0
   while [[ -e "$LATE_QUIT_DIR/firing" ]] && (( waited < 300 )); do /bin/sleep 0.1; waited=$((waited + 1)); done
-  /bin/rm -f "$LATE_QUIT_DIR/firing"
+  [[ ! -e "$LATE_QUIT_DIR/firing" ]] || /bin/rm -f "$LATE_QUIT_DIR/firing"
+}
+
+# Just before this run asks Goalong to quit (F2): take over a quit left pending by an earlier run, so its watcher
+# can never reopen the old bundle in the middle of this replacement. Each owner file is renamed to this run's own
+# (atomic: a watcher that fires at the same time loses its file or keeps it, never both). A watcher that fired
+# just before the rename finishes its reopen before this run goes on (F3).
+take_late_quit_obligation() {
+  local owner pids mine
+  wait_late_quit_firing
+  INHERITED_TOKEN="${INHERITED_TOKEN:-$$.$RANDOM$RANDOM.$(/bin/date +%s)}"
+  mine="$LATE_QUIT_DIR/owner.$INHERITED_TOKEN"
+  pids="$INHERITED_PIDS $(/bin/cat "$mine" 2>/dev/null || true)"
   for owner in "$LATE_QUIT_DIR"/owner.*; do
-    [[ -f "$owner" ]] || continue
-    /bin/mv "$owner" "$taken" 2>/dev/null || continue
-    INHERITED_PIDS="$INHERITED_PIDS $(/bin/cat "$taken" 2>/dev/null || true)"
-    /bin/rm -f "$taken"
+    [[ -f "$owner" && "$owner" != "$mine" ]] || continue
+    /bin/mv "$owner" "$LATE_QUIT_DIR/taken.$INHERITED_TOKEN" 2>/dev/null || continue
+    pids="$pids $(/bin/cat "$LATE_QUIT_DIR/taken.$INHERITED_TOKEN" 2>/dev/null || true)"
+    # shellcheck disable=SC2086
+    write_late_quit_owner "$INHERITED_TOKEN" $pids || true
+    /bin/rm -f "$LATE_QUIT_DIR/taken.$INHERITED_TOKEN"
   done
-  INHERITED_PIDS="$(echo $INHERITED_PIDS)"
+  INHERITED_PIDS="$(echo $pids)"
+  wait_late_quit_firing
+}
+
+# The quit taken over is settled (or handed to a new watcher): drop this run's owner file.
+drop_inherited_late_quit() {
+  INHERITED_PIDS=""
+  [[ -z "$INHERITED_TOKEN" ]] || /bin/rm -f "$LATE_QUIT_DIR/owner.$INHERITED_TOKEN"
 }
 
 # At exit: a quit this run took over and did not settle is handed to a new watcher (still running), or, if
@@ -423,9 +448,11 @@ take_late_quit_obligation() {
 hand_back_late_quit() {
   [[ -n "$INHERITED_PIDS" ]] || return 0
   local pid alive=()
+  # A newer installation took this run's owner file over: the duty is its own now.
+  if [[ -n "$INHERITED_TOKEN" && ! -f "$LATE_QUIT_DIR/owner.$INHERITED_TOKEN" ]]; then INHERITED_PIDS=""; return 0; fi
   for pid in $INHERITED_PIDS; do kill -0 "$pid" 2>/dev/null && alive+=("$pid"); done
-  INHERITED_PIDS=""
   if (( ${#alive[@]} > 0 )); then start_late_quit_watch "${alive[@]}"; else QUIT_DONE=1; fi
+  drop_inherited_late_quit
 }
 
 cleanup() {
@@ -656,7 +683,7 @@ quit_running_goalong() {
     for name in "$@"; do
       if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
     done
-    (( running == 0 )) && { INHERITED_PIDS=""; return 0; }
+    (( running == 0 )) && { drop_inherited_late_quit; return 0; }
     /bin/sleep 0.1
     waited=$((waited + 1))
   done
@@ -672,7 +699,7 @@ quit_running_goalong() {
       for name in "$@"; do
         if /usr/bin/pgrep -x "$name" >/dev/null 2>&1; then running=1; fi
       done
-      (( running == 0 )) && { INHERITED_PIDS=""; return 0; }
+      (( running == 0 )) && { drop_inherited_late_quit; return 0; }
       /bin/sleep 0.1
       waited=$((waited + 1))
     done
@@ -681,12 +708,12 @@ quit_running_goalong() {
     # reopen Goalong while it still runs.
     # shellcheck disable=SC2086
     start_late_quit_watch $QUIT_PIDS $INHERITED_PIDS
-    INHERITED_PIDS=""; QUIT_DONE=0
+    drop_inherited_late_quit; QUIT_DONE=0
     exit 1
   fi
   for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
   /bin/sleep 0.4
-  INHERITED_PIDS="" # the quit this run took over is settled with ours
+  drop_inherited_late_quit # the quit this run took over is settled with ours
 }
 
 # make local only: the installed build in the folder the installer will really replace (any known
@@ -800,7 +827,6 @@ main() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
   trap 'exit 129' HUP
-  take_late_quit_obligation
 
   if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
     echo "Xcode Command Line Tools are needed only for source installation." >&2
@@ -865,6 +891,8 @@ main() {
   refuse_install_during_severe_block
   /bin/launchctl bootout "gui/$UID" "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist" >/dev/null 2>&1 || true
   /bin/rm -f -- "$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
+  # F2: only now, right before the quit, so a password typed during the build is still reopened by its watcher.
+  take_late_quit_obligation
   quit_running_goalong "$EXECUTABLE_NAME" "$PREVIOUS_APP_NAME" "$LEGACY_APP_NAME" "$OBSOLETE_LOCAL_APP_NAME"
 
   run_step "Installing with rollback protection" replace_staged_bundle "$staged_app"
@@ -878,12 +906,21 @@ main() {
 
 # The new app is in place: open it before the old copy is dropped. If it cannot be opened, exit 1: the cleanup
 # puts the old app back and opens it (L1L2-05).
+# F6: a signal during the open is deferred until the replacement is final, so the cleanup never puts the old
+# bundle back under the new app that is already running.
 complete_installation() {
+  DEFERRED_SIGNAL=""
+  trap 'DEFERRED_SIGNAL=130' INT
+  trap 'DEFERRED_SIGNAL=143' TERM
+  trap 'DEFERRED_SIGNAL=129' HUP
   if ! relaunch_installed_app; then
+    trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
     echo "The new Goalong could not be opened; the previous version is put back." >&2
     exit 1
   fi
   finalize_replacement
+  trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+  [[ -z "$DEFERRED_SIGNAL" ]] || exit "$DEFERRED_SIGNAL"
   post_install_cleanup
 }
 

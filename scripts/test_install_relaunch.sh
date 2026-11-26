@@ -111,6 +111,42 @@ kill "$APP_PID"
 wait_for_open run_d 50 || fail "handed-back quit was not reopened"
 [[ -z "$(opens watcher_c)" ]] || fail "superseded watcher C reopened"
 
+# 10. F2: the duty taken over stays on disk (this run's own owner file): a run killed by SIGKILL after the
+#     takeover leaves it to the next installation, which still reopens Goalong when it quits.
+start_app; export APP_PID
+run_case watcher_e "$TIMEOUT" "$TEST_ROOT/killed-late"
+run_case run_f 'take_late_quit_obligation; kill -KILL $$' "$TEST_ROOT/killed-late"
+run_case run_g 'take_late_quit_obligation; [[ "$INHERITED_PIDS" == *"$APP_PID"* ]] || { echo lost; exit 9; }; false' "$TEST_ROOT/killed-late"
+[[ "$(status_of run_g)" == 1 ]] || fail "the duty of a run killed after the takeover was lost: $(cat "$TEST_ROOT/run_g/out.log")"
+kill "$APP_PID"
+wait_for_open run_g 50 || fail "the inherited quit was not reopened by the next run"
+[[ -z "$(opens watcher_e)$(opens run_f)" ]] || fail "superseded watcher or killed run reopened"
+
+# 11. F2: the takeover happens right before the quit, never before the build (a password typed during the build
+#     is reopened by its own watcher).
+awk '/^main\(\) \{/{m=1} m && /take_late_quit_obligation/{t=NR} m && /refuse_install_during_severe_block$/{r=NR}
+  m && /^  quit_running_goalong /{q=NR} m && /run_step "Testing and building/{b=NR}
+  END{exit !(t > r && t > b && t < q && q - t <= 2)}' "$SCRIPT_DIR/install_from_source.sh" \
+  || fail "take_late_quit_obligation must sit right before quit_running_goalong, after the build and block check"
+
+# 12. F3: a watcher that renames its owner file to `firing` during the takeover finishes its reopen before the
+#     takeover returns; `firing` is never removed under it.
+run_case firing_race '/bin/mkdir -p "$LATE_QUIT_DIR"; echo 1 >"$LATE_QUIT_DIR/owner.w"
+  /bin/mv() { if [[ "$1" == */owner.w ]]; then command /bin/mv "$1" "$LATE_QUIT_DIR/firing"
+      ( command /bin/sleep 1; command /bin/rm -f "$LATE_QUIT_DIR/firing" ) & return 1; fi; command /bin/mv "$@"; }
+  take_late_quit_obligation
+  [[ ! -e "$LATE_QUIT_DIR/firing" ]] || { echo still-firing; exit 9; }; exit 0'
+[[ "$(status_of firing_race)" == 0 ]] || fail "takeover returned while a reopen was still firing: $(cat "$TEST_ROOT/firing_race/out.log")"
+
+# 13. F6: a TERM while the new app opens never puts the old bundle back under the running new app.
+run_case term_during_open "$REPLACED"'; safe_remove_backup_bundle() { /bin/rm -rf "$1"; }
+  remove_verified_legacy_bundle() { return 1; }; trap "exit 143" TERM
+  /usr/bin/open() { echo "open $* marker=$(/bin/cat "${@: -1}/marker")" >>"$OPEN_LOG"; kill -TERM $$; return 0; }
+  complete_installation'
+[[ "$(marker_of term_during_open)" == new ]] || fail "TERM during the open put the old app back (marker '$(marker_of term_during_open)')"
+[[ "$(status_of term_during_open)" == 143 ]] || fail "deferred TERM not honoured: status $(status_of term_during_open)"
+[[ "$(opens term_during_open | wc -l | tr -d ' ')" == 1 ]] || fail "TERM during open: $(opens term_during_open)"
+
 # 9. No plain `open` left in the installer.
 grep -nE '/usr/bin/open( |$)' "$SCRIPT_DIR/install_from_source.sh" | grep -v -- '-g -j' && fail "foreground open in installer"
 echo "test_install_relaunch: OK"

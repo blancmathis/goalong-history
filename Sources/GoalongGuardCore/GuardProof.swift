@@ -23,8 +23,25 @@ public enum GuardProof {
         return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 
-    /// "Signed by an Apple-issued developer certificate of this process's team"; nil when this process has no
-    /// team (unsigned or ad hoc): then no stage proof is ever accepted.
+    /// The guard's own signing identifier suffix; the relauncher of the same bundle is `<base>.relauncher`
+    /// (scripts/build_app_core.sh signs both).
+    public static let guardIdentifierSuffix = ".blocking-guard"
+    public static let relauncherIdentifierSuffix = ".relauncher"
+
+    /// F1: "the relauncher of this guard's bundle family, signed by `signer`". Any other binary of the same team
+    /// (another product, a long-running CLI) copied to the proof path proves nothing. nil (no proof ever) when
+    /// the guard identifier is not `<base>.blocking-guard` or holds characters a requirement cannot quote.
+    public static func relauncherRequirement(signer: String, guardIdentifier: String) -> String? {
+        guard guardIdentifier.hasSuffix(guardIdentifierSuffix) else { return nil }
+        let base = String(guardIdentifier.dropLast(guardIdentifierSuffix.count))
+        guard !base.isEmpty, base.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") })
+        else { return nil }
+        return "(\(signer)) and identifier \"\(base)\(relauncherIdentifierSuffix)\""
+    }
+
+    /// "The relauncher of this guard's bundle, signed by an Apple-issued developer certificate of this process's
+    /// team"; nil when this process has no team (unsigned or ad hoc) or no guard identifier: then no stage proof
+    /// is ever accepted.
     public static func sameTeamRequirement() -> String? {
         var me: SecCode?
         guard SecCodeCopySelf([], &me) == errSecSuccess, let me else { return nil }
@@ -32,8 +49,11 @@ public enum GuardProof {
         guard SecCodeCopyStaticCode(me, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
         var info: CFDictionary?
         guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
-              let team = (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String,
+              let fields = info as? [String: Any],
+              let team = fields[kSecCodeInfoTeamIdentifier as String] as? String,
+              let identifier = fields[kSecCodeInfoIdentifier as String] as? String,
               team.allSatisfy({ $0.isLetter || $0.isNumber }), !team.isEmpty else { return nil }
-        return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+        return relauncherRequirement(signer: "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\"",
+                                     guardIdentifier: identifier)
     }
 }

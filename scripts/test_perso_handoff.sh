@@ -42,6 +42,14 @@ wait
 [[ "$rc" == 0 && "$PERSO_HANDOFF_STATE" == rolled_back && "$PERSO_HANDOFF_REASON" == boom ]] \
   || fail "late claim: rc $rc state '$PERSO_HANDOFF_STATE' (must not fall back to the installer)"
 
-# 5. local_try uses this contract.
+# 5. F5: the request folder vanishes before any claim: rc 10 at the deadline, no busy loop that never ends.
+r="$(new_request vanished)"; /bin/rm -rf "$r"
+( perso_handoff_wait "$r" 1 5 ) & waiter=$!
+( /bin/sleep 6; kill "$waiter" 2>/dev/null ) & killer=$!
+set +e; wait "$waiter"; rc=$?; set -e
+kill "$killer" 2>/dev/null || true; wait "$killer" 2>/dev/null || true
+[[ "$rc" == 10 ]] || fail "vanished request: rc $rc, want 10 (the wait never ended)"
+
+# 6. local_try uses this contract.
 grep -F 'perso_handoff_wait "$request"' "$SCRIPT_DIR/local_try.sh" >/dev/null || fail "local_try does not use perso_handoff_wait"
 echo "test_perso_handoff: OK"

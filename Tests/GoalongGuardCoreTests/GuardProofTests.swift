@@ -27,12 +27,12 @@ final class GuardProofTests: XCTestCase {
     }
 
     /// A tiny sleeper compiled here (a copied system binary is killed by macOS outside its folder).
-    private func build(_ name: String, seconds: Int) throws -> String {
+    private func build(_ name: String, seconds: Int, identifier: String = "ai.goalong.proof-test") throws -> String {
         let source = root.appendingPathComponent("\(name).c")
         try "#include <unistd.h>\nint main(void) { sleep(\(seconds)); return 0; }\n".write(to: source, atomically: true, encoding: .utf8)
         let path = root.appendingPathComponent(name).path
         try run("/usr/bin/cc", ["-o", path, source.path])
-        try run("/usr/bin/codesign", ["-f", "-s", "-", "-i", "ai.goalong.proof-test", path])
+        try run("/usr/bin/codesign", ["-f", "-s", "-", "-i", identifier, path])
         return path
     }
 
@@ -111,5 +111,27 @@ final class GuardProofTests: XCTestCase {
         let path = try copyGenuine("bad-req")
         try spawn(path)
         XCTAssertEqual(GuardProof.authenticPids(executable: path, requirement: "not a requirement ((("), [])
+    }
+
+    // F1: a binary of the same signer but another identifier (another product of the team, a long CLI) copied to
+    // the proof path is not the relauncher. `always` stands in for the team clause (the test code is ad hoc).
+    func testSameSignerWithAnotherIdentifierIsNotAProof() throws {
+        let requirement = try XCTUnwrap(GuardProof.relauncherRequirement(signer: "always",
+                                                                         guardIdentifier: "ai.goalong.proof-test.blocking-guard"))
+        let other = try build("other-tool", seconds: 32, identifier: "ai.goalong.proof-test.menubar")
+        try spawn(other)
+        XCTAssertFalse(GuardProcesses.pids(executable: other).isEmpty, "the other tool runs at the path")
+        XCTAssertEqual(GuardProof.authenticPids(executable: other, requirement: requirement), [])
+        let relauncher = try build("relauncher", seconds: 33, identifier: "ai.goalong.proof-test.relauncher")
+        let pid = try spawn(relauncher)
+        XCTAssertEqual(GuardProof.authenticPids(executable: relauncher, requirement: requirement), [pid])
+    }
+
+    func testRelauncherRequirementFailsClosedOnAnUnexpectedGuardIdentifier() {
+        XCTAssertNil(GuardProof.relauncherRequirement(signer: "always", guardIdentifier: "ai.goalong.localhistory"))
+        XCTAssertNil(GuardProof.relauncherRequirement(signer: "always", guardIdentifier: ".blocking-guard"))
+        XCTAssertNil(GuardProof.relauncherRequirement(signer: "always", guardIdentifier: "a\" or always or \"b.blocking-guard"))
+        XCTAssertEqual(GuardProof.relauncherRequirement(signer: "always", guardIdentifier: "ai.goalong.localhistory.dev.blocking-guard"),
+                       "(always) and identifier \"ai.goalong.localhistory.dev.relauncher\"")
     }
 }

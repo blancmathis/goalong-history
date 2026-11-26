@@ -32,8 +32,12 @@ perso_handoff_wait() { # REQUEST ANSWER_SECONDS FINAL_SECONDS [ON_CLAIM_COMMAND]
     if (( $(date +%s) >= deadline )); then
       [[ -n "$PERSO_HANDOFF_CLAIMED" ]] && break
       if perso_handoff_cancel "$request"; then /bin/rm -rf "$request"; return 10; fi
-      # Goalong claimed it just before: it is Goalong's now.
-      continue
+      # F5: the request vanished before any claim or answer: nothing can install it, use the installer.
+      if [[ ! -e "$request/request.json" && ! -e "$request/claimed" && ! -e "$request/result.json" ]]; then
+        /bin/rm -rf "$request"; return 10
+      fi
+      # Goalong claimed it just before: it is Goalong's now (seen on the next pass).
+      sleep 0.2; continue
     fi
     sleep 0.2
   done
