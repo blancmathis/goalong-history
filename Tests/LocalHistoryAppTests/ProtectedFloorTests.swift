@@ -332,6 +332,30 @@ import XCTest
         XCTAssertEqual(store.check(.delete(b.id), now: now, calendar: paris), .allow, "removing the free one stays free")
     }
 
+    /// jev-03: a session started while a « Verrouillé » surveillance runs may not apply a weaker effect (85 % → 45 %);
+    /// one at least as strong stays allowed. Nothing written when refused.
+    func testJevSessionMarkCannotWeakenALockedSurveillance() {
+        var a = jevRange(.locked); a.settings = fallingStages
+        let d = defaults(), store = JevSurveillanceStore(defaults: d)
+        store.save(JevSurveillanceDocument(ranges: [a]))
+        var weakStages = fallingStages; weakStages.stages[0].intensity = 45; weakStages.stages[1].intensity = 60
+        XCTAssertTrue(JevSurveillanceStore.score(weakStages) > JevSurveillanceStore.score(a.settings), "B wins by sum")
+        for kind in [JevSessionMark.Kind.own, .focus] {
+            let weak = JevSessionMark(id: UUID(), kind: kind, on: true, start: now, end: now.addingTimeInterval(3600), lock: .free, settings: weakStages)
+            XCTAssertFalse(store.mark(weak, now: now, alive: JevRunningSessions(focus: weak.id)))
+            XCTAssertEqual(store.markRefusal, JevSurveillanceStore.combinedText)
+            XCTAssertTrue(store.document.marks.isEmpty, "nothing written")
+            XCTAssertFalse(store.document.sessionDefault)
+        }
+        let off = JevSessionMark(id: UUID(), kind: .own, on: false, lock: .free, settings: weakStages)
+        XCTAssertTrue(store.mark(off, now: now, alive: JevRunningSessions()), "a session without surveillance is not a weakening")
+        var stronger = fallingStages; stronger.stages[1].intensity = 30 // valid range is 10...85
+        XCTAssertTrue(stronger.isValid && JevSurveillanceStore.isAtLeast(stronger, fallingStages))
+        let ok = JevSessionMark(id: UUID(), kind: .focus, on: true, lock: .free, settings: stronger)
+        XCTAssertTrue(store.mark(ok, now: now, alive: JevRunningSessions(focus: ok.id)))
+        XCTAssertNil(store.markRefusal)
+    }
+
     /// F5: a keychain that cannot read is said, not taken for « nothing protected »; one that cannot write refuses a
     /// change the launch would undo (a stop passed), and lets a hardening through.
     func testKeychainFailureIsToldAndNeverUndoesAStopLater() throws {

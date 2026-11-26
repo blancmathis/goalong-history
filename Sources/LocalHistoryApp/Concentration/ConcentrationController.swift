@@ -177,6 +177,7 @@ struct FocusPanel: Equatable {
         }
         // A free open session may have started on any retained day, not only yesterday.
         var running: [FocusSession] = []
+        try repairDuplicateSessions()
         for date in try store.sessionDays() {
             for var value in try store.sessions(date) where value.endedAt == nil {
                 let restored = FocusPhases.phase(value, at: clock())
@@ -268,12 +269,40 @@ struct FocusPanel: Equatable {
             self.error = String(describing: error); throw error
         }
     }
-    private func persist(_ value: FocusSession) throws {
+    /// The file day of a session is fixed when it is first written: a zone change moves `startedAt` to another day, and
+    /// the copy would then be written twice (concentration-02). Older data: the day of the file that holds the UUID.
+    private var storageDays: [UUID: String] = [:]
+    private func storageDay(of value: FocusSession) throws -> String {
+        if let day = storageDays[value.id] { return day }
+        for day in try store.sessionDays() where try store.sessions(day).contains(where: { $0.id == value.id }) {
+            storageDays[value.id] = day; return day
+        }
         let day = FocusCalendar.dayKey(value.startedAt, calendar: calendar)
+        storageDays[value.id] = day
+        return day
+    }
+    /// A zone change used to leave two copies of one session in two day files. Keep the closed one, else the one with
+    /// the longer history, and remove the others.
+    private func repairDuplicateSessions() throws {
+        var copies: [UUID: [(day: String, value: FocusSession)]] = [:]
+        for day in try store.sessionDays() { for value in try store.sessions(day) { copies[value.id, default: []].append((day, value)) } }
+        for (id, list) in copies where list.count > 1 {
+            let keep = list.max { a, b in
+                (a.value.endedAt != nil ? 1 : 0, a.value.events.count) < (b.value.endedAt != nil ? 1 : 0, b.value.events.count)
+            }!
+            for copy in list where copy.day != keep.day {
+                try store.saveSessions(try store.sessions(copy.day).filter { $0.id != id }, day: copy.day)
+                sessionCache[copy.day] = nil
+            }
+            storageDays[id] = keep.day
+        }
+    }
+    private func persist(_ value: FocusSession) throws {
+        let day = try storageDay(of: value)
         var values = try store.sessions(day)
         if let i = values.firstIndex(where: { $0.id == value.id }) { values[i] = value } else { values.append(value) }
         try saving { try store.saveSessions(values, day: day) }
-        sessionCache[day] = values
+        sessionCache[day] = values; storageDays[value.id] = day
         if day == currentDay { sessions = values }
     }
     /// The plan link a draft may still pass: the item can be done, moved or removed since it was chosen,
@@ -319,7 +348,7 @@ struct FocusPanel: Equatable {
         guard var value = currentSession else { throw FocusFailure.notFound }
         if hasLockedPhaseBlock { throw FocusFailure.locked }
         guard value.mode.kind == .pomodoro, value.events.count < 1023 else { throw FocusFailure.invalidArgument }
-        value.events.append(.init(kind: .skip, at: clock())); value.plannedEndAt = FocusPhases.plannedEnd(value)
+        value.events.append(.init(kind: .skip, at: eventTime(value))); value.plannedEndAt = FocusPhases.plannedEnd(value)
         try persist(value); currentSession = value; refresh()
     }
     /// `surveillanceConfirmed` = the caller passed the stop of the session's « Surveillance » (`JevStopGate`). Without
@@ -329,15 +358,18 @@ struct FocusPanel: Equatable {
         if storageFailed, currentSession != nil {
             // Nothing can be written: end the session in memory only. A retry, or the stop tombstone at quit, closes it on disk.
             if hasLockedPhaseBlock { throw FocusFailure.locked }
-            endInMemory(currentSession!, at: clock(), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
+            endInMemory(currentSession!, at: eventTime(currentSession!), reason: .member); publishStatus(); scheduleTimer(); throw FocusFailure.storageFailed
         }
         try admit(); refresh()
         guard var value = currentSession else { throw FocusFailure.notFound }
         if hasLockedPhaseBlock { throw FocusFailure.locked }
         guard note.map({ FocusValidation.text($0, maximum: 140) }) ?? true else { throw FocusFailure.invalidArgument }
         value.outcome = outcome; value.note = note
-        try finish(value, at: clock(), reason: outcome == .done ? .completed : .member)
+        try finish(value, at: eventTime(value), reason: outcome == .done ? .completed : .member)
     }
+    /// A wall clock set back must not give an event older than the session's last one: the file would refuse it and
+    /// « Arrêter » would do nothing. Events stay in order.
+    private func eventTime(_ value: FocusSession) -> Date { max(clock(), value.events.last?.at ?? value.startedAt) }
     private func finish(_ session: FocusSession, at end: Date, reason: FocusSession.Event.Reason) throws {
         var value = session; value.events.append(.init(kind: .stop, at: end, reason: reason))
         value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
@@ -839,12 +871,12 @@ struct FocusPanel: Equatable {
         lastStorageRetry = .distantPast
         if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return }
         guard pendingStop != nil else { return }
-        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
+        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: (try? storageDay(of: pending.session)) ?? FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
                                                   end: pending.end, reason: pending.reason))
     }
     func shutdown() {
         flushPendingStop()
-        if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: clock(), reason: .moduleDisabled) }
+        if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: eventTime(value), reason: .moduleDisabled) }
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
@@ -1311,12 +1343,13 @@ extension ConcentrationController {
         try? store.saveClockCorrection(state); try? store.saveClockAnchor(state)
         lastCommitmentCardRefresh = .distantPast
     }
-    func commitmentProgress(_ value: FocusCommitment) throws -> FocusCommitmentProgress {
+    func commitmentProgress(_ value: FocusCommitment, now decision: Date? = nil) throws -> FocusCommitmentProgress {
+        let at = decision ?? clock()
         if let result = value.result {
             return .init(measured: result.measured, unmeasuredMinutes: result.unmeasuredMinutes, usesActiveTime: result.usesActiveTime ?? (value.kind == .work && !definitionAvailable))
         }
         guard let bounds = value.period.interval(calendar: calendar) else { throw FocusFailure.invalidArgument }
-        if clock() <= bounds.start { return .init(usesActiveTime: value.kind == .work && !definitionAvailable) }
+        if at <= bounds.start { return .init(usesActiveTime: value.kind == .work && !definitionAvailable) }
         var values: [FocusSession] = [], plans: [FocusPlan] = []
         if value.kind == .sessions {
             // Any older day can hold an open or long session, so every day is checked, but each file is decoded once.
@@ -1324,7 +1357,7 @@ extension ConcentrationController {
             sessionCache = sessionCache.filter { listed.contains($0.key) }
             for day in days where FocusCalendar.dayInterval(day, calendar: calendar)!.start < bounds.end {
                 let decoded = try sessionCache[day] ?? store.sessions(day); sessionCache[day] = decoded
-                values += decoded.filter { ($0.endedAt ?? clock()) > bounds.start }
+                values += decoded.filter { ($0.endedAt ?? at) > bounds.start }
             }
         }
         if value.kind == .plan {
@@ -1333,16 +1366,20 @@ extension ConcentrationController {
                 if start >= bounds.start && start < bounds.end, let p = try store.plan(day) { plans.append(p) }
             }
         }
-        return FocusCommitmentRules.progress(value, days: Array(measuredDays.values), sessions: values, plans: plans, at: clock(), hasDefinition: definitionAvailable, calendar: calendar)
+        return FocusCommitmentRules.progress(value, days: Array(measuredDays.values), sessions: values, plans: plans, at: at, hasDefinition: definitionAvailable, calendar: calendar)
     }
     private func settleCommitments() {
         do {
             var next = commitments, ids: [UUID] = []
             for i in next.indices where next[i].result == nil {
                 guard let bounds = next[i].period.interval(calendar: calendar), bounds.end <= stakeNow() else { continue }
-                let progress = try commitmentProgress(next[i])
-                next[i].result = FocusCommitmentRules.settle(next[i], progress: progress, at: clock(), blockingOn: blocking() != nil,
+                // One decision time for admission, progress and settlement (never earlier than the period's end): a raw clock set
+                // back would be refused by the rule while the id was still published. Wall frame, so no double compensation.
+                let decision = max(clock(), bounds.end)
+                let progress = try commitmentProgress(next[i], now: decision)
+                next[i].result = FocusCommitmentRules.settle(next[i], progress: progress, at: decision, blockingOn: blocking() != nil,
                     listIDs: Set(blockLists.map(\.id)), calendar: calendar)
+                guard next[i].result != nil else { continue }
                 next[i].result?.settledClock = clockState()
                 ids.append(next[i].id)
             }
