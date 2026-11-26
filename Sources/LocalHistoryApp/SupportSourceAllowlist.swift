@@ -272,6 +272,7 @@ enum SupportSourceAllowlist {
         "RelaunchHotKey.swift",
         "RichContextReader.swift",
         "RuleStopGrant.swift",
+        "RunningApplicationCatalog.swift",
         "SafeguardsPage.swift",
         "ScreenTimePage.swift",
         "SemanticContextStore.swift",
