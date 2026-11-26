@@ -147,6 +147,8 @@ import LocalHistoryCore
         /// D1b: what is left of its pauses, and the list a « Pause » button takes one from (nil = no button now).
         var pauses: String? = nil
         var pauseList: UUID? = nil
+        /// Set only when the line covers several lists: « Pause » suspends this one, not the whole line.
+        var pauseListName: String? = nil
         var pauseMinutes: Int? = nil
         /// D1b: a session of the page that « + 15 min » prolongs in one click.
         var extendable = false
@@ -637,6 +639,7 @@ import LocalHistoryCore
             for id in block.listIDs where (block.breaksLeft[id] ?? 0) > 0 && block.breakEnds[id] == nil && block.pauses[id] != nil {
                 guard let minutes = controller.pauseMinutes(listID: id), minutes > 0 else { continue }
                 item.pauseList = id; item.pauseMinutes = minutes
+                if Set(blocks.flatMap(\.listIDs)).count > 1 { item.pauseListName = controller.lists.first { $0.id == id }?.name }
                 return
             }
         }

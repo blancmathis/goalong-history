@@ -373,8 +373,9 @@
                 if let minutes = item.pauseMinutes {
                     Button("Pause") { model.takeLivePause(item.id) }
                         .buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
-                        .help("Pause de \(minutes) min")
-                        .accessibilityLabel("Pause de \(minutes) min : \(item.title)")
+                        .help(item.pauseListName.map { "Pause de \(minutes) min : \($0) seulement" } ?? "Pause de \(minutes) min")
+                        .accessibilityLabel(item.pauseListName.map { "Pause de \(minutes) min : \($0) seulement, pas les autres listes de « \(item.title) »" }
+                            ?? "Pause de \(minutes) min : \(item.title)")
                         .accessibilityIdentifier("menubar-live-pause")
                 }
                 if item.extendable {

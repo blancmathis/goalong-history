@@ -423,6 +423,25 @@ final class MenuBarPanelModelTests: XCTestCase {
         return (model, list)
     }
 
+    /// ux-popover-02: « Bloque A et B » with a pause pool per list: the button names the one list it suspends.
+    @MainActor func testPauseOfGroupedRuleNamesTheListItSuspends() throws {
+        let f = fixture()
+        func list(_ name: String, minutes: Int) -> LocalHistoryApp.BlockList {
+            var range = BlockProgramRange(weekdays: Set(1...7), startMinute: 600, endMinute: 720, lock: .free)
+            range.pause = PausePolicy(budgetMinutes: minutes, maxPauseMinutes: 5)
+            return LocalHistoryApp.BlockList(name: name, sites: [.init(pattern: "\(name.lowercased()).invalid")], program: BlockProgram(ranges: [range]))
+        }
+        let a = list("Alpha", minutes: 10), b = list("Beta", minutes: 20)
+        f.blocking = BlockingController(document: BlockingDocument(lists: [a, b]), clock: { f.now },
+            calendar: f.calendar, continuous: { f.now.timeIntervalSince1970 }, runningApps: { [] })
+        f.modules.setEnabled(.blocking, true)
+        let model = f.model(); model.braise = { nil }; model.surveillanceRanges = { [] }
+        model.refreshRuntimeState()
+        let item = try XCTUnwrap(model.live.first { $0.pauseMinutes != nil })
+        XCTAssertTrue(item.title.contains("Alpha") && item.title.contains("Beta"), item.title)
+        XCTAssertEqual(item.pauseListName, item.pauseList == a.id ? "Alpha" : "Beta")
+    }
+
     @MainActor func testFreeRunningRuleStopsFromPanelWithThePageSwitch() throws {
         let f = fixture(), (model, list) = liveModel(f, lock: .free)
         let item = try XCTUnwrap(model.live.first)
