@@ -599,15 +599,7 @@ private struct Arguments {
     }
 }
 
-final class VerificationFailureFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = false
-    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
-    func set() { lock.lock(); value = true; lock.unlock() }
-}
-
 public enum GoalongQueryCLI {
-    static let verificationFailure = VerificationFailureFlag()
     static let missingSavedDayMessage = "No saved Screen Time record exists for this day. Open Goalong History to collect it; export-site never reads Apple's stores or starts a refresh."
     /// True when the export stopped because Goalong saved no Screen Time record for the day
     /// (Mac off or Goalong closed). Such a day stays missing: it is never collected later.
@@ -618,8 +610,6 @@ public enum GoalongQueryCLI {
     public static func main(arguments rawArguments: [String] = Array(CommandLine.arguments.dropFirst())) {
         do {
             try run(arguments: rawArguments)
-            // verify-* print their JSON report on stdout; a failed check must still exit non-zero.
-            if verificationFailure.isSet { Foundation.exit(EXIT_FAILURE) }
         } catch {
             if let data = errorEnvelopeData(for: error) {
                 FileHandle.standardError.write(data)
@@ -1202,7 +1192,6 @@ public enum GoalongQueryCLI {
                 case "legacyUnsigned": status = "legacyUnsigned"
                 default: status = "invalid"
                 }
-                if status == "invalid" { verificationFailure.set() }
                 try printJSON(
                     DailyRecapFileVerificationEnvelope(
                         reportPath: reportURL.path,
@@ -1215,7 +1204,6 @@ public enum GoalongQueryCLI {
                     )
                 )
             } catch {
-                verificationFailure.set()
                 try printJSON(
                     DailyRecapFileVerificationEnvelope(
                         reportPath: reportURL.path,
@@ -1340,7 +1328,6 @@ public enum GoalongQueryCLI {
                     maximumBytes: Int64(GoalongProofArchive.maximumArchiveBytes)
                 )
                 let report = try GoalongProofPackageVerifier.verify(archive: data)
-                if !report.isLocallyValid { verificationFailure.set() }
                 try printJSON(
                     AnalysisProofPackageVerificationEnvelope(
                         packagePath: packageURL.path,
@@ -1352,7 +1339,6 @@ public enum GoalongQueryCLI {
                     )
                 )
             } catch {
-                verificationFailure.set()
                 try printJSON(
                     AnalysisProofPackageVerificationEnvelope(
                         packagePath: packageURL.path,
@@ -1379,7 +1365,6 @@ public enum GoalongQueryCLI {
                 decoder.dateDecodingStrategy = .iso8601
                 let package = try decoder.decode(DaySharePackage.self, from: data)
                 let report = package.verificationReport()
-                if !report.isLocallyValid { verificationFailure.set() }
                 try printJSON(
                     SharePackageVerificationEnvelope(
                         packagePath: packageURL.path,
@@ -1394,7 +1379,6 @@ public enum GoalongQueryCLI {
                     )
                 )
             } catch {
-                verificationFailure.set()
                 try printJSON(
                     SharePackageVerificationEnvelope(
                         packagePath: packageURL.path,

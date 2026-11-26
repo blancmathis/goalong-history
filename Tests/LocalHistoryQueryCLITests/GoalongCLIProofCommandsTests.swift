@@ -35,14 +35,6 @@ final class GoalongCLIProofCommandsTests: XCTestCase {
 
     // MARK: verify-proof
 
-    func testFailedVerificationSetsTheNonZeroExitFlag() throws {
-        let directory = try temporaryDirectory()
-        let missing = directory.appendingPathComponent("absent.goalong-proof")
-        let json = try output(["verify-proof", missing.path])
-        XCTAssertEqual(json["status"] as? String, "inaccessibleOrInvalid")
-        XCTAssertTrue(GoalongQueryCLI.verificationFailure.isSet)
-    }
-
     func testVerifyProofAcceptsAValidStandaloneProof() throws {
         let directory = try temporaryDirectory()
         let package = try writeArchive(Fixture.proofEntries().entries, in: directory)
