@@ -9,7 +9,13 @@ struct PermissionSetupCopy {
     let status: SourceAccessStatus
 
     var symbol: String { capability == .appleScreenTime ? "chart.bar.xaxis" : capability == .aiConversations ? "bubble.left.and.bubble.right" : "desktopcomputer" }
+    /// A chosen conversations folder that is missing is not a macOS permission: no Accessibility guide, no settings button.
+    var isMissingConversationsFolder: Bool {
+        if capability == .aiConversations, case .unavailable = status { return true }
+        return false
+    }
     var permission: String {
+        if isMissingConversationsFolder { return "Dossier de conversations" }
         switch status {
         case .inputMonitoring: return "Surveillance de l’entrée"
         case .fullDiskAccess: return "Accès complet au disque"
@@ -18,6 +24,7 @@ struct PermissionSetupCopy {
         }
     }
     var permissionSymbol: String {
+        if isMissingConversationsFolder { return "folder.badge.questionmark" }
         switch status {
         case .fullDiskAccess: return "internaldrive"
         case .inputMonitoring: return "keyboard"
@@ -33,6 +40,8 @@ struct PermissionSetupCopy {
         }
     }
     var permissionDetail: String {
+        if isMissingConversationsFolder { return "Retrouvez ou choisissez à nouveau le dossier dans Réglages." }
+        if capability == .aiConversations, status == .fullDiskAccess { return "Nécessaire pour lire les dossiers de conversations que vous avez choisis." }
         switch status {
         case .inputMonitoring: return "Compter les interactions, sans les caractères tapés."
         case .screenTimeSetup: return "Apple doit d’abord disposer de données d’usage."

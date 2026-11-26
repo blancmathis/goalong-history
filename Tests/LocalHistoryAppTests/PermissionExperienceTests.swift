@@ -83,5 +83,18 @@ final class PermissionExperienceTests: XCTestCase {
         XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: true), "Goalong Dev")
         XCTAssertEqual(PermissionSetupCopy.macOSListName(isDevelopment: false), ProductIdentity.canonicalDisplayName)
     }
+
+    /// ux-reglages-03: a missing conversations folder is not an Accessibility permission; a refused one is a disk-read permission.
+    func testConversationsCopyFollowsTheCause() {
+        let missing = PermissionSetupCopy(capability: .aiConversations, status: .unavailable("Un dossier de conversations choisi est introuvable."))
+        XCTAssertTrue(missing.isMissingConversationsFolder)
+        XCTAssertEqual(missing.permission, "Dossier de conversations")
+        XCTAssertFalse(missing.permissionDetail.contains("fenêtre"))
+        let denied = PermissionSetupCopy(capability: .aiConversations, status: .fullDiskAccess)
+        XCTAssertFalse(denied.isMissingConversationsFolder)
+        XCTAssertEqual(denied.permission, "Accès complet au disque")
+        XCTAssertTrue(denied.permissionDetail.contains("conversations"))
+        XCTAssertFalse(PermissionSetupCopy(capability: .localComputerHistory, status: .unavailable("x")).isMissingConversationsFolder)
+    }
 }
 #endif

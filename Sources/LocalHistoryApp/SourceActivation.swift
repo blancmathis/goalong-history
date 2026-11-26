@@ -499,7 +499,7 @@ import LocalHistoryCore
                                     GoalongGlobalPauseControl(model: recordingModel)
                                 }
                             }
-                            PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready)
+                            if !copy.isMissingConversationsFolder { PermissionSetupSteps(copy: copy, openedSettings: openedSettings, ready: ready) }
                             if case .unavailable(let message) = access {
                                 // The glyph carries the warning colour; the sentence stays in ink (DESIGN §9).
                                 HStack(alignment: .firstTextBaseline, spacing: 9) {
@@ -537,7 +537,7 @@ import LocalHistoryCore
                         .keyboardShortcut(.cancelAction).buttonStyle(LHSecondaryButtonStyle()).disabled(restarting)
                     Spacer(minLength: 8)
                     // Step 1 says « Ouvrir Réglages Système »: give it a button even when the source is unavailable.
-                    if isUnavailable && !ready && !openedSettings {
+                    if isUnavailable && !ready && !openedSettings && !copy.isMissingConversationsFolder {
                         Button("Ouvrir Réglages Système…") {
                             if copy.permission == "Accès complet au disque" { PermissionManager.shared.openFullDiskAccessSettings() }
                             else { PermissionManager.shared.openPrivacySettings() }
