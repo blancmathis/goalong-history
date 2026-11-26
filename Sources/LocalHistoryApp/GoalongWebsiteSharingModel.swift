@@ -190,7 +190,9 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
         return draft.validationMessage
     }
     func invalidate() { preview = nil; reviewed = false; error = nil; status = nil }
-    func connectionChanged() { generation = UUID(); invalidate(); autoSender.stop() }
+    /// The read in flight now belongs to an older generation and ends without clearing `loading`: abandon it here,
+    /// or the sheet would stay on « Lecture… ». A newer `loadCatalog` sets `loading` itself.
+    func connectionChanged() { generation = UUID(); loading = false; invalidate(); autoSender.stop() }
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
     /// Called when `draft.includeWebsites` changes. A change the model made itself (fallback) reloads nothing.
     func includeWebsitesChanged() async {

@@ -81,7 +81,10 @@ import LocalHistoryQueryCLI
         .taskWhenShown { if model.catalog == nil { await model.loadCatalog() } }
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
         .onChange(of: model.draft.includeWebsites) { _ in Task { await model.includeWebsitesChanged() } }
-        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in model.connectionChanged() }
+        .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in
+            model.connectionChanged()
+            if model.catalog == nil { Task { await model.loadCatalog() } }
+        }
         .onChange(of: origin) { _ in model.connectionChanged() }
         .onChange(of: tokenPath) { _ in model.connectionChanged() }
         .onReceive(NotificationCenter.default.publisher(for: .goalongExclusionsDidChange)) { _ in model.connectionChanged(); Task { await model.loadCatalog() } }

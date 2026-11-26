@@ -185,5 +185,25 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
         }
         XCTAssertEqual(DashboardViewModel.userFacingMessage(ShareBuildError.noSeals), "Aucune donnée avec preuve pour ce jour.")
     }
+
+    /// bugs-etat-ui-06: a connection change during the local read must not leave the sheet on « Lecture… ».
+    @MainActor func testConnectionChangeDuringReadReleasesLoading() async throws {
+        let (defaults, root, _) = try env()
+        let bytes = catalogBytes
+        let gate = DispatchSemaphore(value: 0)
+        let model = GoalongWebsiteSharingModel(autoSender: GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } }), root: root,
+            catalogLoader: { _, _, _ in _ = gate.wait(timeout: .now() + 10); return try GoalongSiteSelectionCatalog(payload: bytes) },
+            sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } })
+        let read = Task { await model.loadCatalog() }
+        while !model.loading { await Task.yield() }
+        model.connectionChanged()
+        gate.signal()
+        await read.value
+        XCTAssertFalse(model.loading)
+        XCTAssertNil(model.catalog, "the stale read is dropped")
+        await model.loadCatalog()
+        XCTAssertNotNil(model.catalog)
+        XCTAssertFalse(model.loading)
+    }
 }
 #endif
