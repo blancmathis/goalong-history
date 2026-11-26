@@ -137,6 +137,21 @@ final class FocusDayPlanningTests: XCTestCase {
         var settings = FocusSettings(); settings.agendaTemplate = a; XCTAssertFalse(settings.valid)
     }
 
+    func testRepeatableTemplateKeepsOnlyAnchorsAsPlanned() {
+        let item = UUID()
+        var a = FocusAgenda(timeZoneID: zone, guided: true, slots: [
+            .init(itemID: item, title: "Travail", startMinute: 540, endMinute: 600),
+            .init(title: "Repas", startMinute: 720, endMinute: 780, fixed: true, state: .done),
+            .init(title: "Fin", startMinute: 1080, endMinute: 1110, fixed: true)])
+        XCTAssertFalse(a.validTemplate)
+        let template = a.repeatableTemplate
+        XCTAssertTrue(template.validTemplate)
+        XCTAssertEqual(template.slots.map(\.title), ["Repas", "Fin"])
+        XCTAssertEqual(a.slots[1].state, .done, "le plan du jour garde ses états réels")
+        a.slots.remove(at: 1); a.slots.remove(at: 1)
+        XCTAssertTrue(a.repeatableTemplate.slots.isEmpty)
+    }
+
     func testTimezoneAndDSTUseThePlanCivilDay() throws {
         let midnightParis = date(30)
         XCTAssertEqual(FocusDayPlanner.dayKey(at: midnightParis, timeZoneID: "UTC"), "2026-11-24")

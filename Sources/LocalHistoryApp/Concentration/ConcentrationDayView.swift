@@ -760,11 +760,17 @@ private struct FocusDayAgendaRow: View {
             error = "Vérifiez les titres, les horaires, les liens et les consignes (1 200 caractères maximum). La fin doit suivre le début."
             return
         }
+        let template = agenda.repeatableTemplate
+        // Check the repeated template before the first write, so a refusal never leaves a half-saved day.
+        guard !repeatAnchors || template.validTemplate else {
+            error = "Les repères à répéter ne sont pas valides. Vérifiez leurs horaires et leurs consignes."
+            return
+        }
         var updated = plan; updated.agenda = agenda
         do {
             try controller.applyDayPlan(updated, expectedRevision: plan.effectiveRevision, reason: "Agenda préparé")
             plan = controller.plan
-            if repeatAnchors { try controller.updateAgendaTemplate(agenda) }
+            if repeatAnchors { try controller.updateAgendaTemplate(template) }
             else if controller.settings.agendaTemplate != nil { try controller.updateAgendaTemplate(nil) }
             dismiss()
         } catch { self.error = FocusDayUI.message(error) }
