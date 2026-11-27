@@ -25,6 +25,9 @@
             /// True when the app in front shows a full-screen window. Activating Goalong there makes macOS hide
             /// the menu bar of that Space (seen 2026-11-24: `hideBackstopMenuBar` 30-40 ms after Goalong comes forward).
             var frontIsFullScreen: (NSRunningApplication?) -> Bool = { _ in false }
+            /// T-057 (bugs-concurrence-05): same question for a real front app, answered off the main actor so the
+            /// click never waits for that app's Accessibility. `nil` = ask `frontIsFullScreen` at once (tests).
+            var probeFullScreen: ((NSRunningApplication, @escaping @MainActor (Bool) -> Void) -> Void)?
             /// The app that was frontmost before the panel opened; given back when Esc closes the panel.
             var frontmostOther: () -> NSRunningApplication?
 
@@ -34,6 +37,13 @@
                 removeMonitor: { NSEvent.removeMonitor($0) },
                 activate: { NSApplication.shared.activate(ignoringOtherApps: true) },
                 frontIsFullScreen: { app in MainActor.assumeIsolated { MenuBarPanelDismissal.showsFullScreenWindow(app) } },
+                probeFullScreen: { app, done in
+                    let pid = app.processIdentifier
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let answer = MenuBarPanelDismissal.axShowsFullScreenWindow(pid: pid)
+                        DispatchQueue.main.async { MainActor.assumeIsolated { done(answer) } }
+                    }
+                },
                 frontmostOther: {
                     let app = NSWorkspace.shared.frontmostApplication
                     return app?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : app
@@ -99,8 +109,24 @@
             }) { monitors.append(local) }
             // In a full-screen Space, stay in the back: the menu bar stays visible. A click in the panel still
             // activates Goalong (normal first click); outside clicks close the panel through the global monitor.
-            if !hooks.frontIsFullScreen(previousApp) { hooks.activate() }
+            // T-057: the Accessibility question (21-56 ms on a cold first call, up to 0.2 s for a slow app) is asked
+            // off the main actor. Until it answers, Goalong stays in the back (the safe side in a full-screen Space);
+            // it activates only if the answer is "not full screen", the panel is still the same one, and the app in
+            // front is still the same app.
+            probeGeneration &+= 1
+            guard let app = previousApp, let probe = hooks.probeFullScreen else {
+                if !hooks.frontIsFullScreen(previousApp) { hooks.activate() }
+                return
+            }
+            let generation = probeGeneration
+            probe(app) { [weak self] fullScreen in
+                guard let self, self.probeGeneration == generation, self.isArmed, !fullScreen,
+                      self.hooks.frontmostOther()?.processIdentifier == app.processIdentifier else { return }
+                self.hooks.activate()
+            }
         }
+
+        private var probeGeneration = 0
 
         /// Full-screen check of the front app's focused window (Accessibility, `AXFullScreen`); Goalong itself when
         /// `app` is nil. Without Accessibility access the answer is false and Goalong activates as before.
@@ -108,7 +134,12 @@
             guard let app else {
                 return NSApplication.shared.windows.contains { $0.isVisible && $0.isOnActiveSpace && $0.styleMask.contains(.fullScreen) }
             }
-            let element = AXUIElementCreateApplication(app.processIdentifier)
+            return axShowsFullScreenWindow(pid: app.processIdentifier)
+        }
+
+        /// The Accessibility part alone: safe off the main actor.
+        nonisolated static func axShowsFullScreenWindow(pid: pid_t) -> Bool {
+            let element = AXUIElementCreateApplication(pid)
             AXUIElementSetMessagingTimeout(element, 0.1)
             var window: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
@@ -130,6 +161,7 @@
             for monitor in monitors { hooks.removeMonitor(monitor) }
             monitors = []
             previousApp = nil
+            probeGeneration &+= 1
         }
     }
 #endif

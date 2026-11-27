@@ -14,6 +14,7 @@ import XCTest
         var closes = 0
         var insidePanel = false
         var fullScreen = false
+        var front: NSRunningApplication?
     }
 
     private func make() -> (MenuBarPanelDismissal, Fake) {
@@ -38,6 +39,71 @@ import XCTest
         XCTAssertTrue(dismissal.isArmed)
         fake.global[0].handler(click())
         XCTAssertEqual(fake.closes, 1)
+    }
+
+    /// T-057 (bugs-concurrence-05): the Accessibility answer comes later, off the main actor. Before it, Goalong
+    /// never activates; a full-screen answer, a closed panel or another front app keep it in the back.
+    private func makeDeferred(front: NSRunningApplication? = .current) -> (MenuBarPanelDismissal, Fake, () -> [@MainActor (Bool) -> Void]) {
+        let fake = Fake()
+        var pending: [@MainActor (Bool) -> Void] = []
+        let hooks = MenuBarPanelDismissal.Hooks(
+            addGlobalMonitor: { fake.global.append(($0, $1)); return fake.global.count },
+            addLocalMonitor: { fake.local.append(($0, $1)); return -fake.local.count },
+            removeMonitor: { _ in fake.removed += 1 },
+            activate: { fake.activations += 1 },
+            frontIsFullScreen: { _ in XCTFail("the synchronous AX path must not run on a click"); return true },
+            probeFullScreen: { _, done in pending.append(done) },
+            frontmostOther: { fake.front ?? front })
+        return (MenuBarPanelDismissal(hooks: hooks) { fake.closes += 1 }, fake, { pending })
+    }
+
+    func testOpeningDoesNotWaitForTheFullScreenAnswerAndStaysInTheBackUntilItArrives() {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        XCTAssertTrue(dismissal.isArmed, "the panel is armed at once")
+        XCTAssertEqual(fake.activations, 0, "no activation before the answer")
+        XCTAssertEqual(pending().count, 1)
+    }
+
+    func testFullScreenAnswerNeverActivatesGoalong() async {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        pending()[0](true)
+        XCTAssertEqual(fake.activations, 0, "front app is full screen: Goalong stays in the back (5fddb7c1)")
+    }
+
+    func testNotFullScreenAnswerActivatesOnce() {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        pending()[0](false)
+        XCTAssertEqual(fake.activations, 1)
+    }
+
+    func testLateAnswerAfterTheFullScreenAnswerOfAnOlderOpeningIsIgnored() {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        dismissal.begin()
+        pending()[0](false)
+        XCTAssertEqual(fake.activations, 0, "the first opening is gone")
+        pending()[1](false)
+        XCTAssertEqual(fake.activations, 1)
+    }
+
+    func testLateAnswerAfterThePanelClosedDoesNotActivate() {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        dismissal.end()
+        pending()[0](false)
+        XCTAssertEqual(fake.activations, 0)
+    }
+
+    func testLateAnswerWhenAnotherAppIsNowInFrontDoesNotActivate() {
+        let (dismissal, fake, pending) = makeDeferred()
+        dismissal.begin()
+        guard let other = NSWorkspace.shared.runningApplications.first(where: { $0.processIdentifier != NSRunningApplication.current.processIdentifier }) else { return }
+        fake.front = other
+        pending()[0](false)
+        XCTAssertEqual(fake.activations, 0)
     }
 
     private func key(_ code: UInt16) -> NSEvent {

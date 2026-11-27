@@ -910,7 +910,7 @@ import LocalHistoryQueryCLI
         guard document.passwordLock == nil, !hasPasswordBlocks else {
             error = document.passwordLock != nil ? "Un mot de passe existe déjà." : "Terminez d’abord le blocage par mot de passe en cours."; return false
         }
-        guard let credential = BlockPasswordLock.make(password, at: clock()) else {
+        guard let credential = newCredential(password) else {
             error = "Choisissez un mot de passe non vide (environ 1 000 caractères maximum)."; return false
         }
         document.passwordLock = credential; commit(); return !storeFailed
@@ -922,7 +922,7 @@ import LocalHistoryQueryCLI
         guard !hasPasswordBlocks else { return refusePassword("Le mot de passe ne change pas tant qu’un blocage par mot de passe est actif ou à venir.") }
         let result = verifyPassword(old)
         guard result == .ok else { return result }
-        guard let credential = BlockPasswordLock.make(new, at: clock()) else { return refusePassword("Choisissez un mot de passe non vide (environ 1 000 caractères maximum).") }
+        guard let credential = newCredential(new) else { return refusePassword("Choisissez un mot de passe non vide (environ 1 000 caractères maximum).") }
         document.passwordLock = credential; commit()
         return storeFailed ? refusePassword("Le mot de passe n’a pas pu être enregistré.") : .ok
     }
@@ -973,6 +973,44 @@ import LocalHistoryQueryCLI
 
     nonisolated static let emptyPasswordText = "Entrez le mot de passe de blocage."
 
+    // MARK: Key derivation off the main actor (T-057, bugs-concurrence-06)
+    // PBKDF2 (200 000 rounds) takes ~41 ms on an M4 Pro, over the 16 ms budget. The sheet derives it in the
+    // background through `prepareDerivations`; the result is only a memo of a pure function (password + salt +
+    // hash + rounds). Every gate, counter, delay and the secret itself are still read and applied on the main
+    // actor by the unchanged synchronous methods, so a changed secret, rule or operation never uses a stale answer.
+    private var preparedMatch: (salt: Data, hash: Data, iterations: Int, password: String, matches: Bool)?
+    private var preparedNew: (password: String, credential: BlockPasswordLock)?
+
+    func prepareDerivations(old: String?, new: String?) async {
+        let snapshot = document.passwordLock
+        let (match, fresh) = await Task.detached(priority: .userInitiated) { () -> (Bool?, BlockPasswordLock?) in
+            let match: Bool? = (old.flatMap { $0.isEmpty ? nil : $0 }).flatMap { word in snapshot.map { $0.matches(word) } }
+            let fresh = new.flatMap { BlockPasswordLock.make($0, at: Date()) }
+            return (match, fresh)
+        }.value
+        if let old, let snapshot, let match, snapshot.isValid {
+            preparedMatch = (snapshot.salt, snapshot.hash, snapshot.iterations, old, match)
+        }
+        if let new, let fresh { preparedNew = (new, fresh) }
+    }
+
+    func discardPreparedDerivations() { preparedMatch = nil; preparedNew = nil }
+
+    private func takePreparedMatch(_ password: String, for credential: BlockPasswordLock) -> Bool? {
+        defer { preparedMatch = nil }
+        guard let m = preparedMatch, m.password == password, m.salt == credential.salt, m.hash == credential.hash,
+              m.iterations == credential.iterations, credential.isValid else { return nil }
+        return m.matches
+    }
+
+    private func newCredential(_ password: String) -> BlockPasswordLock? {
+        defer { preparedNew = nil }
+        if let p = preparedNew, p.password == password {
+            var credential = p.credential; credential.createdAt = clock(); return credential
+        }
+        return BlockPasswordLock.make(password, at: clock())
+    }
+
     private func refusePassword(_ reason: String) -> BlockingPasswordResult {
         error = reason; return .refused(reason: reason)
     }
@@ -985,7 +1023,7 @@ import LocalHistoryQueryCLI
         if let until = credential.retryAfter, until > clock() { return .wait(until: until) }
         // T-063: an empty field (Enter, a click on the button) is not a try: no count, no wait. It never matches.
         guard !password.isEmpty else { return refusePassword(Self.emptyPasswordText) }
-        let matches = credential.matches(password)
+        let matches = takePreparedMatch(password, for: credential) ?? credential.matches(password)
         if matches { credential.failedAttempts = 0; credential.retryAfter = nil }
         else {
             credential.failedAttempts = min(credential.failedAttempts, 16) + 1
