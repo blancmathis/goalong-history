@@ -191,7 +191,28 @@
                 return false
             }
             do {
-                let tail = try Self.latestPersistedSeal(in: sealDirectory)
+                let scan = try Self.latestPersistedSeal(in: sealDirectory)
+                let tail = scan.latest
+                if !scan.unreadable.isEmpty {
+                    // An unreadable day file never pauses signing for good (T-057 D4 relecture 1).
+                    // It is skipped and logged when it cannot hide the tail: an older day file
+                    // (sequences grow with the day), or any file once a valid checkpoint (or a
+                    // seal of this launch) confirms the cursor. The pause stays only when the
+                    // cursor is unconfirmed and the newest day file is unreadable, or when the
+                    // uncertain row's file is unreadable (its landing must be decided).
+                    let newestIsUnreadable = scan.newestName.map(scan.unreadable.contains) ?? false
+                    let uncertainIsUnreadable = uncertainSeal.map {
+                        scan.unreadable.contains(sealFileURL(for: $0.minuteStart).lastPathComponent)
+                    } ?? false
+                    if uncertainIsUnreadable
+                        || (newestIsUnreadable && !stateStore.anchorCursorIsConfirmed)
+                    {
+                        throw scan.firstError ?? MinuteSealJournalError.unconfirmedAnchorCursor
+                    }
+                    Diagnostics.write(
+                        "Skipped \(scan.unreadable.count) unreadable seal file(s) during tail recovery (cursor kept): \(scan.unreadable.sorted().joined(separator: ", "))"
+                    )
+                }
                 var uncertainSealLanded = false
                 if let pending = uncertainSeal, let tail,
                     tail.anchorSequence == pending.anchorSequence,
@@ -1122,11 +1143,21 @@
             }
         }
 
-        private static func latestPersistedSeal(in directory: URL) throws -> LocalMinuteSeal? {
+        /// Tail scan result. A day file that cannot be read is listed, not fatal: the caller
+        /// decides whether it may hide the tail.
+        struct PersistedTailScan {
+            var latest: LocalMinuteSeal?
+            var unreadable: Set<String> = []
+            var firstError: Error?
+            /// Largest day-file name (yyyy-MM-dd sorts by date).
+            var newestName: String?
+        }
+
+        private static func latestPersistedSeal(in directory: URL) throws -> PersistedTailScan {
             let directoryDescriptor = directory.path.withCString {
                 Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
             }
-            if directoryDescriptor < 0, errno == ENOENT { return nil }
+            if directoryDescriptor < 0, errno == ENOENT { return PersistedTailScan() }
             guard directoryDescriptor >= 0 else { throw posixError(path: directory.path) }
             defer { _ = Darwin.close(directoryDescriptor) }
 
@@ -1147,19 +1178,25 @@
 
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            var latest: LocalMinuteSeal?
+            var scan = PersistedTailScan(newestName: names.max())
             for name in names {
-                guard
-                    let seal = try latestPersistedSeal(
+                let found: LocalMinuteSeal?
+                do {
+                    found = try latestPersistedSeal(
                         named: name,
                         in: directoryDescriptor,
                         directoryPath: directory.path,
                         decoder: decoder
                     )
-                else { continue }
-                if latest?.anchorSequence ?? 0 < seal.anchorSequence { latest = seal }
+                } catch {
+                    scan.unreadable.insert(name)
+                    if scan.firstError == nil { scan.firstError = error }
+                    continue
+                }
+                guard let seal = found else { continue }
+                if scan.latest?.anchorSequence ?? 0 < seal.anchorSequence { scan.latest = seal }
             }
-            return latest
+            return scan
         }
 
         private static func latestPersistedSeal(

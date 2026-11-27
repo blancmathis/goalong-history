@@ -204,6 +204,13 @@
             return true
         }
 
+        /// The anchor cursor comes from a valid checkpoint or a durable seal of this launch.
+        var anchorCursorIsConfirmed: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return anchorCursorConfirmed
+        }
+
         /// True while the anchor cursor is a fresh default although a checkpoint file existed:
         /// signing from it could restart the chain at 1 (T-057 d4-02).
         var anchorCursorIsDoubtful: Bool {

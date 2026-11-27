@@ -28,7 +28,7 @@
             case .randomFailure(let status): return "Secure random generation failed (OSStatus \(status))."
             case .destinationExists: return "An analysis proof already exists for this execution identifier."
             case .chainHeadUnreadable:
-                return "The analysis proof chain head is unreadable; no proof is signed so the chain is not restarted."
+                return "The damaged analysis proof chain head could not be set aside; no proof is signed so the chain is not restarted."
             }
         }
 
@@ -42,7 +42,7 @@
             case .randomFailure: return "Goalong n’a pas pu créer de clé aléatoire sûre."
             case .destinationExists: return "Une preuve existe déjà pour cette analyse."
             case .chainHeadUnreadable:
-                return "Le registre des preuves d’analyse est illisible : aucune preuve n’est signée pour ne pas casser la chaîne."
+                return "Le registre abîmé des preuves d’analyse n’a pas pu être mis de côté : aucune preuve n’est signée pour ne pas casser la chaîne."
             }
         }
     }
@@ -235,8 +235,8 @@
                 )
                 let responseData = try response.canonicalData()
 
-                let chainHead = try loadChainHead()
-                let sequence = (chainHead?.sequence ?? -1) + 1
+                let link = try nextChainLink(now: generatedAt)
+                let sequence = link.sequence
                 let nonce = try secureRandom(count: 32)
                 let anchors = try? shareBuilder.anchorBounds(for: day)
                 let build = BuildIdentityReader.current()
@@ -246,7 +246,7 @@
                     executionID: executionID,
                     nonceBase64URL: GoalongBase64URL.encode(nonce),
                     sequence: sequence,
-                    previousAttestationDigest: chainHead?.runJWSSHA256,
+                    previousAttestationDigest: link.previousDigest,
                     slot: "daily:\(dayString)",
                     retryID: nil,
                     day: dayString,
@@ -626,7 +626,8 @@
 
         /// nil only when no chain exists yet. The head carries the number and digest the next
         /// proof links to, so an erased (or never placed) run does not restart the chain. An
-        /// unreadable head, or one that contradicts its run, refuses the proof (T-057 d4-04).
+        /// unreadable head, or one that contradicts its run, throws; `nextChainLink` sets it
+        /// aside and starts a new chain marked as a break (T-057 d4-04, D4 relecture 2).
         private func loadChainHead() throws -> ChainHead? {
             let url = rootDirectory.appendingPathComponent("chain-head.json", isDirectory: false)
             var information = stat()
@@ -658,6 +659,79 @@
         func nextChainLinkForTesting() throws -> (sequence: Int64, previousDigest: String?) {
             let head = try loadChainHead()
             return ((head?.sequence ?? -1) + 1, head?.runJWSSHA256)
+        }
+
+        /// The link the next proof signs. A damaged head (unreadable, or contradicting its run)
+        /// never blocks proofs for good (T-057 D4 relecture 2): it is set aside as
+        /// `chain-head.damaged-<unix>.json`, never deleted, and a new chain starts. Its first
+        /// proof records the break: no previous digest, and a number above any number the old
+        /// chain could have used (at least the current Unix second, above the damaged head's
+        /// number when it is still legible). A verifier sees a break, never a fork or a reused
+        /// number. The break mode stays while no new head exists (a failed proof retries it).
+        func nextChainLink(now: Date) throws -> (sequence: Int64, previousDigest: String?) {
+            do {
+                if let head = try loadChainHead() {
+                    return (head.sequence + 1, head.runJWSSHA256)
+                }
+                guard !setAsideChainHeadNames().isEmpty else { return (0, nil) }
+                let sequence = chainBreakSequence(now: now, after: nil)
+                Diagnostics.write("Analysis proof chain restarts after a set-aside head at sequence \(sequence)")
+                return (sequence, nil)
+            } catch AnalysisProofStoreError.chainHeadUnreadable {
+                let legible = legibleDamagedHeadSequence()
+                let keptName = try setAsideDamagedChainHead(now: now)
+                let sequence = chainBreakSequence(now: now, after: legible)
+                Diagnostics.write(
+                    "Analysis proof chain head damaged; kept as \(keptName), new chain starts at sequence \(sequence) with no previous digest"
+                )
+                return (sequence, nil)
+            }
+        }
+
+        private var chainHeadURL: URL {
+            rootDirectory.appendingPathComponent("chain-head.json", isDirectory: false)
+        }
+
+        private func setAsideChainHeadNames() -> [String] {
+            ((try? fileManager.contentsOfDirectory(atPath: rootDirectory.path)) ?? [])
+                .filter { $0.hasPrefix("chain-head.damaged-") && $0.hasSuffix(".json") }
+        }
+
+        private func chainBreakSequence(now: Date, after legible: Int64?) -> Int64 {
+            let seconds = now.timeIntervalSince1970
+            let clock: Int64 = seconds.isFinite && seconds > 0 ? Int64(seconds) : 0
+            return max(1, clock, (legible ?? -1) &+ 1)
+        }
+
+        /// The damaged head's number when its JSON still says it; nil otherwise.
+        private func legibleDamagedHeadSequence() -> Int64? {
+            guard let data = try? ChatGPTHistoryStore.readStableSource(at: chainHeadURL, maximumBytes: 8 * 1_024),
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let number = object["sequence"] as? NSNumber
+            else { return nil }
+            let value = number.int64Value
+            return value >= 0 && value < Int64.max ? value : nil
+        }
+
+        /// Renames (never deletes or overwrites) the damaged head; returns the kept name.
+        private func setAsideDamagedChainHead(now: Date) throws -> String {
+            let seconds = now.timeIntervalSince1970
+            let stamp: Int64 = seconds.isFinite && seconds > 0 ? Int64(seconds) : 0
+            for attempt in 0..<100 {
+                let name = attempt == 0
+                    ? "chain-head.damaged-\(stamp).json"
+                    : "chain-head.damaged-\(stamp)-\(attempt).json"
+                let destination = rootDirectory.appendingPathComponent(name, isDirectory: false)
+                // renamex_np(RENAME_EXCL): never replaces an earlier kept head.
+                let result = chainHeadURL.path.withCString { source in
+                    destination.path.withCString { renamex_np(source, $0, UInt32(RENAME_EXCL)) }
+                }
+                if result == 0 { return name }
+                if errno == EEXIST { continue }
+                Diagnostics.write("Analysis proof chain head could not be set aside (errno \(errno)); proof refused")
+                throw AnalysisProofStoreError.chainHeadUnreadable
+            }
+            throw AnalysisProofStoreError.chainHeadUnreadable
         }
 
         private func writeChainHead(_ head: ChainHead) throws {

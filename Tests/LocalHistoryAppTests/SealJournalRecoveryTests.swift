@@ -281,6 +281,59 @@
             XCTAssertFalse(state.anchorCursorIsDoubtful)
         }
 
+        private func sealRow(_ sequence: UInt64, _ hash: String) throws -> Data {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var data = try encoder.encode(LocalMinuteSeal(
+                anchorSequence: sequence,
+                minuteStart: Date(timeIntervalSince1970: 60),
+                minuteEnd: Date(timeIntervalSince1970: 120),
+                minuteFields: [], eventRoots: [], minuteRoot: "m\(sequence)",
+                previousAnchorHash: "p\(sequence)", anchorHash: hash,
+                deviceID: "fixture-device", publicKeyBase64: "k", trustTier: "test",
+                signatureBase64: "s", signatureAlgorithm: "test-signature"
+            ))
+            data.append(0x0A)
+            return data
+        }
+
+        // D4 relecture 1: an old unreadable seal file never pauses signing for good. With a
+        // valid checkpoint it is skipped (logged, kept); an older one is skipped behind a
+        // readable newer tail even without a checkpoint.
+        func testOldUnreadableSealFileIsSkippedWhenTheCursorIsConfirmed() throws {
+            let old = seals.appendingPathComponent("1970-01-01.seals.jsonl")
+            try sealRow(3, "old-tail").write(to: old)
+            XCTAssertEqual(chmod(old.path, 0), 0)
+            try XCTSkipIf(FileManager.default.isReadableFile(atPath: old.path), "running as root")
+
+            // Valid checkpoint at 9 (after seal 8), only the old file on disk, unreadable.
+            let checkpoint = IntegrityStateStore(fileURL: stateFile, prepareStorage: {})
+            let tail8 = String(repeating: "8", count: 64)
+            _ = try checkpoint.reconcilePersistedAnchorTail(sequence: 8, anchorHash: tail8)
+            let state = makeState()
+            XCTAssertTrue(state.anchorCursorIsConfirmed)
+            var signed: [LocalMinuteSeal] = []
+            let sealer = makeSealer(state) { seal, _ in signed.append(seal) }
+            sealer.receiveForTesting(event(150, root: "r"), now: Date(timeIntervalSince1970: 150))
+            XCTAssertTrue(sealer.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: 181.1)))
+            XCTAssertFalse(sealer.runtimeSnapshot.journalRecoveryPending)
+            XCTAssertEqual(signed.map(\.anchorSequence), [9], "follows the checkpoint, no number reused")
+            XCTAssertEqual(signed.first?.previousAnchorHash, tail8)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: old.path), "the unreadable file is kept")
+
+            // No checkpoint: an older unreadable file behind a readable newer tail is skipped.
+            try FileManager.default.removeItem(at: stateFile)
+            try sealRow(12, "newer-tail").write(to: seals.appendingPathComponent("1970-01-02.seals.jsonl"))
+            let fresh = makeState()
+            XCTAssertFalse(fresh.anchorCursorIsConfirmed)
+            var resumed: [LocalMinuteSeal] = []
+            let second = makeSealer(fresh) { seal, _ in resumed.append(seal) }
+            second.receiveForTesting(event(150, root: "r2"), now: Date(timeIntervalSince1970: 150))
+            XCTAssertTrue(second.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: 181.1)))
+            XCTAssertEqual(resumed.first?.anchorSequence, 13)
+            XCTAssertEqual(resumed.first?.previousAnchorHash, "newer-tail")
+        }
+
         // d4-02: retention never removes the newest seal file (chain tail).
         func testRetentionKeepsTheNewestSealFile() throws {
             func artifact(_ day: String) throws -> HistoryStoredArtifact {
@@ -340,6 +393,53 @@
                 }
             }
             XCTAssertEqual(try Data(contentsOf: head), Data("{ torn".utf8), "the damaged head is kept")
+        }
+
+        // D4 relecture 2: a damaged head never blocks proofs for good. It is set aside (never
+        // deleted or overwritten); the new chain's first proof has no previous digest and a
+        // number above any the old chain used: a break, never a fork or a reused number.
+        func testDamagedChainHeadIsSetAsideAndANewChainRecordsTheBreak() throws {
+            let proofs = root.appendingPathComponent("proofs", isDirectory: true)
+            try FileManager.default.createDirectory(at: proofs, withIntermediateDirectories: true)
+            let store = AnalysisProofStore(rootDirectory: proofs)
+            let head = proofs.appendingPathComponent("chain-head.json")
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            func kept() throws -> [String] {
+                try FileManager.default.contentsOfDirectory(atPath: proofs.path)
+                    .filter { $0.hasPrefix("chain-head.damaged-") }.sorted()
+            }
+
+            try Data("{ torn".utf8).write(to: head)
+            let link = try store.nextChainLink(now: now)
+            XCTAssertNil(link.previousDigest, "the first proof of the new chain records the break")
+            XCTAssertEqual(link.sequence, 1_800_000_000)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: head.path))
+            XCTAssertEqual(try kept(), ["chain-head.damaged-1800000000.json"])
+            XCTAssertEqual(
+                try Data(contentsOf: proofs.appendingPathComponent("chain-head.damaged-1800000000.json")),
+                Data("{ torn".utf8)
+            )
+            // A failed proof keeps break mode: never back to 0.
+            XCTAssertEqual(try store.nextChainLink(now: now).sequence, 1_800_000_000)
+
+            // A head that contradicts its run, with a number above the clock: kept beside the
+            // first one (never overwritten); the break number goes above it.
+            let executionID = UUID().uuidString.lowercased()
+            let runDirectory = proofs.appendingPathComponent(executionID, isDirectory: true)
+            try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+            try Data("another run".utf8).write(to: runDirectory.appendingPathComponent("run.jws"))
+            let digest = GoalongProofDigest.sha256(Data("run".utf8))
+            try Data("""
+                {"executionID":"\(executionID)","runJWSSHA256":"\(digest)","schemaVersion":1,"sequence":1900000000}
+                """.utf8).write(to: head)
+            let second = try store.nextChainLink(now: now)
+            XCTAssertNil(second.previousDigest)
+            XCTAssertEqual(second.sequence, 1_900_000_001)
+            XCTAssertEqual(
+                try kept(),
+                ["chain-head.damaged-1800000000-1.json", "chain-head.damaged-1800000000.json"]
+            )
+            XCTAssertTrue(FileManager.default.fileExists(atPath: runDirectory.appendingPathComponent("run.jws").path))
         }
     }
 #endif
