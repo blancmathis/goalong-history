@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import LocalHistoryApp
+import LocalHistoryCore
 
 final class JevSendTransparencyTests: XCTestCase {
     func testClassificationListNamesEveryPromptField() {
@@ -10,6 +11,24 @@ final class JevSendTransparencyTests: XCTestCase {
         for expected in ["Application, site, titre", "Minutes", "Voisins", "Extrait visible", "Tâches connues", "Réponses passées", "Note du jour"] {
             XCTAssertTrue(names.contains(expected), expected)
         }
+    }
+    /// The list must describe the real Jev body: a new key or row column there must show up here (T-057 review).
+    func testJevListMatchesTheRealRequestBody() throws {
+        let now = Date(timeIntervalSince1970: 1_790_300_000)
+        let sample = JevSample(date: now, resource: "x.com", title: "Home", action: "scroll", surface: "social-feed",
+                               isActivity: true, excerpt: "texte visible")
+        let work = try JevWorkContext(summary: "Écrire", applications: "Xcode", content: "docs", procrastination: "vidéos")
+        let data = try JevPayload.build(JevWindow(start: now, end: now.addingTimeInterval(15), samples: [sample]), work: work)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["model", "questions", "state"])
+        let state = try XCTUnwrap(object["state"] as? [String: Any])
+        // goals/apps/content = critères ; avoid = exemples hors travail ; rows = app ou site, surface, titre, action, extrait.
+        XCTAssertEqual(Set(state.keys), ["goals", "apps", "content", "avoid", "rows"])
+        let rows = try XCTUnwrap(state["rows"] as? [[String]])
+        XCTAssertTrue(rows.allSatisfy { $0.count <= 5 })
+        XCTAssertEqual(JevSendFields.jev(includesExcerpt: true).map(\.name),
+                       ["Critères de travail", "Exemples hors travail", "App ou site", "Titre", "Action", "Surface",
+                        "Action en cours", "Extrait du texte affiché"])
     }
     func testExcerptLineFollowsTheSwitch() {
         XCTAssertTrue(JevSendFields.jev(includesExcerpt: false).last!.detail.contains("non envoyé"))

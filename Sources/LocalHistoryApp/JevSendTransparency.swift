@@ -16,13 +16,11 @@ enum JevSendFields {
     static func jev(includesExcerpt: Bool) -> [Field] {
         var fields = [
             Field(name: "Critères de travail", detail: "projets, outils, contenus de travail et ce qui n’en est pas, tels que vous les avez écrits"),
-            Field(name: "Exemples hors travail", detail: "ceux que vous avez enregistrés"),
-            Field(name: "Heure", detail: "de chaque échantillon des 15 dernières secondes"),
+            Field(name: "Exemples hors travail", detail: "ceux que vous avez écrits"),
             Field(name: "App ou site", detail: "l’application ou le domaine au premier plan"),
             Field(name: "Titre", detail: "le titre de la fenêtre, quand il est disponible"),
             Field(name: "Action", detail: "indice d’interaction (frappe, clic, défilement, lecture) ; les gestes identiques sont regroupés"),
             Field(name: "Surface", detail: "le type de fenêtre ou de page"),
-            Field(name: "Cible de distraction", detail: "le site ou la zone détectée comme distrayante, s’il y en a une"),
             Field(name: "Action en cours", detail: "la phrase décrivant ce que vous faites (règle ou séance active), si elle tient dans l’envoi"),
         ]
         fields.append(Field(name: "Extrait du texte affiché",
