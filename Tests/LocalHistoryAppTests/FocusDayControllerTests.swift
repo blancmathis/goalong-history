@@ -178,6 +178,32 @@ final class FocusDayControllerTests: XCTestCase {
         XCTAssertEqual(c.settings.agendaTemplate?.slots.map(\.title), ["Repas"])
         XCTAssertEqual(c.plan.agenda?.slots.count, 2)
     }
+    /// bugs-cycle-de-vie-02: a reminder due behind a locked screen is not used up; it shows once on return while its slot
+    /// still runs, and never after the slot ended.
+    @MainActor func testAgendaReminderWaitsForTheUnlockedSessionAndIsNotReplayedAfterItsSlot() throws {
+        let s = try store(guided: true); var instant = now, available = false
+        let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
+        c.sessionAvailable = { available }
+        let slots = [FocusAgendaSlot(title: "Écrire", startMinute: 600, endMinute: 615, fixed: true),
+                     FocusAgendaSlot(title: "Lire", startMinute: 630, endMinute: 645, fixed: true)]
+        var plan = FocusPlan(day: day); plan.agenda = FocusAgenda(timeZoneID: "UTC", guided: true, slots: slots)
+        try c.applyDayPlan(plan, expectedRevision: 0)
+        c.refresh()
+        XCTAssertNil(c.panel)
+        XCTAssertEqual(try s.prompts()?.agendaPromptCount ?? 0, 0)
+        XCTAssertEqual(try s.prompts()?.agendaShownIDs ?? [], [])
+        instant = now.addingTimeInterval(120); available = true; c.refresh()
+        XCTAssertEqual(c.panel?.slotID, slots[0].id)
+        c.dismissPanel(); c.refresh()
+        XCTAssertNil(c.panel)
+        XCTAssertEqual(try s.prompts()?.agendaPromptCount, 1)
+        // Locked through the whole second slot: no stale reminder after it ended.
+        available = false; instant = now.addingTimeInterval(31 * 60); c.refresh()
+        XCTAssertNil(c.panel)
+        available = true; instant = now.addingTimeInterval(46 * 60); c.refresh()
+        XCTAssertNil(c.panel)
+        XCTAssertEqual(try s.prompts()?.agendaPromptCount, 1)
+    }
     @MainActor func testGuidanceBudgetPersistsAndDoesNotReplayMissedSlots() throws {
         let s = try store(guided: true); var instant = now
         let c = try ConcentrationController(store: s, clock: { instant }, calendar: calendar)
