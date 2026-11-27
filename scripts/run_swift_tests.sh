@@ -354,7 +354,7 @@ case "$mode" in
         export GOALONG_SHARING_SNAPSHOTS="$out/sharing"
         for pair in BRAISE:braise AMBIANCE:ambiance CONCENTRATION_HUB:concentration-hub BLOCKING:blocking \
           ANALYTICS:analytics JEV_CONTEXT:jev-context JEV_EFFECTS:jev-effects MENUBAR:menubar \
-          CONCENTRATION:concentration TIMER:timer; do
+          CONCENTRATION:concentration TIMER:timer PERSO_STATUS:perso-status; do
           mkdir -p "$out/${pair#*:}"; export "GOALONG_${pair%%:*}_SNAPSHOTS=$out/${pair#*:}"
         done
         mkdir -p "$out/brand" "$out/design-audit" "$out/sharing" "$out/focus-ui"
@@ -374,7 +374,7 @@ case "$mode" in
     }
     run_group brand goalong-brand 'GoalongBrandRenderingTests|GoalongTrustRenderingTests|GoalongDesignAuditRenderingTests|GoalongControlsInteractionTests'
     run_group sharing goalong-sharing-home 'GoalongWebsiteSharingRenderingTests'
-    run_group other goalong-test 'BraisePageRenderingTests|AmbiancePageRenderingTests|ConcentrationHubRenderingTests|BlockingPageRenderingTests|GoalongAnalyticsRenderingTests|JevProcrastinationRenderingTests|JevEffectsRenderingTests|GoalongDisclosureInteractionTests|MenuBarPanelRenderingTests|BlockingActivationRegressionTests|ConcentrationRenderingTests|BlockingTimerTests'
+    run_group other goalong-test 'BraisePageRenderingTests|AmbiancePageRenderingTests|ConcentrationHubRenderingTests|BlockingPageRenderingTests|GoalongAnalyticsRenderingTests|JevProcrastinationRenderingTests|JevEffectsRenderingTests|GoalongDisclosureInteractionTests|MenuBarPanelRenderingTests|BlockingActivationRegressionTests|ConcentrationRenderingTests|BlockingTimerTests|PersoUpdateStatusTests'
     echo "----"
     skips="$(grep -c "' skipped (" "$log" || true)"
     echo "Render output: $out"

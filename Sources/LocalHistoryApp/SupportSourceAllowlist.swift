@@ -260,6 +260,7 @@ enum SupportSourceAllowlist {
         "PersoGitHubTransport.swift",
         "PersoReleaseGate.swift",
         "PersoSelfUpdate.swift",
+        "PersoUpdateStatusView.swift",
         "PreparedSession.swift",
         "PrivacyChoicesOverview.swift",
         "PrivacyPage.swift",
