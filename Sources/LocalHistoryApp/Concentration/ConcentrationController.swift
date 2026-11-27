@@ -876,18 +876,32 @@ struct FocusPanel: Equatable {
         RunLoop.main.add(t, forMode: .common); timer = t
     }
     /// Saves a stop that could not be written (one forced retry). If the store still fails, a small tombstone outside the
-    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off.
-    func flushPendingStop() {
-        guard let pending = pendingStop else { return }
+    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off. False = the stop is on
+    /// neither file: only this controller still holds it.
+    @discardableResult func flushPendingStop() -> Bool {
+        guard let pending = pendingStop else { return true }
         lastStorageRetry = .distantPast
-        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return }
-        guard pendingStop != nil else { return }
-        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: (try? storageDay(of: pending.session)) ?? FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
-                                                  end: pending.end, reason: pending.reason))
+        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return true }
+        guard pendingStop != nil else { return true }
+        do {
+            try store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: (try? storageDay(of: pending.session)) ?? FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
+                                                     end: pending.end, reason: pending.reason))
+            return true
+        } catch { return false }
+    }
+    /// Module-off: ends the running session (unless a locked block holds it). A stop the sessions file refuses becomes a
+    /// pending stop, then a tombstone (bugs-cycle-de-vie-01). False = the stop could be written nowhere: the caller must
+    /// keep this controller, which still owns it.
+    func closeForShutdown() -> Bool {
+        flushPendingStop()
+        if let value = currentSession, !hasLockedPhaseBlock {
+            let end = eventTime(value)
+            do { try finish(value, at: end, reason: .moduleDisabled) } catch { endInMemory(value, at: end, reason: .moduleDisabled); publishStatus(); scheduleTimer() }
+        }
+        return flushPendingStop()
     }
     func shutdown() {
-        flushPendingStop()
-        if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: eventTime(value), reason: .moduleDisabled) }
+        _ = closeForShutdown()
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()

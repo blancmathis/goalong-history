@@ -477,6 +477,57 @@ extension ConcentrationControllerTests {
         XCTAssertEqual(try s.sessions(BlockingController.dayKey(now)).first { $0.id == id }?.events.last?.kind, .stop)
         XCTAssertNil(try s.pendingStopTombstone())
     }
+    /// bugs-cycle-de-vie-01: module-off while the sessions file refuses writes keeps the stop (tombstone), so the free
+    /// session does not come back open when the module is turned on again.
+    @MainActor func testModuleOffWithFailingSessionWriteKeepsTheStop() throws {
+        let s = store(); try quiet(s)
+        let start = Date(timeIntervalSince1970: 1791201600); var now = start
+        let name = UUID().uuidString, defaults = UserDefaults(suiteName: name)!; defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: GoalongModule.concentration.defaultsKey)
+        let modules = GoalongModuleStore(defaults: defaults)
+        let runtime = ConcentrationRuntime(storeFactory: { s }, factory: { try ConcentrationController(store: $0, clock: { now }) }, blockingProvider: { nil }, presentsPanels: false)
+        runtime.start(modules: modules)
+        try XCTUnwrap(runtime.controller).startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let id = try XCTUnwrap(runtime.controller?.currentSession).id
+        now = start.addingTimeInterval(600)
+        let dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); defer { chmod(dir, 0o700) }
+        modules.setEnabled(.concentration, false)
+        XCTAssertNil(runtime.controller)
+        XCTAssertEqual(try s.pendingStopTombstone()?.sessionID, id)
+        chmod(dir, 0o700); now = start.addingTimeInterval(3600)
+        modules.setEnabled(.concentration, true)
+        XCTAssertNil(runtime.controller?.currentSession)
+        let saved = try XCTUnwrap(s.sessions(BlockingController.dayKey(start)).first { $0.id == id })
+        XCTAssertEqual(saved.events.last?.kind, .stop); XCTAssertEqual(saved.events.last?.at, start.addingTimeInterval(600))
+        XCTAssertNil(try s.pendingStopTombstone())
+        runtime.apply(enabled: false)
+    }
+    /// bugs-cycle-de-vie-01: the tombstone fails too, so module-off is refused and the controller keeps the stop.
+    @MainActor func testModuleOffIsRefusedWhenTheStopCanBeWrittenNowhere() throws {
+        let s = store(); try quiet(s)
+        let start = Date(timeIntervalSince1970: 1791201600); var now = start
+        let name = UUID().uuidString, defaults = UserDefaults(suiteName: name)!; defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(true, forKey: GoalongModule.concentration.defaultsKey)
+        let modules = GoalongModuleStore(defaults: defaults)
+        let runtime = ConcentrationRuntime(storeFactory: { s }, factory: { try ConcentrationController(store: $0, clock: { now }) }, blockingProvider: { nil }, presentsPanels: false)
+        runtime.start(modules: modules)
+        try XCTUnwrap(runtime.controller).startSession(intent: "Libre", mode: FocusMode(minutes: nil))
+        let id = try XCTUnwrap(runtime.controller?.currentSession).id
+        now = start.addingTimeInterval(600)
+        let root = s.directory.path, dir = s.directory.appendingPathComponent("sessions").path
+        chmod(dir, 0o500); chmod(root, 0o500); defer { chmod(root, 0o700); chmod(dir, 0o700) }
+        modules.setEnabled(.concentration, false)
+        XCTAssertNotNil(runtime.controller)
+        XCTAssertTrue(modules.isEnabled(.concentration))
+        XCTAssertEqual(runtime.error, FocusFailure.storageFailed.rawValue)
+        chmod(root, 0o700); chmod(dir, 0o700); now = start.addingTimeInterval(3600)
+        modules.setEnabled(.concentration, false)
+        XCTAssertNil(runtime.controller)
+        let saved = try XCTUnwrap(s.sessions(BlockingController.dayKey(start)).first { $0.id == id })
+        XCTAssertEqual(saved.events.last?.kind, .stop); XCTAssertEqual(saved.events.last?.at, start.addingTimeInterval(600))
+        XCTAssertNil(try s.pendingStopTombstone())
+    }
     /// R34-04: a time-zone change or a wake recomputes the evening prompt once, with the new zone.
     @MainActor func testTimeZoneChangeRecomputesTheEveningPromptWithoutDuplicates() throws {
         let previousZone = NSTimeZone.default
