@@ -22,9 +22,10 @@
             self.model = model
             _deviceStore = ObservedObject(wrappedValue: model.deviceStore)
             _alertStore = ObservedObject(wrappedValue: model.alertStore)
-            _navigationStore = ObservedObject(wrappedValue: model.navigationStore)
+            let navigation = model.navigationStore
+            _navigationStore = ObservedObject(wrappedValue: navigation)
             _activity = StateObject(wrappedValue: GoalongAnalyticsModel(reader: model.analyticsReader))
-            _activityNavigation = State(initialValue: GoalongActivityNavigation(sharedDay: model.navigationStore.selectedDay, period: activityPeriod, now: model.now()))
+            _activityNavigation = State(initialValue: GoalongActivityNavigation(sharedDay: navigation.selectedDay, period: activityPeriod, now: model.now()))
         }
 
         var body: some View {
