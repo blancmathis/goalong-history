@@ -293,6 +293,20 @@
             onQueue { sealElapsedMinutes(now: now) }
         }
 
+        func receiveForTesting(_ event: HistoryEvent, now: Date) {
+            guard let root = event.integrity?.eventRoot else { return }
+            onQueue {
+                receive(
+                    PendingRoot(
+                        root: root,
+                        timestamp: event.timestamp,
+                        coverageSignal: Self.coverageSignal(from: event)
+                    ),
+                    now: now
+                )
+            }
+        }
+
         func waitUntilIdleForTesting() {
             onQueue {}
         }
@@ -332,11 +346,33 @@
                 // a timestamp in the previous minute. Emit a supplemental chained seal
                 // instead of silently discarding that root. Older agent timestamps stay
                 // in the durable raw journal and are reported, but never grow this buffer.
-                guard eventMinute >= nextMinuteStart.addingTimeInterval(-60) else {
+                // T-057 F2 (bugs-temps-07): after the wall clock is set back, a root
+                // stamped about now is fresh, not delayed. It gets a supplemental chained
+                // seal; a genuinely late root (stamped long before now) stays refused.
+                let freshAfterRollback =
+                    now < nextMinuteStart.addingTimeInterval(-60)
+                    && abs(now.timeIntervalSince(pending.timestamp)) <= 60
+                guard eventMinute >= nextMinuteStart.addingTimeInterval(-60) || freshAfterRollback
+                else {
                     unbufferedRootCount += 1
                     lastErrorDescription = "A root arrived outside the bounded late-minute window."
                     Diagnostics.write(
                         "Event root arrived more than one minute after its seal window; raw event retained for recovery"
+                    )
+                    return
+                }
+                if freshAfterRollback, eventMinute < nextMinuteStart.addingTimeInterval(-60) {
+                    // Seal the finished set-back minutes when a new one starts, then keep
+                    // this minute open: one seal per minute, the bucket bound holds, and the
+                    // minute wake seals the open one (`sealQueuedSupplementalMinutes`).
+                    if buckets[eventMinute] == nil, failedMinuteStart == nil {
+                        var sealCount = 0
+                        _ = sealQueuedSupplementalMinutes(now: now, sealCount: &sealCount)
+                    }
+                    _ = insert(
+                        root: pending.root,
+                        coverageState: observeCoverage(pending.coverageSignal),
+                        minuteStart: eventMinute
                     )
                     return
                 }

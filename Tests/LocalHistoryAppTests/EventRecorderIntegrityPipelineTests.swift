@@ -654,6 +654,39 @@
             XCTAssertNil(sealer.runtimeSnapshot.lastErrorDescription)
         }
 
+        // T-057 F2 (bugs-temps-07): fresh roots after a wall-clock rollback are sealed.
+        func testFreshRootsAfterClockRollbackGetSupplementalSealsOnePerMinute() throws {
+            let fixture = try makeFixture()
+            let state = makeState(fixture)
+            var seals: [LocalMinuteSeal] = []
+            let sealer = makeSealer(
+                state: state,
+                fixture: fixture,
+                initialDate: Date(timeIntervalSince1970: 600),
+                sealAppender: { seal, _ in seals.append(seal) }
+            )
+            let at = { (seconds: TimeInterval) in Date(timeIntervalSince1970: seconds) }
+            sealer.receiveForTesting(fixtureEvent(timestamp: at(605), root: "before"), now: at(605))
+            XCTAssertTrue(sealer.sealElapsedMinutesForTesting(now: at(661)))
+            XCTAssertEqual(seals.map(\.eventRoots), [["before"]])
+
+            // A genuinely late root (stamped long before now) is still refused.
+            sealer.receiveForTesting(fixtureEvent(timestamp: at(70), root: "late"), now: at(665))
+            XCTAssertEqual(sealer.runtimeSnapshot.unbufferedRootCount, 1)
+
+            // Clock set back from 11:05 to 1:05: roots stamped "now" are fresh.
+            sealer.receiveForTesting(fixtureEvent(timestamp: at(70), root: "r1"), now: at(70.2))
+            sealer.receiveForTesting(fixtureEvent(timestamp: at(75), root: "r2"), now: at(75.1))
+            sealer.receiveForTesting(fixtureEvent(timestamp: at(130), root: "r3"), now: at(130.1))
+            XCTAssertTrue(sealer.sealElapsedMinutesForTesting(now: at(185)))
+
+            XCTAssertEqual(sealer.runtimeSnapshot.unbufferedRootCount, 1)
+            XCTAssertEqual(seals.map(\.eventRoots), [["before"], ["r1", "r2"], ["r3"]])
+            XCTAssertEqual(seals.map(\.minuteStart), [at(600), at(60), at(120)])
+            XCTAssertEqual(seals.map(\.anchorSequence), [1, 2, 3])
+            XCTAssertEqual(sealer.runtimeSnapshot.pendingRootCount, 0)
+        }
+
         func testDefaultSealAppendIsNoFollowAndSeparatesAnIncompleteTail() throws {
             let fixture = try makeFixture()
             let minute = Date(timeIntervalSince1970: 120)
