@@ -103,6 +103,14 @@ public struct UpdateRelaunchOwnership: Equatable, Sendable {
         return true
     }
 
+    /// A perso swap asks here (bugs-mise-a-jour-05). A Sparkle cycle already open (past `mayPerform`: it reads the
+    /// feed, downloads, waits for a choice or for an install on quit) has no refusal left once the swap is done,
+    /// so the swap never starts while one is open. The caller refuses the request; `make perso` can run again.
+    @discardableResult public mutating func markPerso(sparkleCycleOpen: Bool) -> Bool {
+        if owner == nil, sparkleCycleOpen { return false }
+        return mark(.perso)
+    }
+
     /// A perso swap that failed before it happened gives the state back.
     public mutating func persoAbandoned() {
         if owner == .perso { owner = nil }

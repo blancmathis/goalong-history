@@ -177,14 +177,22 @@ import GoalongGuardCore
                 self.finishRefused(request, stageDir: stageDir, reason: "une mise à jour Sparkle est en cours")
                 return
             }
-            do { try PersoStage.swap(target, staged) } catch {
+            // The guard waits while the relauncher (now at the installed path) lives (installation-05). Its lease
+            // is written before the swap, and a lease that cannot be written keeps this app open (bugs-mise-a-jour-06).
+            let files = GoalongGuardFiles.standard
+            if let refusal = PersoSwapCommit.run(
+                publishLease: {
+                    GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration,
+                                                 request: request, files: files)
+                },
+                swap: { try PersoStage.swap(target, staged) },
+                dropLease: { files.removeLease(reason: GuardLease.persoUpdate, request: request) }
+            ) {
                 SoftwareUpdateManager.shared.abandonPersoRelaunch()
                 self.process?.terminate()
-                self.finishRefused(request, stageDir: stageDir, reason: error.localizedDescription)
+                self.finishRefused(request, stageDir: stageDir, reason: refusal)
                 return
             }
-            // The guard waits while the relauncher (now at the installed path) lives (installation-05).
-            GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration, request: request)
             self.history.record(request, .closing)
             // `finish` runs inside a main-queue block: quitting from there would hang in `terminate` (2026-11-22).
             AppDelegate.terminateFromRunLoop()

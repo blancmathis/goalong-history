@@ -236,6 +236,38 @@ if [[ "$lock_status" -ne 3 ]] || ! grep -Fq 'scheduled' <<<"$lock_output"; then
   exit 1
 fi
 
+# bugs-mise-a-jour-02: the classic installer never force-quits either. A SIGTERM refused by a protection (a locked
+# session that began during the wait) must not end in SIGKILL and a replacement.
+set +e
+classic_kill_output="$(env -u GOALONG_LOCAL_TRY GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 GOALONG_LATE_QUIT_DIR="$TEST_ROOT/late-quit-classic" GOALONG_LATE_RELAUNCH_SYNC=0 /bin/bash -c '
+  source "$1"; /usr/bin/pgrep() { return 0; }; /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
+  start_late_quit_watch() { :; }
+  quit_running_goalong goalong-test-never; echo REPLACED' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+classic_kill_status=$?
+set -e
+if [[ "$classic_kill_status" -ne 1 ]] || [[ "$classic_kill_output" == *KILLED* ]] || [[ "$classic_kill_output" == *REPLACED* ]] \
+   || ! grep -F 'never force-quits' <<<"$classic_kill_output" >/dev/null; then
+  echo "classic install quit path force-killed Goalong or went on to replace it: $classic_kill_output" >&2
+  exit 1
+fi
+
+# bugs-mise-a-jour-03: without a severe block, the continuity guard is still released before the quit, so it cannot
+# reopen Goalong in the middle of the replacement. Classic and make local, no marker or a scheduled lock only.
+HOME_FREE="$TEST_ROOT/home-free"
+/bin/mkdir -p "$HOME_FREE/Library/Application Support/LocalHistory/Blocking"
+for local_try in 0 1; do
+  release_output="$("${CLEAN_INSTALL_ENV[@]}" HOME="$HOME_FREE" GOALONG_LOCAL_TRY="$local_try" /bin/bash -c '
+    source "$1"; release_blocking_guard() { echo "RELEASED $*"; }; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+  if ! grep -F "RELEASED /Applications/$APP_NAME.app $HOME_FREE/Applications/$APP_NAME.app" <<<"$release_output" >/dev/null; then
+    echo "the installer did not release the continuity guard before quitting (local try $local_try): $release_output" >&2
+    exit 1
+  fi
+done
+/bin/date -v+1H +%s >"$HOME_FREE/Library/Application Support/LocalHistory/Blocking/locked-until"
+release_output="$("${CLEAN_INSTALL_ENV[@]}" HOME="$HOME_FREE" /bin/bash -c '
+  source "$1"; release_blocking_guard() { echo "RELEASED"; }; refuse_install_during_severe_block' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+grep -Fx RELEASED <<<"$release_output" >/dev/null || { echo "scheduled lock: guard not released: $release_output" >&2; exit 1; }
+
 MARKER_FILE="$TEST_ROOT/legacy-marker"
 /usr/bin/printf '%s\n' 'captureFullContents' >"$MARKER_FILE"
 set +e

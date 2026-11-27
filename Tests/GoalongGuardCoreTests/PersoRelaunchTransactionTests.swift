@@ -163,4 +163,17 @@ final class PersoGuardLeaseTests: XCTestCase {
         XCTAssertTrue(sparkle.sparkleAborted())
         XCTAssertFalse(sparkle.isRelaunching)
     }
+
+    /// bugs-mise-a-jour-05: a Sparkle cycle already past `mayPerform` would still install after a perso swap.
+    func testPersoSwapNeverStartsWhileASparkleCycleIsOpen() {
+        var ownership = UpdateRelaunchOwnership()
+        XCTAssertFalse(ownership.markPerso(sparkleCycleOpen: true), "Sparkle downloading or waiting: no swap")
+        XCTAssertFalse(ownership.isRelaunching, "a refusal takes nothing")
+        XCTAssertTrue(ownership.markPerso(sparkleCycleOpen: false))
+        XCTAssertEqual(ownership.owner, .perso)
+        XCTAssertTrue(ownership.markPerso(sparkleCycleOpen: true), "already the perso swap's own: unchanged")
+        var sparkle = UpdateRelaunchOwnership()
+        sparkle.mark(.sparkle)
+        XCTAssertFalse(sparkle.markPerso(sparkleCycleOpen: false), "one installation at a time (L1L2-08)")
+    }
 }

@@ -592,8 +592,6 @@ unregister_login_item_if_possible() {
   trim_log_to_limit "$LOG_FILE"
 }
 
-# Ask the running app to quit with SIGTERM: it flushes its history, seals the minute and closes
-# its journal. Wait for it (8 s by default), and only then force it. Names are executable names.
 # Spec K: the latest future end among the lock markers of a Blocking folder (locked-until and the
 # blocking guard's guard-until), or 0. Only regular files are read; a link is ignored.
 goalong_marker_until() { # MARKER_FILE: its end when it is a regular file in the future, else 0
@@ -657,6 +655,11 @@ refuse_install_during_severe_block() {
     if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
       echo "A locked block is active or scheduled: Goalong History reopens at the end of this installation and resumes it."
     fi
+    # bugs-mise-a-jour-03: no severe block, but the continuity guard (reopen after a forced quit) may be armed. It
+    # cannot tell the installer's SIGTERM from a crash and would reopen Goalong during the replacement. Hand the
+    # reopen duty to this installer first: --unregister-guard removes guard-continuity and the service, and is
+    # never refused here (no guard-until). The reopened app arms its guard again (a severe block at once).
+    release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"
     return 0
   fi
   # No installed copy (forced uninstall without --purge-data): no guard can reopen anything during the
@@ -673,6 +676,8 @@ refuse_install_during_severe_block() {
   release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"
 }
 
+# Ask the running app to quit with SIGTERM: it flushes its history, seals the minute and closes its journal.
+# Wait for it (8 s by default), then for its password prompt; never force it. Names are executable names.
 quit_running_goalong() {
   local name waited=0 limit="${GOALONG_QUIT_WAIT_TENTHS:-80}" running
   QUIT_DONE=1
@@ -687,7 +692,10 @@ quit_running_goalong() {
     /bin/sleep 0.1
     waited=$((waited + 1))
   done
-  if [[ "${GOALONG_LOCAL_TRY:-}" == 1 ]]; then
+  # Never force-quit (bugs-mise-a-jour-02): a SIGTERM refused by a protection (a « Mot de passe » rule, or a locked
+  # session that started during this wait) is a commitment, not a slow quit. Every installer, make local or classic,
+  # waits for Goalong's own password prompt, then gives up without replacing anything.
+  {
     # A protection the member can pass (a « Mot de passe » rule, even idle) makes Goalong ignore SIGTERM and show
     # its own « Quitter » prompt instead (Mathis, 2026-11-21): wait for that password, never force-quit.
     # Without a protection Goalong quits by itself; a window shows only for a « Mot de passe » protection. Builds before
@@ -703,17 +711,14 @@ quit_running_goalong() {
       /bin/sleep 0.1
       waited=$((waited + 1))
     done
-    echo "Goalong is still running after SIGTERM and a wait; make local never force-quits it. Nothing was replaced: Goalong is reopened if it quits later (password typed afterwards); run make local again." >&2
+    echo "Goalong is still running after SIGTERM and a wait; the installer never force-quits it. Nothing was replaced: Goalong is reopened if it quits later (password typed afterwards); run the installation again." >&2
     # This watcher now owns the pending quit (with any quit this run took over), and the cleanup must not
     # reopen Goalong while it still runs.
     # shellcheck disable=SC2086
     start_late_quit_watch $QUIT_PIDS $INHERITED_PIDS
     drop_inherited_late_quit; QUIT_DONE=0
     exit 1
-  fi
-  for name in "$@"; do /usr/bin/pkill -KILL -x "$name" >/dev/null 2>&1 || true; done
-  /bin/sleep 0.4
-  drop_inherited_late_quit # the quit this run took over is settled with ours
+  }
 }
 
 # make local only: the installed build in the folder the installer will really replace (any known

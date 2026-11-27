@@ -201,4 +201,33 @@ final class PersoSelfUpdateTests: XCTestCase {
         XCTAssertNotEqual(try handoffCancel(files.request("r3")), 0, "the script must not fall back")
         XCTAssertEqual(files.pendingRequests(), [], "a claimed request is not scanned again")
     }
+
+    /// bugs-mise-a-jour-06: no swap (hence no quit) without the guard's lease; a failed swap leaves no lease.
+    func testPersoSwapNeedsTheLeaseFirstAndDropsItWhenTheSwapFails() {
+        var steps: [String] = []
+        struct SwapFailed: Error {}
+        let noLease = PersoSwapCommit.run(publishLease: { steps.append("lease"); return false },
+                                          swap: { steps.append("swap") }, dropLease: { steps.append("drop") })
+        XCTAssertNotNil(noLease)
+        XCTAssertEqual(steps, ["lease"], "an unwritten lease never reaches the swap")
+        steps = []
+        let failedSwap = PersoSwapCommit.run(publishLease: { steps.append("lease"); return true },
+                                             swap: { steps.append("swap"); throw SwapFailed() },
+                                             dropLease: { steps.append("drop") })
+        XCTAssertNotNil(failedSwap)
+        XCTAssertEqual(steps, ["lease", "swap", "drop"])
+        steps = []
+        XCTAssertNil(PersoSwapCommit.run(publishLease: { steps.append("lease"); return true },
+                                         swap: { steps.append("swap") }, dropLease: { steps.append("drop") }))
+        XCTAssertEqual(steps, ["lease", "swap"])
+    }
+
+    /// The lease write reports a real failure (an unwritable guard folder), so the caller can refuse.
+    func testLeaseWriteReportsAFailure() throws {
+        let blocking = FileManager.default.temporaryDirectory.appendingPathComponent("lease-\(UUID().uuidString)")
+        try Data().write(to: blocking) // a regular file where the guard folder should be
+        defer { try? FileManager.default.removeItem(at: blocking) }
+        let files = GuardFiles(directory: blocking)
+        XCTAssertFalse(files.writeLease(GuardLease(pid: 1, reason: GuardLease.persoUpdate, until: 1, request: "r")))
+    }
 }

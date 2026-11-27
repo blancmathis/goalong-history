@@ -186,8 +186,13 @@ import AppleScreenTime
         private var relaunchOwnership = UpdateRelaunchOwnership()
         var isRelaunchingForUpdate: Bool { relaunchOwnership.isRelaunching }
         /// `make perso` self-update, just before the swap: quit like a Sparkle relaunch (no password).
-        /// False while Sparkle relaunches for its own update: the swap must not happen (L1L2-08).
-        func acquirePersoRelaunch() -> Bool { relaunchOwnership.mark(.perso) }
+        /// False while Sparkle relaunches for its own update (L1L2-08), or while a Sparkle cycle is open: one that
+        /// passed `mayPerform` could still install after the swap (bugs-mise-a-jour-05). `sessionInProgress` stays
+        /// true until the cycle ends, install-on-quit included (`SPUUpdater.m:824,877`).
+        func acquirePersoRelaunch() -> Bool {
+            let sparkleBusy = checkQueue.cycleOpen || updaterController?.updater.sessionInProgress == true
+            return relaunchOwnership.markPerso(sparkleCycleOpen: sparkleBusy)
+        }
         /// The swap did not happen after all.
         func abandonPersoRelaunch() { relaunchOwnership.persoAbandoned() }
         /// Sparkle may not start an install while a perso swap owns the relaunch.
