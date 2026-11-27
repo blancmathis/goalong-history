@@ -655,6 +655,11 @@ refuse_install_during_severe_block() {
     if (( $(goalong_marker_until "$blocking/locked-until") > 0 )); then
       echo "A locked block is active or scheduled: Goalong History reopens at the end of this installation and resumes it."
     fi
+    # bugs-mise-a-jour-03: no severe block, but the continuity guard (reopen after a forced quit) may be armed. It
+    # cannot tell the installer's SIGTERM from a crash and would reopen Goalong during the replacement. Hand the
+    # reopen duty to this installer first: --unregister-guard removes guard-continuity and the service, and is
+    # never refused here (no guard-until). The reopened app arms its guard again (a severe block at once).
+    release_blocking_guard "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"
     return 0
   fi
   # No installed copy (forced uninstall without --purge-data): no guard can reopen anything during the
