@@ -148,6 +148,9 @@ enum PauseEngine {
             // A pause running across the reset keeps its end; it no longer counts in the new period.
             var fresh = PauseUsage(period: key, periodEnd: end)
             if let start = usage?.start, let end = usage?.end, end > now { fresh.start = start; fresh.end = end; fresh.extra = true }
+            // T-057 F2 (bugs-temps-04): a wait already started is not the budget; it crosses the reset. `request`
+            // still restarts it once its claim window is over.
+            fresh.waitStartedAt = usage?.waitStartedAt
             return fresh
         }
         // The same key read in a zone further west ends later: the latest end is kept (never an earlier renewal).
