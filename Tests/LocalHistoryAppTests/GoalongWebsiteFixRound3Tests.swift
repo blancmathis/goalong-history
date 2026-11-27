@@ -206,6 +206,36 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
         XCTAssertFalse(model.loading)
     }
 
+    /// bugs-concurrence-02: an origin or token change during the read of the chosen day reloads that day.
+    @MainActor func testConnectionChangeDuringReadReloadsTheChosenDay() async throws {
+        let (defaults, root, _) = try env()
+        let bytes = catalogBytes
+        let gate = DispatchSemaphore(value: 0)
+        let calls = Counter()
+        let model = GoalongWebsiteSharingModel(autoSender: GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } }), root: root,
+            catalogLoader: { _, _, _ in
+                if calls.next() == calls.blockingCall { _ = gate.wait(timeout: .now() + 10) }
+                return try GoalongSiteSelectionCatalog(payload: bytes)
+            },
+            sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } })
+        // Day A is on screen; the read of day B is in flight when the connection changes.
+        gate.signal()
+        await model.loadCatalog()
+        let dayA = model.draft.day
+        XCTAssertNotNil(model.catalog)
+        model.draft.date = model.draft.date.addingTimeInterval(-86_400)
+        calls.reset(blockingCall: 2)
+        let read = Task { await model.loadCatalog() }
+        while !model.loading { await Task.yield() }
+        await model.connectionChangedAndReload()
+        gate.signal()
+        await read.value
+        XCTAssertNotEqual(model.draft.day, dayA)
+        XCTAssertEqual(calls.value, 3, "day B is read again, not left on day A's catalog")
+        XCTAssertNotNil(model.catalog)
+        XCTAssertFalse(model.loading)
+    }
+
     /// bugs-concurrence-03: a late, failed fallback of an older day must not erase the newer day's catalog.
     @MainActor func testOldFailedFallbackKeepsNewerDayCatalog() async throws {
         let (defaults, root, _) = try env()
@@ -234,6 +264,15 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
         XCTAssertNil(model.error, "day A's error is not shown on day B")
         XCTAssertFalse(model.loading)
     }
+}
+
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0, blocking = 1
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+    var blockingCall: Int { lock.lock(); defer { lock.unlock() }; return blocking }
+    func reset(blockingCall: Int) { lock.lock(); blocking = blockingCall; lock.unlock() }
+    func next() -> Int { lock.lock(); defer { lock.unlock() }; count += 1; return count }
 }
 
 private final class DayBox: @unchecked Sendable {

@@ -82,11 +82,10 @@ import LocalHistoryQueryCLI
         .onChange(of: model.draft.date) { _ in Task { await model.loadCatalog() } }
         .onChange(of: model.draft.includeWebsites) { _ in Task { await model.includeWebsitesChanged() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongWebsiteConnected)) { _ in
-            model.connectionChanged()
-            if model.catalog == nil { Task { await model.loadCatalog() } }
+            Task { await model.connectionChangedAndReload() }
         }
-        .onChange(of: origin) { _ in model.connectionChanged() }
-        .onChange(of: tokenPath) { _ in model.connectionChanged() }
+        .onChange(of: origin) { _ in Task { await model.connectionChangedAndReload() } }
+        .onChange(of: tokenPath) { _ in Task { await model.connectionChangedAndReload() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongExclusionsDidChange)) { _ in model.connectionChanged(); Task { await model.loadCatalog() } }
         .onReceive(NotificationCenter.default.publisher(for: .goalongGlobalPauseDidChange)) { _ in
             model.cancelPreparation()

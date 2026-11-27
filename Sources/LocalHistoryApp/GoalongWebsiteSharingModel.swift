@@ -193,6 +193,13 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     /// The read in flight now belongs to an older generation and ends without clearing `loading`: abandon it here,
     /// or the sheet would stay on « Lecture… ». A newer `loadCatalog` sets `loading` itself.
     func connectionChanged() { generation = UUID(); loading = false; invalidate(); autoSender.stop() }
+    /// What the sheet calls on a connection, origin or token path change. The abandoned read was the one for the
+    /// chosen day: without a new read, the sheet keeps no catalog or the previous day's catalog.
+    func connectionChangedAndReload() async {
+        let abandonedRead = loading
+        connectionChanged()
+        if abandonedRead || catalog == nil { await loadCatalog() }
+    }
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
     /// Called when `draft.includeWebsites` changes. A change the model made itself (fallback) reloads nothing.
     func includeWebsitesChanged() async {
