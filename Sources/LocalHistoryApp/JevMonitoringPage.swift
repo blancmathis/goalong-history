@@ -190,6 +190,7 @@ struct JevActivationAvailability: Equatable {
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Réessayer") { monitor.retry() }
                             .accessibilityIdentifier("jev-retry")
+                        JevRetryTimeNote(at: monitor.nextRetryAt)
                     }.font(.system(size: 12))
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)

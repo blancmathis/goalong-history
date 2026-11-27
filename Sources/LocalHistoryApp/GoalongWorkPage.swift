@@ -63,6 +63,9 @@ import SwiftUI
                                       sharedDay: navigationStore.selectedDay, onShareDay: { model.selectDay($0) })
             }
             GoalongDisclosureGroup("Comment fonctionne le classement ?") { explanation.padding(.top, 10) }
+            GoalongDisclosureGroup("Tout ce qui part au classement") { JevSendFieldsList(fields: JevSendFields.classification).padding(.top, 10) }
+                .accessibilityIdentifier("work-send-fields")
+                .font(.system(size: 13))
                 .font(.system(size: 13))
         }
         .font(.system(size: 13))
