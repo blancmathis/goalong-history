@@ -58,20 +58,37 @@ import XCTest
         addTeardownBlock { @MainActor in c.shutdown() }
         return c
     }
-    private func editor(_ blocking: BlockingController, _ focus: ConcentrationController, intent: String, explicit: Bool,
-                        mode: SessionMode? = nil) -> BlockRuleEditor {
-        var draft = FocusComposerDraft(); draft.intent = intent; draft.blockListIds = Set(blocking.lists.prefix(2).map(\.id))
+    private func editor(_ blocking: BlockingController, _ focus: ConcentrationController, intent: String,
+                        mode: SessionMode? = nil, pomodoro: Bool = false) -> BlockRuleEditor {
+        var draft = FocusComposerDraft(); draft.intent = intent; if pomodoro { draft.kind = .pomodoro }; draft.blockListIds = Set(blocking.lists.prefix(2).map(\.id))
         return BlockRuleEditor(subject: .session(draft), blocking: blocking, braise: nil, focus: focus, now: wednesday10h, maxHeight: 2_000,
-                               sessionDraft: draft, explicitSessionChoice: explicit, sessionMode: mode, onClose: {})
+                               sessionDraft: draft, sessionMode: mode, onClose: {})
     }
 
-    func testTheIntentionNoLongerDecidesTheEngineOnceTheChoiceIsExplicit() throws {
+    func testTheChoiceDecidesTheEngineNotTheIntention() throws {
         let c = blocking(lists()), f = try focus()
-        XCTAssertFalse(editor(c, f, intent: "", explicit: false).usesFocus, "before: empty intention = a block")
-        XCTAssertTrue(editor(c, f, intent: "relire le contrat", explicit: false).usesFocus, "before: a filled intention = Concentration")
-        XCTAssertTrue(editor(c, f, intent: "", explicit: true).usesFocus, "after: Séance de travail by default, even without an intention")
-        XCTAssertFalse(editor(c, f, intent: "relire le contrat", explicit: true, mode: .block).usesFocus, "after: Blocage ponctuel wins over a typed intention")
-        XCTAssertFalse(BlockRuleEditor(subject: .new, blocking: c, braise: nil, focus: nil, now: wednesday10h, explicitSessionChoice: true, onClose: {}).usesFocus, "no Concentration module: only the block exists")
+        XCTAssertFalse(editor(c, f, intent: "").usesFocus, "a draft with no intention opens as it did: a block")
+        XCTAssertTrue(editor(c, f, intent: "relire le contrat").usesFocus, "a draft with an intention opens as a work session")
+        XCTAssertTrue(editor(c, f, intent: "", mode: .work).usesFocus, "Séance de travail, even without an intention")
+        XCTAssertFalse(editor(c, f, intent: "relire le contrat", mode: .block).usesFocus, "Blocage ponctuel wins over a typed intention")
+        XCTAssertFalse(BlockRuleEditor(subject: .new, blocking: c, braise: nil, focus: nil, now: wednesday10h, onClose: {}).usesFocus, "no Concentration module: only the block exists")
+    }
+
+    func testTheLastTypeIsRememberedAndWorkIsTheFirst() throws {
+        let c = blocking(lists()), f = try focus()
+        let suite = "goalong-m2-mode-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(SessionMode.remembered(defaults), .work)
+        SessionMode.remember(.block, defaults)
+        XCTAssertEqual(SessionMode.remembered(defaults), .block)
+        _ = (c, f)
+    }
+
+    func testTheTextsNameTheTypes() {
+        XCTAssertTrue(BlockRuleEditor.focusScreenReason.contains("Blocage ponctuel"))
+        XCTAssertTrue(BlockRuleEditor.focusLockReason.contains("Séance de travail".lowercased()))
+        XCTAssertTrue(BlockRuleEditor.wholeMacReason.contains("Blocage ponctuel"))
     }
 
     // MARK: Renders
@@ -98,14 +115,14 @@ import XCTest
             app.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); window.appearance = app.appearance
             let s = dark ? "dark" : "light"
             // Idea 2: the same window, a new session. Before: an « Intention » field decides. After: the choice is the first row.
-            try render("idee2-avant-seance-" + s, editor(c, f, intent: "", explicit: false), width: 700, height: 900, background: LHTheme.pageBackground)
-            try render("idee2-apres-seance-de-travail-" + s, editor(c, f, intent: "relire le contrat", explicit: true, mode: .work),
+            try render("idee2-apres-seance-de-travail-" + s, editor(c, f, intent: "relire le contrat", mode: .work),
                        width: 700, height: 900, background: LHTheme.pageBackground)
-            try render("idee2-apres-blocage-ponctuel-" + s, editor(c, f, intent: "", explicit: true, mode: .block),
+            try render("idee2-apres-pomodoro-" + s, editor(c, f, intent: "écrire le rapport", mode: .work, pomodoro: true),
+                       width: 700, height: 900, background: LHTheme.pageBackground)
+            try render("idee2-apres-blocage-ponctuel-" + s, editor(c, f, intent: "", mode: .block),
                        width: 700, height: 900, background: LHTheme.pageBackground)
             // Idea 8: the Settings home with a query typed. Before = the section list of today; after = controls and commands.
             for query in ["conservation", "agenda", "suspendre"] {
-                try render("idee8-avant-\(query)-" + s, legacyHome(query), width: 640, height: 330, background: LHTheme.pageBackground)
                 try render("idee8-apres-\(query)-" + s, newHome(query), width: 640, height: 330, background: LHTheme.pageBackground)
             }
         }

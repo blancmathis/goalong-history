@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import AppleScreenTime
 
 /// T-057 idée 2 (maquette): the choice « Séance de travail » / « Blocage ponctuel » is said out loud. Before, an empty
 /// « Intention » field silently chose the engine (a block), a filled one chose Concentration (timer, breaks, review).
@@ -13,10 +14,18 @@ enum SessionMode: String, Hashable, CaseIterable, Identifiable {
         self == .work ? "Minuteur, repos et bilan. Vous nommez ce que vous faites."
                       : "Bloque les listes choisies maintenant, pour une durée. Sans minuteur ni bilan."
     }
+    private static let key = "goalong.blocking.sessionMode.v1"
+    /// The last type started from the editor; « Séance de travail » the first time.
+    static func remembered(_ defaults: UserDefaults = GoalongDefaults.standard) -> SessionMode {
+        defaults.string(forKey: key).flatMap(SessionMode.init(rawValue:)) ?? .work
+    }
+    static func remember(_ mode: SessionMode, _ defaults: UserDefaults = GoalongDefaults.standard) {
+        defaults.set(mode.rawValue, forKey: key)
+    }
     /// The mode a draft already implies, so an existing draft opens on what it would have done.
     static func implied(kind: FocusMode.Kind, intent: String, focusAvailable: Bool) -> SessionMode {
-        if kind == .pomodoro || !intent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .work }
-        return focusAvailable ? .work : .block
+        guard focusAvailable else { return .block }
+        return kind == .pomodoro || !intent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .work : .block
     }
 }
 
