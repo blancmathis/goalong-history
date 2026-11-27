@@ -91,6 +91,8 @@ import LocalHistoryQueryCLI
                     let warning = JevWarningPanel.shared
                     return warning.panel?.isVisible != true && !warning.overlays.contains(where: { $0.isVisible })
                 }
+                // Locked screen, other user, displays asleep: the reminder waits for the return (bugs-cycle-de-vie-02).
+                if presentsPanels { value.sessionAvailable = { ForegroundSessionAvailability.isAvailable() } }
                 value.onOpenRequested = { [weak self] _ in self?.onOpen?() }
                 value.onLimitMark = { [weak self] mark in self?.monitor?.recordFocusLimit(mark) }
                 value.measurementRefresh = { [weak self] in self?.refreshMeasurements() }
@@ -105,6 +107,8 @@ import LocalHistoryQueryCLI
         } else if !enabled, let controller {
             controller.refresh()
             if refusesTurningOff(controller) { modules?.setEnabled(.concentration, true); error = FocusFailure.locked.rawValue; return }
+            // A stop that no file accepts stays with the controller: refuse the switch rather than lose it.
+            if !controller.closeForShutdown() { modules?.setEnabled(.concentration, true); error = FocusFailure.storageFailed.rawValue; return }
             measurementTask?.cancel(); measurementTask = nil; measurementGeneration = UUID()
             controller.shutdown(); monitor?.concentrationSink = nil
             menuBarSubscription = nil; menuBarTimer?.invalidate(); menuBarTimer = nil; onMenuBarText?(nil)

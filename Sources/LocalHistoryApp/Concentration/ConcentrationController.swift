@@ -73,6 +73,9 @@ struct FocusPanel: Equatable {
     var measurementRefresh: (() -> Void)?
     /// Guidance yields to an existing intervention; it never changes that intervention's rules.
     var guidanceMayPresent: () -> Bool = { true }
+    /// False while the screen is locked, the user switched away or every display sleeps: an agenda reminder then waits
+    /// instead of being used up behind the lock (bugs-cycle-de-vie-02). The runtime installs the live session check.
+    var sessionAvailable: () -> Bool = { true }
 
     private let store: FocusStore
     private let clock: () -> Date
@@ -95,6 +98,7 @@ struct FocusPanel: Equatable {
     private var timer: Timer?
     private var systemObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
     private var detection = FocusDetection()
     private var observation: FocusObservation?
     private var latestInput: Date?
@@ -214,11 +218,22 @@ struct FocusPanel: Equatable {
                 MainActor.assumeIsolated { self?.refresh() }
             })
         }
-        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.screensDidWakeNotification] {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
+                MainActor.assumeIsolated { self?.refreshAfterReturn() }
             })
         }
+        // Unlock: a reminder held behind the lock shows now, if its slot is still running.
+        let unlock = DistributedNotificationCenter.default()
+        distributedObservers.append(unlock.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshAfterReturn() }
+        })
+    }
+    /// The session dictionary can still read « locked » when the return notification arrives: refresh now and once
+    /// more a moment later.
+    private func refreshAfterReturn() {
+        refresh()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in MainActor.assumeIsolated { self?.refresh() } }
     }
     private func loadDay(_ day: String) throws {
         sessions = try store.sessions(day)
@@ -876,21 +891,36 @@ struct FocusPanel: Equatable {
         RunLoop.main.add(t, forMode: .common); timer = t
     }
     /// Saves a stop that could not be written (one forced retry). If the store still fails, a small tombstone outside the
-    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off.
-    func flushPendingStop() {
-        guard let pending = pendingStop else { return }
+    /// sessions folder keeps the stop for the next launch. Called at quit and on module-off. False = the stop is on
+    /// neither file: only this controller still holds it.
+    @discardableResult func flushPendingStop() -> Bool {
+        guard let pending = pendingStop else { return true }
         lastStorageRetry = .distantPast
-        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return }
-        guard pendingStop != nil else { return }
-        try? store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: (try? storageDay(of: pending.session)) ?? FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
-                                                  end: pending.end, reason: pending.reason))
+        if retryStorage(), pendingStop == nil { try? store.clearPendingStopTombstone(); return true }
+        guard pendingStop != nil else { return true }
+        do {
+            try store.savePendingStopTombstone(.init(sessionID: pending.session.id, day: (try? storageDay(of: pending.session)) ?? FocusCalendar.dayKey(pending.session.startedAt, calendar: calendar),
+                                                     end: pending.end, reason: pending.reason))
+            return true
+        } catch { return false }
+    }
+    /// Module-off: ends the running session (unless a locked block holds it). A stop the sessions file refuses becomes a
+    /// pending stop, then a tombstone (bugs-cycle-de-vie-01). False = the stop could be written nowhere: the caller must
+    /// keep this controller, which still owns it.
+    func closeForShutdown() -> Bool {
+        flushPendingStop()
+        if let value = currentSession, !hasLockedPhaseBlock {
+            let end = eventTime(value)
+            do { try finish(value, at: end, reason: .moduleDisabled) } catch { endInMemory(value, at: end, reason: .moduleDisabled); publishStatus(); scheduleTimer() }
+        }
+        return flushPendingStop()
     }
     func shutdown() {
-        flushPendingStop()
-        if let value = currentSession, !hasLockedPhaseBlock { try? finish(value, at: eventTime(value), reason: .moduleDisabled) }
+        _ = closeForShutdown()
         timer?.invalidate(); timer = nil; audio.stop(); showPanel(nil); observation = nil; detection.reset()
         systemObservers.forEach(NotificationCenter.default.removeObserver); systemObservers.removeAll()
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
+        distributedObservers.forEach(DistributedNotificationCenter.default().removeObserver); distributedObservers.removeAll()
     }
 }
 
@@ -1212,7 +1242,7 @@ extension ConcentrationController {
     private func checkAgendaPrompt() {
         let promptTime = clock() // wall: civil agenda reminder only; never a blocking or stake decision.
         guard settings.dayGuideSettings.enabled, settings.dayGuideSettings.remindersEnabled,
-              !storageFailed, panel == nil, guidanceMayPresent(), let agenda = plan.agenda,
+              !storageFailed, panel == nil, guidanceMayPresent(), sessionAvailable(), let agenda = plan.agenda,
               let minute = FocusDayPlanner.localMinute(at: promptTime, timeZoneID: agenda.timeZoneID),
               !settings.dayGuideSettings.isQuiet(minute: minute),
               (promptState.agendaPromptCount ?? 0) < agenda.reminderLimit,

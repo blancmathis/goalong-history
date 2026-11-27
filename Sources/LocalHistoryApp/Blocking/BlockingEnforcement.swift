@@ -319,6 +319,18 @@ enum BlockingAppQuit {
             panel.contentView = host(FrozenMacShield(freeze: freeze, onOpen: { [weak self] app in self?.openAllowed(app) }), frame: screen.frame)
             panel.setFrame(screen.frame, display: true); panel.orderFrontRegardless(); shields.append(panel)
         }
+        // A screen change rebuilds the shields in front of everything. An app the current freeze allows stays usable;
+        // any other front app keeps them in front, and `enforce` raises them again on the next switch (bugs-cycle-de-vie-03).
+        if Self.shieldsStayBehind(frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier, freeze: freeze) { lowerShields() }
+    }
+    /// True only while the front app is one the current freeze allows. Goalong itself, an unknown app or a lifted
+    /// permission keep the shields in front.
+    nonisolated static func shieldsStayBehind(frontmost bundleIdentifier: String?, freeze: BlockFreeze?) -> Bool {
+        guard let freeze, freeze.mode == .shield, let bundleIdentifier else { return false }
+        return freeze.allowedApps.contains { $0.bundleIdentifier == bundleIdentifier }
+    }
+    private func lowerShields() {
+        for shield in shields { shield.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1); shield.orderBack(nil) }
     }
     /// The Goalong family is never blocked: a freeze in one Goalong never hides the other one.
     nonisolated static func hidesBehindKeptApps(_ bundleIdentifier: String?, kept: Set<String>) -> Bool {
@@ -339,7 +351,7 @@ enum BlockingAppQuit {
         NSWorkspace.shared.openApplication(at: url, configuration: config) { [weak self] app, error in
             Task { @MainActor in
                 guard error == nil, let app, self?.freeze?.allowedApps.contains(where: { $0.bundleIdentifier == app.bundleIdentifier }) == true else { return }
-                for shield in self?.shields ?? [] { shield.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1); shield.orderBack(nil) }
+                self?.lowerShields()
             }
         }
     }
