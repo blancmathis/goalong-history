@@ -200,6 +200,21 @@ public struct PersoUpdateFiles: Sendable {
     }
 }
 
+/// The app's last steps before it quits for a perso swap (bugs-mise-a-jour-06). The guard's lease is published,
+/// durably, before the swap: the guard would otherwise reopen the app it sees die and race the relauncher. A
+/// lease that cannot be written refuses the update with nothing swapped; a failed swap removes the lease again.
+public enum PersoSwapCommit {
+    /// nil: swapped with the lease in place, the app may quit. Otherwise the refusal reason (nothing swapped).
+    public static func run(publishLease: () -> Bool, swap: () throws -> Void, dropLease: () -> Void) -> String? {
+        guard publishLease() else { return "bail de la garde impossible à écrire" }
+        do { try swap() } catch {
+            dropLease()
+            return error.localizedDescription
+        }
+        return nil
+    }
+}
+
 /// After the swap: keep the new app when healthy, otherwise put the old one back. Both end by removing the
 /// stage folder, which then holds the bundle that lost.
 public enum PersoSwapFinish {
