@@ -36,6 +36,17 @@ final class DayPlanQuickAccessTests: XCTestCase {
         XCTAssertNil(DayPlanDigest.summary(plan: FocusPlan(day: day, agenda: FocusAgenda(timeZoneID: zone)), now: at(700)))
     }
 
+    func testWorkTotalIsFrenchAndEndOfDayLineOmitsUnknown() {
+        XCTAssertEqual(DayPlanDigest.workText(seconds: 6 * 3600 + 12 * 60 + 20), "6 h 12")
+        XCTAssertEqual(DayPlanDigest.workText(seconds: 2 * 3600 + 5 * 60), "2 h 05")
+        XCTAssertEqual(DayPlanDigest.workText(seconds: 42 * 60), "42 min")
+        XCTAssertNil(DayPlanDigest.workText(seconds: nil))
+        XCTAssertNil(DayPlanDigest.workText(seconds: 20))
+        XCTAssertEqual(DayPlanDigest.endOfDayLine(workSeconds: 6 * 3600 + 12 * 60), "Journée terminée · 6 h 12 de travail")
+        XCTAssertEqual(DayPlanDigest.endOfDayLine(workSeconds: nil), "Journée terminée")
+        XCTAssertEqual(DayPlanDigest.endOfDayLine(workSeconds: 0), "Journée terminée")
+    }
+
     func testRecapLeadsAfterTheLastSlotOrAtSixWithoutAPlan() {
         let (p, _) = plan()
         XCTAssertFalse(DayPlanDigest.recapIsMain(plan: p, now: at(1019), calendar: paris))

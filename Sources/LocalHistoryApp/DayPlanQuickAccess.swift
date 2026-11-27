@@ -57,6 +57,18 @@ enum DayPlanDigest {
         return calendar.component(.hour, from: now) >= 18
     }
 
+    /// « 6 h 12 » / « 42 min »: today's work total in French. Nil when unknown or empty.
+    static func workText(seconds: TimeInterval?) -> String? {
+        guard let seconds, seconds.isFinite, seconds >= 60 else { return nil }
+        let minutes = Int((seconds / 60).rounded(.down))
+        return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(String(format: "%02d", minutes % 60))"
+    }
+
+    /// « Journée terminée · 6 h 12 de travail »; the total is left out when unknown.
+    static func endOfDayLine(workSeconds: TimeInterval?) -> String {
+        workText(seconds: workSeconds).map { "Journée terminée · \($0) de travail" } ?? "Journée terminée"
+    }
+
     /// « Vendredi 27 novembre ».
     static func dayTitle(_ date: Date) -> String {
         let text = BlockingFormat.day(date)
@@ -84,28 +96,40 @@ enum DayPlanDigest {
 struct DayPlanRow: View {
     let summary: DayPlanSummary
     let action: () -> Void
+    /// Evening: the day is over. The line says so and « Bilan » is the main button.
+    var endOfDayLine: String? = nil
+    var onRecap: (() -> Void)? = nil
     @State private var hovered = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "list.bullet.below.rectangle").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
-                    .frame(width: 14).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Plan du jour").font(.system(size: 13, weight: .medium))
-                    Text(line).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1).truncationMode(.tail)
+        HStack(spacing: 8) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(systemName: "list.bullet.below.rectangle").font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                        .frame(width: 14).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Plan du jour").font(.system(size: 13, weight: .medium))
+                        Text(endOfDayLine ?? line).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                    Spacer(minLength: 8)
+                    if endOfDayLine == nil || onRecap == nil {
+                        Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                    }
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(LHTheme.secondaryText)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(hovered ? LHTheme.hoverBackground : .clear)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Plan du jour. \(endOfDayLine ?? summary.nextTitle.map { "Prochain : \($0)" } ?? summary.progressText)")
+            .accessibilityIdentifier("menubar-day-plan")
+            if endOfDayLine != nil, let onRecap {
+                Button("Bilan", action: onRecap).buttonStyle(LHPrimaryButtonStyle()).controlSize(.small)
+                    .accessibilityIdentifier("menubar-day-recap")
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(hovered ? LHTheme.hoverBackground : .clear)
         .onHover { hovered = $0 }
-        .accessibilityLabel("Plan du jour. \(summary.nextTitle.map { "Prochain : \($0)" } ?? summary.progressText)")
-        .accessibilityIdentifier("menubar-day-plan")
     }
 
     private var line: String {

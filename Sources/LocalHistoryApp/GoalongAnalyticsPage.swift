@@ -678,7 +678,9 @@ struct GoalongAnalyticsPage: View {
         let now = GoalongToday.now
         guard !previewActive, Calendar.current.isDate(selection.day, inSameDayAs: now),
               DayPlanDigest.recapIsMain(plan: planController?.plan, now: now) else { return nil }
-        return "Journée terminée"
+        let days = analytics.payload.flatMap { selection.matches($0, preview: false) ? $0.current.days : nil } ?? []
+        let today = days.first { Calendar.current.isDate($0.date, inSameDayAs: now) }
+        return DayPlanDigest.endOfDayLine(workSeconds: today.map { $0.seconds(.work) })
     }
     private func openDayPlan() {
         planController?.refresh()

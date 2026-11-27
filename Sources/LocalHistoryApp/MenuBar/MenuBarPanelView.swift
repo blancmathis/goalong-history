@@ -69,7 +69,9 @@
                 LaunchSection(model: model, store: model.prepared)
                 DayInboxSection(model: model)
                 if let plan = model.dayPlanSummary {
-                    DayPlanRow(summary: plan, action: model.openDayPlan)
+                    DayPlanRow(summary: plan, action: model.openDayPlan,
+                               endOfDayLine: model.dayPlanEvening ? DayPlanDigest.endOfDayLine(workSeconds: model.workKnown ? model.workSeconds : nil) : nil,
+                               onRecap: model.openRecap)
                     PanelDivider()
                 }
                 TodaySection(model: model)

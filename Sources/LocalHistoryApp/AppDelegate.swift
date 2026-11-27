@@ -466,6 +466,11 @@ import AppleScreenTime
                         DayPlanPresentation.shared.shown = true
                         self?.dashboardWindowController.show(section: .overview)
                     },
+                    onOpenRecap: { [weak self] in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardViewModel.selectDay(Date())
+                        self?.dashboardWindowController.show(section: .chatGPTRecap)
+                    },
                     onShowClassicMenu: { [weak self] in self?.menuBarController.showClassicMenu() },
                     redScreen: BraiseRuntime.shared
                 )

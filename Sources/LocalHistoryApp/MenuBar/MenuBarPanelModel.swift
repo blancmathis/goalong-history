@@ -92,6 +92,8 @@ import LocalHistoryCore
     @Published var dayAction: DayAction?
     /// T-057 M1: the next step of today's plan for the « Plan du jour » row. Nil (no plan today) hides the row.
     @Published var dayPlanSummary: DayPlanSummary?
+    /// The day's plan is over (evening): the row says « Journée terminée » and « Bilan » leads.
+    @Published var dayPlanEvening = false
     @Published var waitingProcessCount = 0
     @Published var reviewProcessCount = 0
     @Published var focusAvailable = false
@@ -209,6 +211,7 @@ import LocalHistoryCore
     private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
     private let onOpenDayPlan: () -> Void
+    private let onOpenRecap: () -> Void
     private let onShowClassicMenu: () -> Void
     private var pausedSince: Date?
     private var synchronizingVolume = false
@@ -228,7 +231,7 @@ import LocalHistoryCore
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,
          onOpenSettingsPane: ((SettingsPane) -> Void)? = nil,
-         onOpenDay: @escaping () -> Void, onOpenDayPlan: (() -> Void)? = nil, onShowClassicMenu: @escaping () -> Void,
+         onOpenDay: @escaping () -> Void, onOpenDayPlan: (() -> Void)? = nil, onOpenRecap: (() -> Void)? = nil, onShowClassicMenu: @escaping () -> Void,
          redScreen: (any RedScreenControlling)? = nil) {
         self.redScreenControl = redScreen
         self.state = state; self.modules = modules; self.concentration = concentration
@@ -240,6 +243,7 @@ import LocalHistoryCore
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
         self.onOpenSettingsPane = onOpenSettingsPane ?? { _ in onOpenSection(.settings) }
         self.onOpenDay = onOpenDay; self.onOpenDayPlan = onOpenDayPlan ?? { onOpenSection(.concentration) }
+        self.onOpenRecap = onOpenRecap ?? { onOpenSection(.chatGPTRecap) }
         self.onShowClassicMenu = onShowClassicMenu
         if let redScreen {
             self.redScreen = redScreen.redScreen
@@ -401,7 +405,7 @@ import LocalHistoryCore
         focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
             : (observing && controller == nil) ? .app : nil
         guard let controller else {
-            focusRun = nil; dayAction = nil; dayPlanSummary = nil; waitingProcessCount = 0; reviewProcessCount = 0
+            focusRun = nil; dayAction = nil; dayPlanSummary = nil; dayPlanEvening = false; waitingProcessCount = 0; reviewProcessCount = 0
             syncReview(nil); return
         }
         controller.refresh()
@@ -433,6 +437,7 @@ import LocalHistoryCore
         waitingProcessCount = FocusDayPlanner.waitingProcesses(plan: plan).count
         reviewProcessCount = (plan.processes ?? []).filter { $0.status == .readyForReview }.count
         dayPlanSummary = DayPlanDigest.summary(plan: plan, now: clock())
+        dayPlanEvening = DayPlanDigest.recapIsMain(plan: plan, now: clock(), calendar: calendar)
         if let id = controller.currentSession?.planItemId, let item = plan.items.first(where: { $0.id == id }) {
             dayAction = DayAction(itemID: item.id, slotID: nil, title: item.title, nextAction: item.nextAction,
                                   time: nil, active: true)
@@ -448,6 +453,8 @@ import LocalHistoryCore
 
     /// The same view as Activity's « Plan du jour » button.
     func openDayPlan() { onOpenDayPlan() }
+    /// « Bilan »: the same place as Activity's recap button.
+    func openRecap() { onOpenRecap() }
 
     /// « Réessayer » under « Journée indisponible »: reads the day again; the message stays until a read succeeds.
     func retryDay() { refresh() }
