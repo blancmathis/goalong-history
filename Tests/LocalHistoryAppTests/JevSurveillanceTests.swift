@@ -85,6 +85,28 @@ import LocalHistoryCore
         XCTAssertEqual(d.data(forKey: JevSurveillanceStore.storageKey), Data("bad".utf8))
     }
 
+    /// T-057 bugs-donnees-03: the first save after an unreadable value keeps that value under a timestamped key; a
+    /// second unreadable episode keeps the first copy too. A readable save adds no copy.
+    func testFirstSaveAfterAnUnreadableValueKeepsItACopy() {
+        let d = defaults()
+        func copies() -> [Data] {
+            d.dictionaryRepresentation().filter { $0.key.hasPrefix(JevSurveillanceStore.unreadableCopyPrefix) }
+                .sorted { $0.key < $1.key }.compactMap { $0.value as? Data }
+        }
+        let newer = Data(#"{"schema":2,"ranges":[],"marks":[]}"#.utf8)
+        d.set(newer, forKey: JevSurveillanceStore.storageKey)
+        let store = JevSurveillanceStore(defaults: d)
+        XCTAssertNotNil(store.error)
+        XCTAssertTrue(store.save(JevSurveillanceDocument()))
+        XCTAssertEqual(copies(), [newer])
+        XCTAssertTrue(store.save(JevSurveillanceDocument()))
+        XCTAssertEqual(copies().count, 1, "a readable document is not copied")
+        d.set(Data("bad".utf8), forKey: JevSurveillanceStore.storageKey)
+        let again = JevSurveillanceStore(defaults: d)
+        _ = again.mark(JevSessionMark(id: UUID(), kind: .focus, on: true, lock: .free, settings: strong), now: now, alive: JevRunningSessions(focus: UUID()))
+        XCTAssertEqual(Set(copies()), [newer, Data("bad".utf8)], "the second damage keeps the first copy")
+    }
+
     // MARK: What runs (point 3)
 
     func testRulesAndSessionsCarryTheirOwnSurveillanceAndTheStrongestWins() {

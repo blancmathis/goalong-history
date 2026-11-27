@@ -561,7 +561,7 @@ final class BlockingEngineTests: XCTestCase {
         try Data("bad-json".utf8).write(to: store.directory.appendingPathComponent("blocking.json"))
         c.refresh(); XCTAssertTrue(c.hasLocks); XCTAssertEqual(c.activeBlocks.count, 1); XCTAssertNotNil(c.error)
         XCTAssertEqual(try store.load().sessions.count, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.directory.appendingPathComponent("blocking.damaged.json").path))
+        XCTAssertEqual(try blockingSetAside("blocking.damaged-", in: store.directory).count, 1)
         c.delete(list.id); XCTAssertEqual(c.lists.count, 1)
         clockNow = now.addingTimeInterval(3601); c.refresh()
         XCTAssertFalse(c.hasLocks); XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
@@ -667,13 +667,13 @@ final class BlockingEngineTests: XCTestCase {
         try Data("bad-json".utf8).write(to: directory.appendingPathComponent("blocking.json"))
         var loaded = try store.loadRecovering()
         XCTAssertEqual(loaded.recovery, .previous); XCTAssertEqual(loaded.document, first); XCTAssertEqual(try store.load(), first)
-        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("blocking.damaged.json")), Data("bad-json".utf8))
+        XCTAssertEqual(try blockingSetAside("blocking.damaged-", in: directory).map { try Data(contentsOf: $0) }, [Data("bad-json".utf8)])
         try FileManager.default.removeItem(at: directory.appendingPathComponent("blocking.json"))
         loaded = try store.loadRecovering(); XCTAssertEqual(loaded.recovery, .previous); XCTAssertEqual(loaded.document, first)
         for name in ["blocking.json", "blocking.previous.json"] { try Data("{}".utf8).write(to: directory.appendingPathComponent(name)) }
         loaded = try store.loadRecovering()
         XCTAssertEqual(loaded.recovery, .reset); XCTAssertEqual(loaded.document, BlockingDocument())
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("blocking.previous.damaged.json").path))
+        XCTAssertEqual(try blockingSetAside("blocking.previous.damaged-", in: directory).count, 1)
     }
     @MainActor func testUnlockedProgramStopAndLockedProgramRefusal() {
         let now = date(); var list = BlockList(name: "Programme", sites: [BlockSiteRule(pattern: "youtube.com")])
@@ -1415,5 +1415,11 @@ private final class BlockingFixtureIdentity: MinuteSealSigningIdentity {
     func updateFreeze(_ freeze: BlockFreeze?) {}
     func returnToShield() {}
     func shutdown() {}
+}
+
+/// Set-aside copies are timestamped (T-057 bugs-donnees-05): `blocking.damaged-<UTC>.json`.
+private func blockingSetAside(_ prefix: String, in directory: URL) throws -> [URL] {
+    try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix(prefix) }.sorted()
+        .map { directory.appendingPathComponent($0) }
 }
 #endif

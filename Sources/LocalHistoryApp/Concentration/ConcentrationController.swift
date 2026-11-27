@@ -5,6 +5,7 @@ import CryptoKit
 import Foundation
 import LocalHistoryCore
 import LocalHistoryQueryCLI
+import os
 
 struct FocusStatus: Codable, Equatable {
     struct Session: Codable, Equatable {
@@ -160,7 +161,11 @@ struct FocusPanel: Equatable {
         self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; launchClock = .init(wall: clock(), continuous: continuous(), boot: boot()); self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
-        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); commitments = try store.commitments()
+        // bugs-donnees-01: settings and commitments carry stakes and stay strict. Prompts and limit warnings only
+        // decide what is shown: a refused file is set aside and starts empty.
+        var setAside = 0
+        limitMarks = try recovering(&setAside, area: nil, name: "limit-marks.json") { try store.marks() } ?? []
         clockCorrection = (try? store.clockCorrection()).flatMap { $0.boot == launchClock.boot ? $0 : nil }
         if let proven = FocusCommitRule.anchoredNow(try? store.clockAnchor(), clock: launchClock), proven > launchClock.wall {
             launchClock.wall = proven
@@ -170,15 +175,31 @@ struct FocusPanel: Equatable {
         for i in limitMarks.indices where limitMarks[i].kind == "weekly" && FocusValidation.day(limitMarks[i].period) {
             limitMarks[i].period = FocusCalendar.weekKey(limitMarks[i].at, calendar: calendar)
         }
-        promptState = try store.prompts() ?? promptState
+        promptState = try recovering(&setAside, area: nil, name: "prompts.json") { try store.prompts() } ?? promptState
         if promptState.day != day { promptState = FocusPromptState(day: day) }
         try loadDay(day)
+        let tomb = try store.pendingStopTombstone()
+        // bugs-donnees-01: one refused past day must not keep the whole module off. Today, yesterday (a session over
+        // midnight), a later day, the stop tombstone's day, and any day while a session block runs stay strict: they
+        // may hold the running, maybe locked, session.
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: clock()).map { FocusCalendar.dayKey($0, calendar: calendar) } ?? day
+        // A session phase block is saved with the manual origin: any running manual block keeps the files strict.
+        let focusBlockRuns = blocking()?.activeBlocks.contains { $0.origin == .manual || $0.origin == .focus } ?? false
+        // bugs-donnees-02: each day file is decoded once per launch. The index it builds tells `storageDay` where every
+        // known session lives, so a new session never scans the history again.
+        for date in try store.sessionDays() {
+            let recoverable = date < yesterday && date < day && date != tomb?.day && !focusBlockRuns
+            let values = recoverable ? try recovering(&setAside, area: "sessions", name: date + ".json") { try store.sessions(date) } : try store.sessions(date)
+            guard let values else { continue }
+            sessionCache[date] = values
+            for value in values where storageDays[value.id] == nil { storageDays[value.id] = date }
+        }
         // A stop that quit or module-off could not save: close it before any open session is restored.
-        if let tomb = try store.pendingStopTombstone() {
-            let tombDay = tomb.day
-            if var value = try store.sessions(tombDay).first(where: { $0.id == tomb.sessionID && $0.endedAt == nil }) {
+        if let tomb {
+            if var value = sessionCache[tomb.day]?.first(where: { $0.id == tomb.sessionID && $0.endedAt == nil }) {
                 value.events.append(.init(kind: .stop, at: tomb.end, reason: tomb.reason))
                 value.distractions?.finish(lists: blockLists, ignored: ignoredDistractionIDs)
+                storageDays[value.id] = tomb.day
                 try persist(value)
                 try? blocking()?.creditEarnedTime(for: value)
             }
@@ -187,8 +208,8 @@ struct FocusPanel: Equatable {
         // A free open session may have started on any retained day, not only yesterday.
         var running: [FocusSession] = []
         try repairDuplicateSessions()
-        for date in try store.sessionDays() {
-            for var value in try store.sessions(date) where value.endedAt == nil {
+        for date in sessionCache.keys.sorted() {
+            for var value in sessionCache[date] ?? [] where value.endedAt == nil {
                 let restored = FocusPhases.phase(value, at: clock())
                 if restored.kind == .ended {
                     value.events.append(.init(kind: .stop, at: restored.startedAt, reason: .appClosed))
@@ -206,7 +227,16 @@ struct FocusPanel: Equatable {
             if blocking()?.activeBlocks.contains(where: { $0.id == id }) == true { phaseBlockID = id; phaseBlockKey = phaseKey(p) }
         }
         try reconcileCommitmentBlocks(); refresh()
+        if setAside > 0 { error = Self.setAsideNotice }
         observeClockChanges()
+    }
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory", category: "concentration")
+    static let setAsideNotice = "Des fichiers illisibles de Concentration sont mis de côté dans le dossier Focus. Rien n’est effacé."
+    /// Reads one file; a refused file is moved aside (counted) and reads as absent. Other failures still throw.
+    private func recovering<T>(_ count: inout Int, area: String?, name: String, _ read: () throws -> T?) throws -> T? {
+        do { return try read() } catch FocusFailure.storageFailed {
+            try store.setAside(area: area, name: name, now: clock()); count += 1; return nil
+        }
     }
     /// A zone change or a wake moves the evening prompt and the end-of-day limit; the timer was set with the old ones.
     /// `refresh` recomputes both from the live calendar and shows each prompt once (`promptState` keeps what was shown).
@@ -292,11 +322,9 @@ struct FocusPanel: Equatable {
     /// The file day of a session is fixed when it is first written: a zone change moves `startedAt` to another day, and
     /// the copy would then be written twice (concentration-02). Older data: the day of the file that holds the UUID.
     private var storageDays: [UUID: String] = [:]
+    /// `init` indexes every session on disk; this controller is their only writer. An unknown ID is a new session.
     private func storageDay(of value: FocusSession) throws -> String {
         if let day = storageDays[value.id] { return day }
-        for day in try store.sessionDays() where try store.sessions(day).contains(where: { $0.id == value.id }) {
-            storageDays[value.id] = day; return day
-        }
         let day = FocusCalendar.dayKey(value.startedAt, calendar: calendar)
         storageDays[value.id] = day
         return day
@@ -305,14 +333,15 @@ struct FocusPanel: Equatable {
     /// the longer history, and remove the others.
     private func repairDuplicateSessions() throws {
         var copies: [UUID: [(day: String, value: FocusSession)]] = [:]
-        for day in try store.sessionDays() { for value in try store.sessions(day) { copies[value.id, default: []].append((day, value)) } }
+        for (day, values) in sessionCache { for value in values { copies[value.id, default: []].append((day, value)) } }
         for (id, list) in copies where list.count > 1 {
             let keep = list.max { a, b in
                 (a.value.endedAt != nil ? 1 : 0, a.value.events.count) < (b.value.endedAt != nil ? 1 : 0, b.value.events.count)
             }!
             for copy in list where copy.day != keep.day {
-                try store.saveSessions(try store.sessions(copy.day).filter { $0.id != id }, day: copy.day)
-                sessionCache[copy.day] = nil
+                let remaining = (sessionCache[copy.day] ?? []).filter { $0.id != id }
+                try store.saveSessions(remaining, day: copy.day)
+                sessionCache[copy.day] = remaining
             }
             storageDays[id] = keep.day
         }
@@ -411,7 +440,7 @@ struct FocusPanel: Equatable {
     func recordOutcome(sessionID: UUID, outcome: FocusSession.Outcome?, note: String? = nil) throws {
         try admit()
         guard note.map({ FocusValidation.text($0, maximum: 140) }) ?? true else { throw FocusFailure.invalidArgument }
-        for day in try store.sessionDays().reversed() {
+        for day in try candidateDays(for: sessionID) {
             if var value = try store.sessions(day).first(where: { $0.id == sessionID && $0.endedAt != nil }) {
                 value.outcome = outcome; value.note = note; try persist(value)
                 if let id = value.planItemId,
@@ -451,10 +480,16 @@ struct FocusPanel: Equatable {
     }
     private func endedSession(_ id: UUID) throws -> FocusSession {
         try admit()
-        for day in try store.sessionDays().reversed() {
+        for day in try candidateDays(for: id) {
             if let value = try store.sessions(day).first(where: { $0.id == id && $0.endedAt != nil }) { return value }
         }
         throw FocusFailure.notFound
+    }
+    /// The indexed day file of a session first (bugs-donnees-02), then the others, newest first.
+    private func candidateDays(for id: UUID) throws -> [String] {
+        let all = Array(try store.sessionDays().reversed())
+        guard let known = storageDays[id], all.contains(known) else { return all }
+        return [known] + all.filter { $0 != known }
     }
     func distractionSuggestions(sessionID: UUID) throws -> [FocusDistractionSuggestion] {
         try endedSession(sessionID).distractions?.suggestions(lists: blockLists, ignored: ignoredDistractionIDs) ?? []
@@ -816,7 +851,8 @@ struct FocusPanel: Equatable {
         guard next != status else { return }
         next.since = clock(); status = next
         onStatusChange?(next)
-        do { try store.appendStatus(FocusJSON.encode(next), day: currentDay) } catch { self.error = String(describing: error) }
+        // bugs-donnees-06: the status log is a diagnostic. Its failure is logged, never shown as a raw error name.
+        do { try store.appendStatus(FocusJSON.encode(next), day: currentDay) } catch { Self.logger.error("focus status log not written: \(String(describing: error), privacy: .public)") }
     }
     private func checkPrompts(activity: Bool) {
         // The question about the session that just ended comes first; the prompts return once it is answered or gone.

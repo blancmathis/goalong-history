@@ -79,7 +79,7 @@ enum PersoUpdateStatusText {
     /// Reloads every 2 s while the last hand-off runs, so its phases show as they happen; idle otherwise.
     func follow() async {
         reload()
-        while !Task.isCancelled, let last = entries.first, !last.isFinal, !last.isStale(now: Date().timeIntervalSince1970) {
+        while !Task.isCancelled, let last = entries.first, !last.isFinal, !last.isStale(now: GoalongToday.now.timeIntervalSince1970) {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             reload()
         }
@@ -93,7 +93,7 @@ enum PersoUpdateStatusText {
 
     var body: some View {
         if let last = model.entries.first {
-            Text(PersoUpdateStatusText.line(last, runningCommit: runningCommit, now: Date()))
+            Text(PersoUpdateStatusText.line(last, runningCommit: runningCommit, now: GoalongToday.now))
                 .font(.system(size: 12)).foregroundStyle(tint(last))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("settings-perso-update-status")
@@ -103,7 +103,7 @@ enum PersoUpdateStatusText {
     private func tint(_ entry: PersoUpdateHistory.Entry) -> Color {
         switch entry.phase {
         case .restored?, .failed?, .refused?: return LHTheme.warning
-        default: return entry.isStale(now: Date().timeIntervalSince1970) ? LHTheme.warning : LHTheme.secondaryText
+        default: return entry.isStale(now: GoalongToday.now.timeIntervalSince1970) ? LHTheme.warning : LHTheme.secondaryText
         }
     }
 }
