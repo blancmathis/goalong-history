@@ -288,6 +288,12 @@ import AppleScreenTime
                     minuteSealer.suspendSigning(reason: "Signing identity unavailable (Keychain)")
                 }
                 minuteSealer.setUploader(nil)
+                // A sealing pause is shown in the menu bar and Privacy page (T-057 d4-01).
+                minuteSealer.setSuspensionObserver { reason in
+                    DispatchQueue.main.async {
+                        DeviceTrustState.shared.setSealJournalPaused(reason != nil)
+                    }
+                }
                 recorder = EventRecorder(
                     store: store,
                     integrityJournal: integrityJournal,
@@ -1159,6 +1165,8 @@ import AppleScreenTime
 
         /// Retries the keychain load off the main thread; resumes sealing on success.
         private func retryDeviceIdentity() {
+            // « Réessayer » also re-checks a paused seal journal (no-op when none is paused).
+            minuteSealer.retryJournalRecovery()
             guard deviceIdentityStartup.isDegraded, DeviceTrustState.shared.beginRetry() else { return }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result { try DeviceIdentity.shared(attempts: 1) }

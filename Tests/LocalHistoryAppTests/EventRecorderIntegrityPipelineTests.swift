@@ -627,6 +627,7 @@
                 fixture: fixture,
                 initialDate: Date(timeIntervalSince1970: 120)
             )
+            sealer.waitUntilIdleForTesting()
 
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 4)
             XCTAssertEqual(state.snapshot.previousAnchorHash, regularSeal.anchorHash)
@@ -649,6 +650,7 @@
                 fixture: fixture,
                 initialDate: Date(timeIntervalSince1970: 120)
             )
+            sealer.waitUntilIdleForTesting()
 
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 1)
             XCTAssertNil(sealer.runtimeSnapshot.lastErrorDescription)
@@ -867,6 +869,7 @@
                 fixture: fixture,
                 initialDate: Date(timeIntervalSince1970: 120)
             )
+            sealer.waitUntilIdleForTesting()
 
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 42)
             XCTAssertEqual(state.snapshot.previousAnchorHash, seal.anchorHash)
@@ -903,17 +906,23 @@
             XCTAssertEqual(sealer.runtimeSnapshot.pendingRootCount, 1)
         }
 
-        func testUncertainSealDurabilitySuspendsBeforeReusingAnchorSequence() throws {
+        // T-057 d4-01: an uncertain append pauses signing until the tail scan decides; the row
+        // did not land, so the same sequence is signed again in this launch (never skipped).
+        func testUncertainSealDurabilityPausesThenRetriesAfterTailRecovery() throws {
             let fixture = try makeFixture()
             let state = makeState(fixture)
             var attempts = 0
+            var persisted: [LocalMinuteSeal] = []
             let sealer = makeSealer(
                 state: state,
                 fixture: fixture,
                 initialDate: Date(timeIntervalSince1970: 120)
-            ) { _, _ in
+            ) { seal, _ in
                 attempts += 1
-                throw MinuteSealPersistenceError.durabilityUncertain("fixture sync failure")
+                if attempts == 1 {
+                    throw MinuteSealPersistenceError.durabilityUncertain("fixture sync failure")
+                }
+                persisted.append(seal)
             }
             sealer.receive(
                 fixtureEvent(timestamp: Date(timeIntervalSince1970: 179.9), root: "root")
@@ -925,13 +934,22 @@
             XCTAssertEqual(attempts, 1)
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 1)
             XCTAssertEqual(sealer.runtimeSnapshot.pendingRootCount, 1)
-            XCTAssertTrue(sealer.runtimeSnapshot.signingSuspended)
+            XCTAssertTrue(sealer.runtimeSnapshot.journalRecoveryPending)
+            XCTAssertFalse(sealer.runtimeSnapshot.signingSuspended)
 
             XCTAssertFalse(
-                sealer.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: 240))
+                sealer.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: 181.5))
             )
-            XCTAssertEqual(attempts, 1, "an uncertain append must never be retried in-process")
-            XCTAssertEqual(state.snapshot.nextAnchorSequence, 1)
+            XCTAssertEqual(attempts, 1, "no signature before the tail recovery deadline")
+
+            XCTAssertTrue(
+                sealer.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: 182.2))
+            )
+            XCTAssertEqual(attempts, 2)
+            XCTAssertEqual(persisted.single?.anchorSequence, 1)
+            XCTAssertEqual(persisted.single?.eventRoots, ["root"])
+            XCTAssertEqual(state.snapshot.nextAnchorSequence, 2)
+            XCTAssertFalse(sealer.runtimeSnapshot.journalRecoveryPending)
         }
 
         func testFailedSealRetainsRootsAndRetriesWithBackoff() throws {
@@ -1024,7 +1042,8 @@
             XCTAssertEqual(state.snapshot.nextAnchorSequence, 3)
         }
 
-        func testPersistentSealFailureHasBoundedRetriesAndMinuteBuffer() throws {
+        // T-057 d4-01: a plain write failure keeps retrying (30 s ceiling) and never suspends.
+        func testPersistentSealFailureKeepsRetryingWithABoundedMinuteBuffer() throws {
             let fixture = try makeFixture()
             let state = makeState(fixture)
             var attempts = 0
@@ -1046,14 +1065,14 @@
                 )
             }
             sealer.waitUntilIdleForTesting()
-            for now in [181.1, 182.2, 184.3, 188.4, 196.5, 212.6, 244.7] {
+            for now in [181.1, 182.2, 184.3, 188.4, 196.5, 212.6, 244.7, 275.0, 306.0] {
                 _ = sealer.sealElapsedMinutesForTesting(now: Date(timeIntervalSince1970: now))
             }
 
             let snapshot = sealer.runtimeSnapshot
             XCTAssertLessThanOrEqual(snapshot.pendingMinuteCount, 3)
-            XCTAssertEqual(attempts, 6)
-            XCTAssertTrue(snapshot.signingSuspended)
+            XCTAssertGreaterThan(attempts, 6, "retries go on past the old six-attempt stop")
+            XCTAssertFalse(snapshot.signingSuspended)
             XCTAssertGreaterThan(snapshot.unbufferedRootCount, 0)
         }
 

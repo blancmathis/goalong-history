@@ -160,9 +160,21 @@ import AppleScreenTime
         private var retryInFlight = false
         private var lastRetryFailedAt: Date?
 
+        /// The minute sealer paused itself (seal journal to confirm, T-057 d4-01/d4-02).
+        private var sealJournalPaused = false
+
         var sealingSuspendedNotice: String? {
             lock.lock(); defer { lock.unlock() }
-            return suspendedStatus.map { "Preuves suspendues : " + Self.cause($0).notice }
+            if let status = suspendedStatus { return "Preuves suspendues : " + Self.cause(status).notice }
+            return sealJournalPaused ? "Preuves suspendues : journal des empreintes à vérifier" : nil
+        }
+
+        func setSealJournalPaused(_ paused: Bool) {
+            lock.lock()
+            let changed = sealJournalPaused != paused
+            sealJournalPaused = paused
+            lock.unlock()
+            if changed { Self.postChange() }
         }
 
         /// The cause named in the notice and after a failed retry, from the startup status.

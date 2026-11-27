@@ -275,9 +275,16 @@
             )
             purgeTargetedDeletionJournal(now: now)
             let today = Calendar.current.startOfDay(for: now)
+            let sealTails = Self.sealChainTailPaths(in: artifacts)
             for decision in decisions where decision.shouldDelete {
                 guard decision.artifact.end < today else { continue }
                 let file = URL(fileURLWithPath: decision.artifact.localPath)
+                // The newest seal file holds the chain tail: removing it with a lost checkpoint
+                // would restart the chain at 1 (T-057 d4-02). It always stays.
+                guard !sealTails.contains(decision.artifact.localPath) else {
+                    diagnose("Retention cleanup kept the newest seal file (chain tail) at \(file.path)")
+                    continue
+                }
                 guard isManagedRegularArtifact(file) else {
                     diagnose(
                         "Retention cleanup preserved an unknown, linked, or changed artifact at \(file.path)"
@@ -400,6 +407,22 @@
                 }
             }
             return output
+        }
+
+        /// Newest seal file by day name and by last write (a clock set back can make them differ).
+        static func sealChainTailPaths(in artifacts: [HistoryStoredArtifact]) -> Set<String> {
+            let seals = artifacts.filter { $0.dataClass == .minuteSeals }
+            var paths: Set<String> = []
+            if let newestByDay = seals.max(by: { ($0.start, $0.localPath) < ($1.start, $1.localPath) }) {
+                paths.insert(newestByDay.localPath)
+            }
+            let modified = seals.compactMap { artifact -> (Date, String)? in
+                guard let date = (try? FileManager.default.attributesOfItem(atPath: artifact.localPath))?[.modificationDate] as? Date
+                else { return nil }
+                return (date, artifact.localPath)
+            }
+            if let newestByWrite = modified.max(by: { $0 < $1 }) { paths.insert(newestByWrite.1) }
+            return paths
         }
 
         private func isManagedRegularArtifact(_ file: URL) -> Bool {

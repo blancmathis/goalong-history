@@ -724,7 +724,7 @@
                 clearSummaryDirectory: isFullClear
             )
             // A partial clear may leave chain-head.json pointing at an erased run:
-            // AnalysisProofStore.loadChainHead then returns nil and the next proof restarts the chain.
+            // AnalysisProofStore.loadChainHead keeps its number and digest, so the next proof continues the chain.
             var executionIDs = Set(
                 (chatGPTRecapPlan?.targets ?? []).compactMap { recapExecutionID(at: $0.URL) }
             )

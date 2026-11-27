@@ -44,6 +44,10 @@
         private var checkpointedPreviousEventHash: String
         private var loadedValidCheckpoint: Bool
         private var successfulPersistenceCount = 0
+        /// The checkpoint file existed but could not be read or decoded (T-057 d4-02).
+        private let checkpointWasDamaged: Bool
+        /// The anchor cursor comes from a valid checkpoint or a durable seal, never from a fresh default.
+        private var anchorCursorConfirmed: Bool
 
         init(
             fileURL: URL = AppPaths.integrityStateFile,
@@ -54,16 +58,21 @@
             self.persistenceWriter = persistenceWriter ?? Self.persistDurably
             try? prepareStorage()
 
+            let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
             if let data = try? Data(contentsOf: fileURL),
                let decoded = try? JSONDecoder().decode(PersistentIntegrityState.self, from: data),
                Self.isValid(decoded)
             {
                 state = decoded
                 loadedValidCheckpoint = true
+                checkpointWasDamaged = false
             } else {
                 state = PersistentIntegrityState()
                 loadedValidCheckpoint = false
+                checkpointWasDamaged = fileExists
+                if fileExists { Self.preserveDamagedCheckpoint(fileURL) }
             }
+            anchorCursorConfirmed = loadedValidCheckpoint
             checkpointedEventNextSequence = state.nextEventSequence
             checkpointedPreviousEventHash = state.previousEventHash
         }
@@ -126,6 +135,7 @@
 
             state.nextAnchorSequence = sequence &+ 1
             state.previousAnchorHash = anchorHash
+            anchorCursorConfirmed = true
             var durableSnapshot = state
             durableSnapshot.nextEventSequence = checkpointedEventNextSequence
             durableSnapshot.previousEventHash = checkpointedPreviousEventHash
@@ -185,12 +195,21 @@
 
             state.nextAnchorSequence = journalNext
             state.previousAnchorHash = anchorHash
+            anchorCursorConfirmed = true
             var durableSnapshot = state
             durableSnapshot.nextEventSequence = checkpointedEventNextSequence
             durableSnapshot.previousEventHash = checkpointedPreviousEventHash
             try persistLocked(durableSnapshot)
             loadedValidCheckpoint = true
             return true
+        }
+
+        /// True while the anchor cursor is a fresh default although a checkpoint file existed:
+        /// signing from it could restart the chain at 1 (T-057 d4-02).
+        var anchorCursorIsDoubtful: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return checkpointWasDamaged && !anchorCursorConfirmed
         }
 
         var snapshot: PersistentIntegrityState {
@@ -245,6 +264,22 @@
             if directoryDescriptor >= 0 {
                 _ = DurableSync.sync(checkpointSync, directoryDescriptor)
                 _ = Darwin.close(directoryDescriptor)
+            }
+        }
+
+        /// Keeps a copy of an unreadable checkpoint before the next rewrite replaces it.
+        private static func preserveDamagedCheckpoint(_ fileURL: URL) {
+            let stamp = Int(Date().timeIntervalSince1970)  // wall: file name only
+            let copy = fileURL.deletingLastPathComponent().appendingPathComponent(
+                fileURL.deletingPathExtension().lastPathComponent + ".damaged-\(stamp).json"
+            )
+            do {
+                if !FileManager.default.fileExists(atPath: copy.path) {
+                    try FileManager.default.copyItem(at: fileURL, to: copy)
+                }
+                Diagnostics.write("Integrity checkpoint unreadable; kept a copy at \(copy.lastPathComponent)")
+            } catch {
+                Diagnostics.write("Integrity checkpoint unreadable and its copy failed: \(error)")
             }
         }
 
