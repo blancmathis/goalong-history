@@ -210,7 +210,7 @@
                         throw scan.firstError ?? MinuteSealJournalError.unconfirmedAnchorCursor
                     }
                     Diagnostics.write(
-                        "Skipped \(scan.unreadable.count) unreadable seal file(s) during tail recovery (cursor kept): \(scan.unreadable.sorted().joined(separator: ", "))"
+                        "Tail recovery skipped unreadable seal files (cursor kept), count \(scan.unreadable.count): \(scan.unreadable.sorted().joined(separator: ", "))"
                     )
                 }
                 var uncertainSealLanded = false

@@ -60,6 +60,9 @@ final class JourneyRetentionTests: XCTestCase {
     }
     @MainActor func testProofDeletionRequiresASecondIndependentConfirmation() throws {
         let (store, _, files) = try fixture()
+        // The newest seal file holds the chain tail and always stays (T-057 d4-02): an older one expires.
+        let tail = files[.minuteSeals]!.deletingLastPathComponent().appendingPathComponent("2020-01-02.fixture")
+        try Data("synthetic-local-artifact".utf8).write(to: tail)
         let model = HistoryRetentionSettingsModel(store: store)
         model.automaticCleanup = true
         model.draft.minuteSeals = RetentionDuration(days: 1)
@@ -71,6 +74,7 @@ final class JourneyRetentionTests: XCTestCase {
         XCTAssertTrue(store.isAutomaticCleanupEnabled)
         store.applyCleanup()
         XCTAssertFalse(FileManager.default.fileExists(atPath: files[.minuteSeals]!.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tail.path), "the chain tail stays")
         XCTAssertTrue(FileManager.default.fileExists(atPath: files[.anchorReceipts]!.path))
     }
     @MainActor func testAnUnwritableActivationDoesNotReportSuccessOrDelete() throws {
