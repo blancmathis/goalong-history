@@ -79,5 +79,30 @@ final class FocusStorageRecoveryTests: XCTestCase {
         XCTAssertEqual(try s.sessions(oldestDay).first?.outcome, .done)
         XCTAssertEqual(try s.sessionDays().count, 61, "history is never purged")
     }
+
+    // bugs-donnees-06
+    func testStatusLogKeepsTodayAndOnePreviousFile() throws {
+        let s = try store(), today = FocusCalendar.dayKey(now, calendar: .current)
+        let old = (2...6).map { FocusCalendar.dayKey(now.addingTimeInterval(-Double($0) * 86_400), calendar: .current) }.sorted()
+        for day in old { try s.appendStatus(Data("{\"day\":\"\(day)\"}".utf8), day: day) }
+        try s.appendStatus(Data("{}".utf8), day: today)
+        XCTAssertEqual(names(s, "status"), [today + ".jsonl", FocusStore.previousStatus].sorted())
+        let previous = try String(contentsOf: s.directory.appendingPathComponent("status/" + FocusStore.previousStatus), encoding: .utf8)
+        XCTAssertTrue(previous.contains(old.last!))
+        // A full file becomes the previous one; the new line still lands.
+        let path = s.directory.appendingPathComponent("status/\(today).jsonl").path
+        let full = Data(repeating: 65, count: FocusStore.maximumBytes - 4)
+        XCTAssertTrue(FileManager.default.createFile(atPath: path, contents: full, attributes: [.posixPermissions: 0o600]))
+        try s.appendStatus(Data("{\"n\":1}".utf8), day: today)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), Data("{\"n\":1}\n".utf8))
+        XCTAssertEqual(try Data(contentsOf: s.directory.appendingPathComponent("status/" + FocusStore.previousStatus)).count, full.count)
+        XCTAssertEqual(names(s, "status").count, 2)
+    }
+    @MainActor func testStatusLogFailureShowsNoRawError() throws {
+        let s = try store()
+        XCTAssertTrue(FileManager.default.createFile(atPath: s.directory.appendingPathComponent("status").path, contents: Data(), attributes: [.posixPermissions: 0o600]))
+        let c = try ConcentrationController(store: s, clock: { self.now })
+        XCTAssertNil(c.error)
+    }
 }
 #endif

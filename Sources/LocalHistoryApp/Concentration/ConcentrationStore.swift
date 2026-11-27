@@ -267,6 +267,7 @@ struct FocusStore {
     func saveMarks(_ value: [FocusLimitMark]) throws { try save(Array(value.suffix(800)), area: nil, name: "limit-marks.json") }
     func appendStatus(_ data: Data, day: String) throws {
         guard FocusValidation.day(day), data.count <= 8192, let dir = try openDirectory("status", create: true) else { throw FocusFailure.invalidArgument }; defer { close(dir) }
+        rotateStatus(dir, day: day, adding: data.count + 1)
         let fd = openat(dir, day + ".jsonl", O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw FocusFailure.storageFailed }; defer { close(fd) }
         var info = stat()
@@ -274,6 +275,30 @@ struct FocusStore {
         var line = data; line.append(10)
         let result = line.withUnsafeBytes { write(fd, $0.baseAddress!, $0.count) }
         guard result == line.count, fsync(fd) == 0 else { throw FocusFailure.storageFailed }
+    }
+    static let previousStatus = "previous.jsonl"
+    /// bugs-donnees-06: the status log keeps today's file and one previous file. A new day moves the latest older day
+    /// to `previous.jsonl` and removes the rest; a full file becomes `previous.jsonl` and today starts again.
+    /// Best effort: the log is a diagnostic, a failed rotation never stops a session.
+    private func rotateStatus(_ dir: Int32, day: String, adding count: Int) {
+        let current = day + ".jsonl"
+        var info = stat()
+        if fstatat(dir, current, &info, AT_SYMLINK_NOFOLLOW) == 0 {
+            guard info.st_mode & S_IFMT == S_IFREG, info.st_size + Int64(count) > Int64(Self.maximumBytes) else { return }
+            _ = renameat(dir, current, dir, Self.previousStatus); fsync(dir); return
+        }
+        guard errno == ENOENT, let handle = fdopendir(dup(dir)) else { return }
+        var older: [String] = []
+        while let entry = readdir(handle) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN)) { String(cString: $0) } }
+            if name.hasSuffix(".jsonl"), FocusValidation.day(String(name.dropLast(6))), name != current { older.append(name) }
+        }
+        closedir(handle)
+        older.sort()
+        guard let latest = older.popLast() else { return }
+        _ = renameat(dir, latest, dir, Self.previousStatus)
+        for name in older { _ = unlinkat(dir, name, 0) }
+        fsync(dir)
     }
     /// R-77 (R9C-54): « Supprimer les données… » is held back when there is nothing to delete.
     /// Something to delete: any file in the folder, even one the safe reads would refuse (R-77).

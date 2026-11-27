@@ -5,6 +5,7 @@ import CryptoKit
 import Foundation
 import LocalHistoryCore
 import LocalHistoryQueryCLI
+import os
 
 struct FocusStatus: Codable, Equatable {
     struct Session: Codable, Equatable {
@@ -229,6 +230,7 @@ struct FocusPanel: Equatable {
         if setAside > 0 { error = Self.setAsideNotice }
         observeClockChanges()
     }
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ai.goalong.localhistory", category: "concentration")
     static let setAsideNotice = "Des fichiers illisibles de Concentration sont mis de côté dans le dossier Focus. Rien n’est effacé."
     /// Reads one file; a refused file is moved aside (counted) and reads as absent. Other failures still throw.
     private func recovering<T>(_ count: inout Int, area: String?, name: String, _ read: () throws -> T?) throws -> T? {
@@ -849,7 +851,8 @@ struct FocusPanel: Equatable {
         guard next != status else { return }
         next.since = clock(); status = next
         onStatusChange?(next)
-        do { try store.appendStatus(FocusJSON.encode(next), day: currentDay) } catch { self.error = String(describing: error) }
+        // bugs-donnees-06: the status log is a diagnostic. Its failure is logged, never shown as a raw error name.
+        do { try store.appendStatus(FocusJSON.encode(next), day: currentDay) } catch { Self.logger.error("focus status log not written: \(String(describing: error), privacy: .public)") }
     }
     private func checkPrompts(activity: Bool) {
         // The question about the session that just ended comes first; the prompts return once it is answered or gone.
