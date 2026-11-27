@@ -37,7 +37,7 @@ final class PersoRollbackTests: XCTestCase {
                           open: @escaping () -> Int32?) -> PersoRollback {
         var rollback = PersoRollback(
             parentPID: parent, candidates: candidates,
-            holdLease: { [unowned self] in note("hold \($0)") },
+            holdLease: { [unowned self] in note("hold \($0)"); return true },
             terminate: { [unowned self] in note("terminate \($0)"); kill($0, SIGKILL) },
             isAlive: { [unowned self] in isAlive($0) },
             restore: { [unowned self] in note("restore"); return true },
@@ -101,5 +101,29 @@ final class PersoRollbackTests: XCTestCase {
         XCTAssertEqual(subject.run(), .candidateSurvived)
         XCTAssertFalse(entries.contains("restore"))
         XCTAssertEqual(entries.suffix(2), ["endLease", "report false"])
+    }
+
+    /// bugs-mise-a-jour-06: without its lease the armed guard would reopen the candidate the rollback stops. A
+    /// lease not written means no stop on that scan; a later scan that holds it stops the candidate.
+    func testACandidateIsStoppedOnlyUnderAHeldLease() throws {
+        let candidate = try spawn()
+        var refusals = 2
+        var subject = rollback(parent: 1, candidates: { [candidate] }, open: { try? self.spawn() })
+        subject.holdLease = { [unowned self] pid in
+            note("hold \(pid)")
+            if refusals > 0 { refusals -= 1; return false }
+            return true
+        }
+        guard case .reopened = subject.run() else { return XCTFail("rollback did not finish: \(entries)") }
+        XCTAssertEqual(Array(entries.prefix(4)), ["hold \(candidate)", "hold \(candidate)", "hold \(candidate)", "terminate \(candidate)"])
+    }
+
+    func testALeaseNeverHeldLeavesTheCandidateAndTheTargetAlone() throws {
+        var subject = rollback(parent: 1, candidates: { [4242] }, open: { nil })
+        subject.holdLease = { _ in false }
+        subject.isAlive = { _ in true }
+        subject.maximumScans = 5
+        XCTAssertEqual(subject.run(), .candidateSurvived)
+        XCTAssertFalse(entries.contains { $0.hasPrefix("terminate") || $0 == "restore" })
     }
 }
