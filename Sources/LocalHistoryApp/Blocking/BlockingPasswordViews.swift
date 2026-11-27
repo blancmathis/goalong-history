@@ -76,6 +76,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     @State private var new = ""
     @State private var again = ""
     @State private var message: String?
+    @State private var deriving = false
     @FocusState private var focused: Field?
 
     enum Field: Hashable { case old, new }
@@ -124,7 +125,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                 Button(actionTitle, action: submit)
                     .buttonStyle(LHPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!ready)
+                    .disabled(!ready || deriving)
                     .accessibilityIdentifier("blocking-password-submit")
             }
         }
@@ -203,10 +204,22 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
 
     private func submit() {
         // Enter in a field runs even when the button is disabled: nothing is sent before the sheet is ready (T-063).
-        guard ready else { return }
+        guard ready, !deriving else { return }
         if needsNew {
             guard new == again else { message = "Les deux mots de passe sont différents."; return }
         }
+        // The slow key derivation runs off the main actor; the checks and counters run in `apply()` right after.
+        deriving = true
+        let oldText = needsOld ? old : nil, newText = needsNew ? new : nil
+        Task { @MainActor in
+            await controller.prepareDerivations(old: oldText, new: newText)
+            deriving = false
+            apply()
+            controller.discardPreparedDerivations()
+        }
+    }
+
+    private func apply() {
         let result: BlockingPasswordResult
         switch purpose {
         case .create: result = controller.setPassword(new) ? .ok : .refused(reason: controller.error ?? "Mot de passe refusé : choisissez-en un non vide, plus court.")
