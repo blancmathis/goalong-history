@@ -22,6 +22,20 @@
         let signingSuspended: Bool
         let unbufferedRootCount: Int
         let lastErrorDescription: String?
+        /// Signing waits until the seal journal tail is confirmed (startup, uncertain append,
+        /// unreadable seal file or checkpoint). T-057 d4-01/d4-02.
+        var journalRecoveryPending = false
+    }
+
+    enum MinuteSealJournalError: LocalizedError {
+        case unconfirmedAnchorCursor
+
+        var errorDescription: String? {
+            switch self {
+            case .unconfirmedAnchorCursor:
+                return "The integrity checkpoint is unreadable and no durable seal confirms the anchor cursor."
+            }
+        }
     }
 
     enum MinuteSealPersistenceError: LocalizedError {
@@ -73,7 +87,11 @@
         private static let maximumSealsPerWake = 8
         static let maximumBufferedRoots = 16_384
         static let maximumEncodedSealRowBytes = 2 * 1_024 * 1_024
-        private static let maximumRetryAttempts = 6
+        /// Plain write failures (disk full) retry without limit at this ceiling (T-057 d4-01).
+        private static let maximumRetryDelay: TimeInterval = 30
+        private static let maximumJournalRecoveryDelay: TimeInterval = 300
+        /// Coverage state added to seals whose minutes lost roots to the bounded retry buffer.
+        static let rootsDroppedCoverageState = "sealBufferOverflow"
         private let queue = DispatchQueue(label: "ai.goalong.localhistory.minute-sealer")
         private let queueKey = DispatchSpecificKey<UInt8>()
         private let stateStore: IntegrityStateStore
@@ -96,6 +114,16 @@
         private var reportedBufferLimit = false
         private var lastErrorDescription: String?
         private var durabilityBarrier: (() throws -> Void)?
+        /// Non-nil: signing waits for a confirmed seal-journal tail (never sign from a doubtful cursor).
+        private var journalRecoveryReason: String?
+        private var journalRecoveryNotBefore: Date?
+        private var journalRecoveryAttempt = 0
+        private var reportedJournalSuspension = false
+        /// The seal whose append ended in `durabilityUncertain`; recovery decides if it landed.
+        private var uncertainSeal: LocalMinuteSeal?
+        /// Last minute that lost a root to the bounded buffer; seals up to it say so.
+        private var droppedRootsThrough: Date?
+        private var suspensionObserver: ((String?) -> Void)?
 
         private let ingressLock = NSLock()
         private var ingressSlots = [PendingRoot?](
@@ -127,17 +155,129 @@
             queue.setSpecific(key: queueKey, value: 1)
             try? prepareStorage()
 
-            do {
-                if let tail = try Self.latestPersistedSeal(in: sealDirectory) {
-                    try stateStore.reconcilePersistedAnchorTail(
-                        sequence: tail.anchorSequence,
-                        anchorHash: tail.anchorHash
-                    )
-                }
-            } catch {
-                lastErrorDescription = error.localizedDescription
-                Diagnostics.write("Could not reconcile the durable seal tail: \(error)")
+            // The tail scan runs on the sealer queue, off the launching thread (T-057 d4-03).
+            // Every seal goes through this serial queue, so none can be signed before it.
+            journalRecoveryReason = "startup tail recovery"
+            queue.async { [weak self] in
+                _ = self?.recoverJournalIfNeeded(now: initialDate, ignoreBackoff: true)
             }
+        }
+
+        /// Reports a signing pause the user should see (nil = resumed). Called on the sealer queue.
+        func setSuspensionObserver(_ observer: @escaping (String?) -> Void) {
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.suspensionObserver = observer
+                if self.reportedJournalSuspension { observer(self.lastErrorDescription) }
+            }
+        }
+
+        /// « Réessayer » : retries the seal-journal recovery now, then seals what is due.
+        func retryJournalRecovery() {
+            queue.async { [weak self] in
+                guard let self, self.journalRecoveryReason != nil else { return }
+                self.journalRecoveryNotBefore = nil
+                _ = self.sealElapsedMinutes(now: Date())
+                self.scheduleNextWakeup()
+            }
+        }
+
+        /// Confirms the durable seal tail before any signing. Any doubt (unreadable seal file,
+        /// unreadable checkpoint without a seal, unconfirmed uncertain append) keeps signing
+        /// paused and retries later: the chain is never restarted or forked (T-057 d4-01/d4-02).
+        private func recoverJournalIfNeeded(now: Date, ignoreBackoff: Bool) -> Bool {
+            guard let reason = journalRecoveryReason else { return true }
+            if !ignoreBackoff, let notBefore = journalRecoveryNotBefore, now < notBefore {
+                return false
+            }
+            do {
+                let tail = try Self.latestPersistedSeal(in: sealDirectory)
+                var uncertainSealLanded = false
+                if let pending = uncertainSeal, let tail,
+                    tail.anchorSequence == pending.anchorSequence,
+                    tail.anchorHash == pending.anchorHash
+                {
+                    // The row is on disk: make it durable before building on it.
+                    try Self.synchronizeSealFile(sealFileURL(for: pending.minuteStart))
+                    uncertainSealLanded = true
+                }
+                if let tail {
+                    do {
+                        try stateStore.reconcilePersistedAnchorTail(
+                            sequence: tail.anchorSequence,
+                            anchorHash: tail.anchorHash
+                        )
+                    } catch IntegrityStateError.anchorStateAheadOfJournal(let stateNext, let journalNext) {
+                        // A valid checkpoint ahead of the remaining seals (removed by an explicit
+                        // retention choice) never reuses a sequence: keep following it.
+                        Diagnostics.write(
+                            "Anchor checkpoint is ahead of the seal journal (state \(stateNext), journal \(journalNext)); keeping the checkpoint"
+                        )
+                    }
+                }
+                if stateStore.anchorCursorIsDoubtful {
+                    throw MinuteSealJournalError.unconfirmedAnchorCursor
+                }
+                if let pending = uncertainSeal {
+                    uncertainSeal = nil
+                    if uncertainSealLanded { finishLandedUncertainSeal(pending) }
+                }
+                journalRecoveryReason = nil
+                journalRecoveryNotBefore = nil
+                journalRecoveryAttempt = 0
+                if reportedJournalSuspension {
+                    reportedJournalSuspension = false
+                    lastErrorDescription = nil
+                    Diagnostics.write("Minute signing resumed after seal-journal recovery (\(reason))")
+                    suspensionObserver?(nil)
+                }
+                return true
+            } catch {
+                journalRecoveryAttempt += 1
+                let delay = min(
+                    Self.maximumJournalRecoveryDelay,
+                    pow(2.0, Double(journalRecoveryAttempt - 1))
+                )
+                journalRecoveryNotBefore = now.addingTimeInterval(delay)
+                lastErrorDescription = "Minute signing paused: \(error.localizedDescription)"
+                Diagnostics.write(
+                    "Minute signing paused until the seal journal is confirmed (\(reason)); retry in \(Int(delay)) s: \(error)"
+                )
+                if !reportedJournalSuspension {
+                    reportedJournalSuspension = true
+                    suspensionObserver?(lastErrorDescription)
+                }
+                scheduleNextWakeup()
+                return false
+            }
+        }
+
+        /// The uncertain row reached disk and is now synchronized: its minute is sealed.
+        private func finishLandedUncertainSeal(_ seal: LocalMinuteSeal) {
+            let minuteStart = seal.minuteStart
+            if failedMinuteStart == minuteStart {
+                if let bucket = buckets[minuteStart] {
+                    removeBucket(forKey: minuteStart)
+                    if minuteStart == nextMinuteStart {
+                        advanceChronology(after: bucket, minuteStart: minuteStart)
+                    }
+                }
+                failedMinuteStart = nil
+            }
+            retryAttempt = 0
+            retryNotBefore = nil
+            uploader?.enqueue(seal)
+            Diagnostics.write("Uncertain minute-seal append confirmed on disk at sequence \(seal.anchorSequence)")
+        }
+
+        private static func synchronizeSealFile(_ url: URL) throws {
+            let descriptor = url.path.withCString {
+                Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+            }
+            guard descriptor >= 0 else { throw posixError(path: url.path) }
+            defer { _ = Darwin.close(descriptor) }
+            let code = DurableSync.sync(sealSync, descriptor)
+            guard code == 0 else { throw posixError(path: url.path, code: code) }
         }
 
         /// Starts the sealer with signing suspended (identity unavailable at startup).
@@ -159,7 +299,12 @@
                 self.signingSuspended = false
                 self.retryAttempt = 0
                 self.retryNotBefore = nil
-                self.lastErrorDescription = nil
+                // A pending journal recovery stays in force: a new identity does not confirm the tail.
+                if self.journalRecoveryReason == nil {
+                    self.lastErrorDescription = nil
+                } else {
+                    self.journalRecoveryNotBefore = nil
+                }
                 self.scheduleNextWakeup()
             }
         }
@@ -201,6 +346,7 @@
                 // gaps must not inherit the pre-stop "captured" state.
                 observedCoverageState = Self.stoppedCoverageState
                 guard !signingSuspended else { return false }
+                guard recoverJournalIfNeeded(now: now, ignoreBackoff: true) else { return false }
                 retryNotBefore = nil
                 guard retryFailedMinuteIfEligible(now: now, ignoreBackoff: true) else {
                     return false
@@ -283,7 +429,8 @@
                         lastErrorDescription
                         ?? (ingress.droppedCount > 0
                             ? "Minute-seal ingress reached its bounded root capacity."
-                            : nil)
+                            : nil),
+                    journalRecoveryPending: journalRecoveryReason != nil
                 )
             }
         }
@@ -416,6 +563,7 @@
         ) -> Bool {
             if buckets[minuteStart] == nil, buckets.count >= Self.maximumBufferedMinutes {
                 unbufferedRootCount += 1
+                noteDroppedRoot(minuteStart: minuteStart)
                 lastErrorDescription = "Minute-seal retry buffer reached its bounded capacity."
                 if !reportedBufferLimit {
                     reportedBufferLimit = true
@@ -427,6 +575,7 @@
             }
             guard bufferedRootCount < Self.maximumBufferedRoots else {
                 unbufferedRootCount += 1
+                noteDroppedRoot(minuteStart: minuteStart)
                 lastErrorDescription = "Minute-seal retry buffer reached its root-count limit."
                 if !reportedBufferLimit {
                     reportedBufferLimit = true
@@ -448,6 +597,11 @@
             buckets[minuteStart] = bucket
             bufferedRootCount += 1
             return true
+        }
+
+        /// A minute that lost a root must not be signed as complete: its seal says so.
+        private func noteDroppedRoot(minuteStart: Date) {
+            droppedRootsThrough = max(droppedRootsThrough ?? minuteStart, minuteStart)
         }
 
         private static func coverageSignal(from event: HistoryEvent) -> CoverageSignal {
@@ -499,6 +653,7 @@
             sealLimit: Int = MinuteSealer.maximumSealsPerWake
         ) -> Bool {
             guard !signingSuspended else { return false }
+            guard recoverJournalIfNeeded(now: now, ignoreBackoff: false) else { return false }
             guard retryFailedMinuteIfEligible(now: now, ignoreBackoff: false) else {
                 return false
             }
@@ -618,6 +773,10 @@
         }
 
         private func seal(bucket: MinuteBucket, minuteStart: Date, now: Date) -> Bool {
+            // Every path (wake, late root, stop) passes here: nothing is signed while suspended
+            // or before the journal tail is confirmed.
+            guard !signingSuspended, journalRecoveryReason == nil else { return false }
+            var attemptedSeal: LocalMinuteSeal?
             do {
                 try durabilityBarrier?()
                 let position = stateStore.takeAnchorPosition()
@@ -628,11 +787,13 @@
                     }
                 )
 
+                var coverageStates =
+                    bucket.coverageStates.isEmpty ? [sealedCoverageState] : bucket.coverageStates
+                if let droppedRootsThrough, minuteStart <= droppedRootsThrough {
+                    coverageStates.insert(Self.rootsDroppedCoverageState)
+                }
                 var coverageFields = [
-                    "states":
-                        (bucket.coverageStates.isEmpty
-                        ? [sealedCoverageState]
-                        : bucket.coverageStates.sorted()).joined(separator: ",")
+                    "states": coverageStates.sorted().joined(separator: ",")
                 ]
                 if bucket.eventRoots.isEmpty,
                     minuteEnd.timeIntervalSince(minuteStart) > 60
@@ -698,6 +859,7 @@
                     storageFormat: .compactSalts
                 )
 
+                attemptedSeal = seal
                 try sealAppender(seal, sealFileURL(for: minuteStart))
                 if let checkpointError = try stateStore.commitPersistedAnchor(
                     sequence: position.sequence,
@@ -710,8 +872,18 @@
                 uploader?.enqueue(seal)
                 retryAttempt = 0
                 retryNotBefore = nil
+                if let through = droppedRootsThrough, minuteEnd > through,
+                    !buckets.keys.contains(where: { $0 <= through && $0 != minuteStart })
+                {
+                    droppedRootsThrough = nil
+                }
                 return true
             } catch {
+                if let persistenceError = error as? MinuteSealPersistenceError,
+                    case .durabilityUncertain = persistenceError
+                {
+                    uncertainSeal = attemptedSeal
+                }
                 registerSealFailure(error, now: now)
                 return false
             }
@@ -731,10 +903,14 @@
             if let persistenceError = error as? MinuteSealPersistenceError,
                 case .durabilityUncertain = persistenceError
             {
-                signingSuspended = true
+                // Never reuse or skip the sequence blindly: pause signing until the tail scan
+                // says whether the row landed, then go on in this launch (T-057 d4-01).
                 retryNotBefore = nil
+                journalRecoveryReason = "uncertain seal append"
+                journalRecoveryAttempt = 0
+                journalRecoveryNotBefore = now.addingTimeInterval(1)
                 Diagnostics.write(
-                    "Minute signing suspended after an uncertain append so the same anchor sequence is not written twice; startup tail recovery will reconcile any surviving row"
+                    "Minute signing paused after an uncertain append; the seal-journal tail is checked before the next signature"
                 )
                 scheduleNextWakeup()
                 return
@@ -764,16 +940,9 @@
                 return
             }
 
-            guard retryAttempt < Self.maximumRetryAttempts else {
-                signingSuspended = true
-                retryNotBefore = nil
-                Diagnostics.write(
-                    "Minute signing suspended after \(retryAttempt) bounded retries; raw events remain durable and pending roots remain available for this launch"
-                )
-                scheduleNextWakeup()
-                return
-            }
-            let delay = min(30.0, pow(2.0, Double(retryAttempt - 1)))
+            // A plain write failure (disk full, 0 byte written) never suspends signing: it
+            // retries at most every 30 s until the disk accepts the seal (T-057 d4-01).
+            let delay = min(Self.maximumRetryDelay, pow(2.0, Double(min(retryAttempt, 16) - 1)))
             retryNotBefore = now.addingTimeInterval(delay)
             scheduleNextWakeup()
         }
@@ -786,7 +955,9 @@
             }
             let now = Date()
             let delay: TimeInterval
-            if let retryNotBefore, retryNotBefore > now {
+            if journalRecoveryReason != nil, let journalRecoveryNotBefore {
+                delay = max(0.01, journalRecoveryNotBefore.timeIntervalSince(now))
+            } else if let retryNotBefore, retryNotBefore > now {
                 delay = max(0.01, retryNotBefore.timeIntervalSince(now))
             } else {
                 delay = Self.nextWakeDelay(now: now, currentMinuteStart: nextMinuteStart)
@@ -1018,7 +1189,8 @@
             // so a normal launch reads kilobytes. Same result as one full-cap read.
             let fileSize = Int64(information.st_size)
             let cap = min(fileSize, Int64(maximumEncodedSealRowBytes + 2))
-            var window = min(Int64(64 * 1_024), cap)
+            // A seal row is a few kilobytes: start small, every launch reads each file's tail.
+            var window = min(Int64(16 * 1_024), cap)
             tailWindow: while true {
                 let byteCount = window
                 let offset = fileSize - byteCount

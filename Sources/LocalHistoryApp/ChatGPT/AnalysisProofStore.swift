@@ -17,6 +17,7 @@
         case tooManySources
         case randomFailure(OSStatus)
         case destinationExists
+        case chainHeadUnreadable
 
         var errorDescription: String? {
             switch self {
@@ -26,6 +27,8 @@
             case .tooManySources: return "The selected day contains too many source references for one bounded proof manifest."
             case .randomFailure(let status): return "Secure random generation failed (OSStatus \(status))."
             case .destinationExists: return "An analysis proof already exists for this execution identifier."
+            case .chainHeadUnreadable:
+                return "The analysis proof chain head is unreadable; no proof is signed so the chain is not restarted."
             }
         }
 
@@ -38,6 +41,8 @@
             case .tooManySources: return "Ce jour contient trop de sources pour une seule preuve."
             case .randomFailure: return "Goalong n’a pas pu créer de clé aléatoire sûre."
             case .destinationExists: return "Une preuve existe déjà pour cette analyse."
+            case .chainHeadUnreadable:
+                return "Le registre des preuves d’analyse est illisible : aucune preuve n’est signée pour ne pas casser la chaîne."
             }
         }
     }
@@ -230,7 +235,7 @@
                 )
                 let responseData = try response.canonicalData()
 
-                let chainHead = loadChainHead()
+                let chainHead = try loadChainHead()
                 let sequence = (chainHead?.sequence ?? -1) + 1
                 let nonce = try secureRandom(count: 32)
                 let anchors = try? shareBuilder.anchorBounds(for: day)
@@ -320,11 +325,9 @@
                     packageManifestData,
                     to: staging.appendingPathComponent("manifest.json", isDirectory: false)
                 )
-                try fileManager.moveItem(at: staging, to: finalDirectory)
-                try? fileManager.setAttributes(
-                    [.posixPermissions: 0o700], ofItemAtPath: finalDirectory.path
-                )
-
+                // The head moves first (T-057 d4-04): a proof is never in place without its
+                // number taken. A failed move leaves a gap (like an erased proof), never two
+                // proofs with the same number.
                 let runDigest = GoalongProofDigest.sha256(runJWSData)
                 let newHead = ChainHead(
                     schemaVersion: 1,
@@ -333,6 +336,10 @@
                     runJWSSHA256: runDigest
                 )
                 try writeChainHead(newHead)
+                try fileManager.moveItem(at: staging, to: finalDirectory)
+                try? fileManager.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: finalDirectory.path
+                )
                 let reference = AnalysisProofReference(
                     executionID: executionID,
                     proofDirectoryName: executionID,
@@ -395,7 +402,7 @@
                 artifactHashes: packageReport.artifactHashes,
                 contextManifest: packageReport.contextManifest,
                 sourceCommitments: packageReport.sourceCommitments,
-                chainContinuity: reference.runJWSSHA256 == loadChainHead()?.runJWSSHA256
+                chainContinuity: reference.runJWSSHA256 == (try? loadChainHead())??.runJWSSHA256
                     ? "current_local_head"
                     : "signed_link_only",
                 activityAnchors: packageReport.activityAnchors,
@@ -617,22 +624,40 @@
             return data
         }
 
-        private func loadChainHead() -> ChainHead? {
+        /// nil only when no chain exists yet. The head carries the number and digest the next
+        /// proof links to, so an erased (or never placed) run does not restart the chain. An
+        /// unreadable head, or one that contradicts its run, refuses the proof (T-057 d4-04).
+        private func loadChainHead() throws -> ChainHead? {
             let url = rootDirectory.appendingPathComponent("chain-head.json", isDirectory: false)
+            var information = stat()
+            if lstat(url.path, &information) != 0, errno == ENOENT { return nil }
             guard let data = try? ChatGPTHistoryStore.readStableSource(at: url, maximumBytes: 8 * 1_024),
                 let head = try? JSONDecoder().decode(ChainHead.self, from: data),
                 head.schemaVersion == 1,
                 head.sequence >= 0,
                 UUID(uuidString: head.executionID) != nil,
-                GoalongProofDigest.isValid(head.runJWSSHA256),
-                let runData = try? stableFile(
-                    rootDirectory.appendingPathComponent(head.executionID, isDirectory: true)
-                        .appendingPathComponent("run.jws", isDirectory: false),
-                    maximumBytes: 64 * 1_024
-                ),
-                GoalongProofDigest.sha256(runData) == head.runJWSSHA256
-            else { return nil }
+                GoalongProofDigest.isValid(head.runJWSSHA256)
+            else {
+                Diagnostics.write("Analysis proof chain head unreadable; proof refused, file kept")
+                throw AnalysisProofStoreError.chainHeadUnreadable
+            }
+            let runURL = rootDirectory.appendingPathComponent(head.executionID, isDirectory: true)
+                .appendingPathComponent("run.jws", isDirectory: false)
+            if fileManager.fileExists(atPath: runURL.path) {
+                guard let runData = try? stableFile(runURL, maximumBytes: 64 * 1_024),
+                    GoalongProofDigest.sha256(runData) == head.runJWSSHA256
+                else {
+                    Diagnostics.write("Analysis proof chain head contradicts its run; proof refused")
+                    throw AnalysisProofStoreError.chainHeadUnreadable
+                }
+            }
             return head
+        }
+
+        /// The number and digest the next proof would link to (nil = new chain).
+        func nextChainLinkForTesting() throws -> (sequence: Int64, previousDigest: String?) {
+            let head = try loadChainHead()
+            return ((head?.sequence ?? -1) + 1, head?.runJWSSHA256)
         }
 
         private func writeChainHead(_ head: ChainHead) throws {
