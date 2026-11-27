@@ -147,6 +147,54 @@ run_case term_during_open "$REPLACED"'; safe_remove_backup_bundle() { /bin/rm -r
 [[ "$(status_of term_during_open)" == 143 ]] || fail "deferred TERM not honoured: status $(status_of term_during_open)"
 [[ "$(opens term_during_open | wc -l | tr -d ' ')" == 1 ]] || fail "TERM during open: $(opens term_during_open)"
 
+# bugs-mise-a-jour-04: a perso build (Info.plist GoalongPersoBuiltAt) must prove its start: health.json written by
+# the app this run opened, with a live Goalong pid and the bundle's build time. "Goalong" is APP_PID.
+PERSO='/bin/mkdir -p "$TARGET/Contents" "$HOME/Library/Application Support/LocalHistory/PersoUpdate"
+  printf "%s\n" "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" "<plist version=\"1.0\"><dict><key>GoalongPersoBuiltAt</key><string>B1</string></dict></plist>" >"$TARGET/Contents/Info.plist"
+  HEALTH="$HOME/Library/Application Support/LocalHistory/PersoUpdate/health.json"
+  write_health() { printf "%s%s%s\n" "{\"pid\":" "$1" ",\"builtAt\":\"B1\"}" >"$HEALTH"; }
+  safe_remove_backup_bundle() { /bin/rm -rf "$1"; }; remove_verified_legacy_bundle() { return 1; }
+  /usr/bin/pgrep() { kill -0 "$APP_PID" 2>/dev/null && echo "$APP_PID"; }
+  /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
+  export GOALONG_INSTALL_HEALTH_TENTHS=5 GOALONG_QUIT_WAIT_TENTHS=2'
+perso_open() { # what the fake open of the new app does: BODY run once the open is logged
+  echo '/usr/bin/open() { local seen; seen="$(/bin/cat "${@: -1}/marker")"; echo "open $* marker=$seen" >>"$OPEN_LOG"; [[ "$seen" != new ]] || { '"$1"'; }; return 0; }'
+}
+
+# 14. The new app writes its health: installation finalized, backup removed.
+start_app; export APP_PID
+run_case perso_healthy "$REPLACED; $PERSO; $(perso_open 'write_health "$APP_PID"'); complete_installation"
+[[ "$(status_of perso_healthy)" == 0 ]] || fail "healthy perso install failed: $(cat "$TEST_ROOT/perso_healthy/out.log")"
+[[ "$(marker_of perso_healthy)" == new && ! -d "$TEST_ROOT/perso_healthy/Applications/Goalong History.app.bak" ]] || fail "healthy perso install not finalized"
+kill "$APP_PID"
+
+# 15. A stale health (live pid, same build) from before the open does not count; no new health, the new app
+#     quits on SIGTERM: old app put back and opened, never SIGKILL.
+start_app; export APP_PID
+run_case perso_stale "$REPLACED; $PERSO"'; write_health "$APP_PID"
+  /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; : >"$HOME/quit"; return 0; }
+  /usr/bin/pgrep() { [[ ! -e "$HOME/quit" ]] && echo "$APP_PID"; }'"; $(perso_open ':'); complete_installation"
+[[ "$(status_of perso_stale)" == 1 ]] || fail "stale health accepted: $(cat "$TEST_ROOT/perso_stale/out.log")"
+[[ "$(marker_of perso_stale)" == old ]] || fail "unproven perso install kept the new app: $(cat "$TEST_ROOT/perso_stale/out.log"; opens perso_stale)"
+[[ "$(opens perso_stale | tail -n 1)" == *"marker=old" ]] || fail "old app not reopened: $(opens perso_stale)"
+grep -F KILLED "$TEST_ROOT/perso_stale/out.log" >/dev/null && fail "unhealthy new app force-killed"
+kill "$APP_PID"
+
+# 16. The new app dies at start (no Goalong left, no health): old app put back and opened.
+run_case perso_died "$REPLACED; $PERSO; APP_PID=99999999; GOALONG_INSTALL_HEALTH_TENTHS=200; $(perso_open ':'); complete_installation"
+[[ "$(status_of perso_died)" == 1 && "$(marker_of perso_died)" == old ]] || fail "dead new app kept: $(cat "$TEST_ROOT/perso_died/out.log")"
+[[ "$(opens perso_died | tail -n 1)" == *"marker=old" ]] || fail "old app not reopened after a dead start: $(opens perso_died)"
+
+# 17. No health and the new app refuses to quit (a protection): it keeps running, never forced; the backup stays
+#     beside it and the old app is never put back under it.
+start_app; export APP_PID
+run_case perso_stays "$REPLACED; $PERSO; $(perso_open ':'); complete_installation"
+[[ "$(status_of perso_stays)" == 1 && "$(marker_of perso_stays)" == new ]] || fail "running new app replaced: $(cat "$TEST_ROOT/perso_stays/out.log")"
+[[ -d "$TEST_ROOT/perso_stays/Applications/Goalong History.app.bak" ]] || fail "backup removed although the start was never proven"
+[[ "$(opens perso_stays | wc -l | tr -d ' ')" == 1 ]] || fail "old app opened over the running new one: $(opens perso_stays)"
+grep -F KILLED "$TEST_ROOT/perso_stays/out.log" >/dev/null && fail "refusing new app force-killed"
+kill "$APP_PID"
+
 # 9. No plain `open` left in the installer.
 grep -nE '/usr/bin/open( |$)' "$SCRIPT_DIR/install_from_source.sh" | grep -v -- '-g -j' && fail "foreground open in installer"
 echo "test_install_relaunch: OK"

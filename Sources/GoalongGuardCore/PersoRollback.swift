@@ -19,7 +19,9 @@ public struct PersoRollback {
     public var settleOpen: () -> Void = {}
     /// Live pids running from the target's executable (the parent excluded or not: it is filtered here).
     public var candidates: () -> [Int32]
-    public var holdLease: (Int32) -> Void
+    /// False when the lease could not be written: that candidate is not stopped on this scan (the guard would
+    /// reopen it); it is tried again, and after `maximumScans` the rollback gives up (`candidateSurvived`).
+    public var holdLease: (Int32) -> Bool
     public var terminate: (Int32) -> Void
     public var isAlive: (Int32) -> Bool
     public var restore: () -> Bool
@@ -36,7 +38,7 @@ public struct PersoRollback {
     /// Scans before giving up on a candidate that does not die.
     public var maximumScans = 100
 
-    public init(parentPID: Int32, candidates: @escaping () -> [Int32], holdLease: @escaping (Int32) -> Void,
+    public init(parentPID: Int32, candidates: @escaping () -> [Int32], holdLease: @escaping (Int32) -> Bool,
                 terminate: @escaping (Int32) -> Void, isAlive: @escaping (Int32) -> Bool, restore: @escaping () -> Bool,
                 parentAlive: @escaping () -> Bool, endLease: @escaping () -> Void,
                 report: @escaping (_ restored: Bool) -> Void, open: @escaping () -> Int32?) {
@@ -55,7 +57,7 @@ public struct PersoRollback {
             } else {
                 quiet = 0
                 // The guard must not reopen the candidate we stop: the lease names it first.
-                for pid in live { holdLease(pid); terminate(pid) }
+                for pid in live where holdLease(pid) { terminate(pid) }
             }
             scans += 1
             if scans > maximumScans { endLease(); report(false); return .candidateSurvived }

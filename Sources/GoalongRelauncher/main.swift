@@ -50,9 +50,12 @@ let guardFiles: GuardFiles? = persoRequest == nil ? nil : {
                                        channel: info?[GuardIdentity.channelKey] as? String) else { return nil }
     return GuardFiles(directory: identity.blockingDirectory(base: GuardIdentity.applicationSupportBase))
 }()
-func holdLease(pid: Int32) {
-    guard let request = persoRequest else { return }
-    guardFiles?.holdPersoLease(pid: pid, request: request, now: Date().timeIntervalSince1970) // wall: guard protocol (spec K §4, wall)
+/// False only when the guard is armed and the lease could not be written: the guard would then reopen the
+/// candidate stopped under it (bugs-mise-a-jour-06). A guard that is not armed needs no lease.
+@discardableResult func holdLease(pid: Int32) -> Bool {
+    guard let request = persoRequest, let files = guardFiles else { return true }
+    if files.holdPersoLease(pid: pid, request: request, now: Date().timeIntervalSince1970) { return true } // wall: guard protocol (spec K §4, wall)
+    return !(files.markerExists() || files.continuityExists())
 }
 func endLease() {
     guard let request = persoRequest else { return }

@@ -91,7 +91,14 @@ public struct PersoStartupHealth: Equatable, Sendable {
 public struct UpdateRelaunchOwnership: Equatable, Sendable {
     public enum Owner: Equatable, Sendable { case sparkle, perso }
     public private(set) var owner: Owner?
+    /// bugs-mise-a-jour-05: « Plus tard » on an update already extracted (Sparkle's installing stage) ends the
+    /// session (`sessionInProgress` false) but its installer stays, and installs when the app quits. A perso swap
+    /// quits the app too: Sparkle would then install over the swapped bundle. Kept until this process ends.
+    public private(set) var sparkleInstallsOnQuit = false
     public init() {}
+
+    /// The user postponed an update that Sparkle already holds ready to install on quit.
+    public mutating func sparkleDeferredInstall() { sparkleInstallsOnQuit = true }
 
     public var isRelaunching: Bool { owner != nil }
 
@@ -107,7 +114,7 @@ public struct UpdateRelaunchOwnership: Equatable, Sendable {
     /// feed, downloads, waits for a choice or for an install on quit) has no refusal left once the swap is done,
     /// so the swap never starts while one is open. The caller refuses the request; `make perso` can run again.
     @discardableResult public mutating func markPerso(sparkleCycleOpen: Bool) -> Bool {
-        if owner == nil, sparkleCycleOpen { return false }
+        if owner == nil, sparkleCycleOpen || sparkleInstallsOnQuit { return false }
         return mark(.perso)
     }
 

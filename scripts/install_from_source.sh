@@ -909,8 +909,51 @@ main() {
   printf '\nInstalled from source at %s\n' "$TARGET_APP"
 }
 
+# bugs-mise-a-jour-04: `open` returning 0 is not a start. A perso build (Info.plist GoalongPersoBuiltAt) writes
+# PersoUpdate/health.json {pid, builtAt} once applicationDidFinishLaunching completed, never after a fatal start.
+# The transaction: the health file is removed before the open, so only the app this run opened can prove itself
+# (a live Goalong pid and the installed bundle's build time). Other builds write no health: `open` stays the proof.
+INSTALL_HEALTH_FILE_REL="Library/Application Support/LocalHistory/PersoUpdate/health.json"
+installed_built_at() {
+  /usr/bin/plutil -extract GoalongPersoBuiltAt raw -o - "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true
+}
+
+# Argument: the bundle build time. 0: the new app proved its start. 1: no Goalong process is left (it died, or never started).
+# 2: a Goalong still runs without health at the deadline (same 45 s as the perso relauncher).
+await_install_health() {
+  local built_at="$1" health="$HOME/$INSTALL_HEALTH_FILE_REL" waited=0 limit="${GOALONG_INSTALL_HEALTH_TENTHS:-450}"
+  local seen=0 pids pid built
+  while (( waited < limit )); do
+    pids="$(/usr/bin/pgrep -x "$EXECUTABLE_NAME" 2>/dev/null || true)"
+    pid="$(/usr/bin/plutil -extract pid raw -o - "$health" 2>/dev/null || true)"
+    built="$(/usr/bin/plutil -extract builtAt raw -o - "$health" 2>/dev/null || true)"
+    if [[ -n "$pid" && "$built" == "$built_at" ]] && grep -Fx -- "$pid" <<<"$pids" >/dev/null; then return 0; fi
+    if [[ -n "$pids" ]]; then seen=1
+    # Gone after it was seen, or never seen within 10 s of an accepted open: it did not start.
+    elif (( seen == 1 || waited >= 100 )); then return 1; fi
+    /bin/sleep 0.1
+    waited=$((waited + 1))
+  done
+  return 2
+}
+
+# The new app gave no proof: ask it to quit like the old one (SIGTERM, never SIGKILL: a protection may refuse it).
+# 0 when no Goalong is left, so the old app can be put back without a live candidate on top of it.
+stop_unhealthy_install() {
+  local waited=0 limit="${GOALONG_QUIT_WAIT_TENTHS:-80}"
+  /usr/bin/pkill -TERM -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
+  while (( waited < limit )); do
+    /usr/bin/pgrep -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || return 0
+    /bin/sleep 0.1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
 # The new app is in place: open it before the old copy is dropped. If it cannot be opened, exit 1: the cleanup
-# puts the old app back and opens it (L1L2-05).
+# puts the old app back and opens it (L1L2-05). A perso build must also prove its start (bugs-mise-a-jour-04):
+# until then the backup and the duty to reopen stay; without proof the old app comes back, unless the new one
+# refuses to quit (then it keeps running and the backup is kept for the next installation).
 # F6: a signal during the open is deferred until the replacement is final, so the cleanup never puts the old
 # bundle back under the new app that is already running.
 complete_installation() {
@@ -918,10 +961,29 @@ complete_installation() {
   trap 'DEFERRED_SIGNAL=130' INT
   trap 'DEFERRED_SIGNAL=143' TERM
   trap 'DEFERRED_SIGNAL=129' HUP
+  local built_at health_status=0
+  built_at="$(installed_built_at)"
+  [[ -z "$built_at" ]] || /bin/rm -f -- "$HOME/$INSTALL_HEALTH_FILE_REL"
   if ! relaunch_installed_app; then
     trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
     echo "The new Goalong could not be opened; the previous version is put back." >&2
     exit 1
+  fi
+  if [[ -n "$built_at" ]]; then
+    await_install_health "$built_at" || health_status=$?
+    if (( health_status == 2 )) && ! stop_unhealthy_install; then
+      # Never forced: the new app stays, the old copy is kept beside it (the next installation removes it).
+      REPLACEMENT_ACTIVE=0
+      trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+      echo "The new Goalong did not confirm its start and did not quit; it keeps running. The previous copy stays at $BACKUP_APP." >&2
+      exit 1
+    fi
+    if (( health_status != 0 )); then
+      QUIT_DONE=1
+      trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+      echo "The new Goalong did not confirm its start; the previous version is put back." >&2
+      exit 1
+    fi
   fi
   finalize_replacement
   trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP

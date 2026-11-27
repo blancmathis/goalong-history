@@ -176,4 +176,14 @@ final class PersoGuardLeaseTests: XCTestCase {
         sparkle.mark(.sparkle)
         XCTAssertFalse(sparkle.markPerso(sparkleCycleOpen: false), "one installation at a time (L1L2-08)")
     }
+
+    /// bugs-mise-a-jour-05: « Plus tard » on an extracted update closes the Sparkle session, but its installer
+    /// installs on quit; a perso swap (which quits) stays refused after the session ended.
+    func testPersoSwapNeverStartsOverASparkleInstallWaitingForTheQuit() {
+        var ownership = UpdateRelaunchOwnership()
+        ownership.sparkleDeferredInstall()
+        XCTAssertFalse(ownership.markPerso(sparkleCycleOpen: false), "Sparkle installs on quit: no swap")
+        XCTAssertFalse(ownership.isRelaunching)
+        XCTAssertTrue(ownership.mark(.sparkle), "Sparkle's own relaunch stays possible")
+    }
 }

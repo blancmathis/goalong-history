@@ -188,7 +188,8 @@ import AppleScreenTime
         /// `make perso` self-update, just before the swap: quit like a Sparkle relaunch (no password).
         /// False while Sparkle relaunches for its own update (L1L2-08), or while a Sparkle cycle is open: one that
         /// passed `mayPerform` could still install after the swap (bugs-mise-a-jour-05). `sessionInProgress` stays
-        /// true until the cycle ends, install-on-quit included (`SPUUpdater.m:824,877`).
+        /// true until the cycle ends (`SPUUpdater.m:824,877`); « Plus tard » on an extracted update ends it while the
+        /// installer waits for the quit, so the ownership remembers that one.
         func acquirePersoRelaunch() -> Bool {
             let sparkleBusy = checkQueue.cycleOpen || updaterController?.updater.sessionInProgress == true
             return relaunchOwnership.markPerso(sparkleCycleOpen: sparkleBusy)
@@ -743,6 +744,8 @@ import AppleScreenTime
             @unknown default: recorded = .unknown
             }
             SupportDiagnostics.shared.record(.updateChoice, component: .updates, values: [.userChoice: .state(recorded)])
+            // Its installer keeps running and installs on quit, after the session ended (bugs-mise-a-jour-05).
+            if choice == .dismiss, state.stage == .installing { relaunchOwnership.sparkleDeferredInstall() }
             if choice == .skip {
                 // Sparkle will intentionally stop offering this build. Remove the dashboard badge
                 // at the same time so it never advertises a version the updater will now ignore.
