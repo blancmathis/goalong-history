@@ -90,6 +90,8 @@ import LocalHistoryCore
         var isRoutine: Bool { itemID == nil && slotID != nil }
     }
     @Published var dayAction: DayAction?
+    /// T-057 M1 (mockup): the next step of the day for the « Plan du jour » row. Not fed yet; nil hides the row.
+    @Published var dayPlanSummary: DayPlanSummary?
     @Published var waitingProcessCount = 0
     @Published var reviewProcessCount = 0
     @Published var focusAvailable = false
@@ -152,6 +154,8 @@ import LocalHistoryCore
         var pauseMinutes: Int? = nil
         /// D1b: a session of the page that « + 15 min » prolongs in one click.
         var extendable = false
+        /// A running Jev watch (« Surveillance »): shown with its own eye and what Jev does, never as a block.
+        var jevWatch: String? = nil
     }
     @Published var blockingEnabled = false
     @Published var live: [LiveItem] = []
@@ -441,6 +445,9 @@ import LocalHistoryCore
 
     func openDayPlan() { onOpenSection(.concentration) }
 
+    /// « Réessayer » under « Journée indisponible »: reads the day again; the message stays until a read succeeds.
+    func retryDay() { refresh() }
+
     func startFocus() {
         refreshRuntimeState()
         guard modules.isEnabled(.concentration) else { openModulesSettings(); return }
@@ -608,6 +615,10 @@ import LocalHistoryCore
             }
             var item = LiveItem(id: rule.id, title: rule.summary, detail: rule.stateText(now: now), lock: rule.lock, stop: stop,
                                 pauses: rule.pauseBudget(blocking: controller))
+            if let part = rule.jev {
+                item.jevWatch = Self.jevWatchText(part.settings)
+                if rule.lists.isEmpty && rule.red == nil { item.title = "Jev surveille" }
+            }
             if let controller {
                 let ranges = Set(rule.lists.flatMap(\.rangeIDs))
                 let blocks = controller.activeBlocks.filter { if case .program(let id) = $0.origin { return ranges.contains(id) }; return false }
@@ -631,6 +642,13 @@ import LocalHistoryCore
             Self.offerPause(&item, blocks: [block], controller: controller)
             live.append(item)
         }
+    }
+
+    /// What a running Jev watch does, in the member's words: « Rappel après 2 min hors travail, écran rouge après 5 min ».
+    static func jevWatchText(_ settings: JevInterventionSettings) -> String {
+        let reminder = settings.stages.first.map { "Rappel après \($0.afterMinutes) min hors travail" } ?? "Rappels hors travail"
+        guard settings.effectsEnabled, let last = settings.stages.last else { return reminder }
+        return "\(reminder), écran rouge après \(last.afterMinutes) min"
     }
 
     /// The first list of `blocks` with a pause to take now, as on the page (budget left, no pause running).

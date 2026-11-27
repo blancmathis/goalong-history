@@ -15,6 +15,10 @@ struct GoalongActivityHeader: View {
     var onToday: () -> Void
     var onReturn: () -> Void
     var onShare: () -> Void
+    /// T-057 M1: « Plan du jour » and « Bilan » under the period controls. Nil = not shown.
+    var onPlan: (() -> Void)? = nil
+    var onRecap: (() -> Void)? = nil
+    var endOfDayHint: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -37,6 +41,9 @@ struct GoalongActivityHeader: View {
                     period
                     dateControls
                 }
+            }
+            if onPlan != nil || onRecap != nil {
+                ActivityQuickAccessBar(onPlan: onPlan, onRecap: onRecap, endOfDayHint: endOfDayHint)
             }
             if let previous = selection.returnContext {
                 Button(action: onReturn) {
