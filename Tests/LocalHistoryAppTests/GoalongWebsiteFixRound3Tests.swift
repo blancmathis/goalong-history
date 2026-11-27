@@ -205,5 +205,43 @@ final class GoalongWebsiteFixRound3Tests: XCTestCase {
         XCTAssertNotNil(model.catalog)
         XCTAssertFalse(model.loading)
     }
+
+    /// bugs-concurrence-03: a late, failed fallback of an older day must not erase the newer day's catalog.
+    @MainActor func testOldFailedFallbackKeepsNewerDayCatalog() async throws {
+        let (defaults, root, _) = try env()
+        let bytes = catalogBytes
+        let gate = DispatchSemaphore(value: 0), fallbackStarted = DispatchSemaphore(value: 0)
+        let dayA = DayBox()
+        let model = GoalongWebsiteSharingModel(autoSender: GoalongWebsiteAutoSender(defaults: defaults, root: root, sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } }), root: root,
+            catalogLoader: { _, day, includeWebsites in
+                guard day == dayA.value else { return try GoalongSiteSelectionCatalog(payload: bytes) }
+                if includeWebsites { throw GoalongSiteExportError.invalid("Website details are unavailable") }
+                fallbackStarted.signal()
+                _ = gate.wait(timeout: .now() + 10)
+                throw GoalongSiteExportError.invalid("No saved Screen Time")
+            },
+            sourceConsent: { _ in true }, hiddenWebsites: noSite, hiddenApplications: { { _, _ in false } })
+        dayA.value = model.draft.day
+        model.draft.includeWebsites = true
+        let readA = Task { await model.loadCatalog() }
+        while fallbackStarted.wait(timeout: .now()) == .timedOut { await Task.yield() }
+        model.draft.date = model.draft.date.addingTimeInterval(-86_400)
+        await model.loadCatalog()
+        XCTAssertNotNil(model.catalog)
+        gate.signal()
+        await readA.value
+        XCTAssertNotNil(model.catalog, "day B keeps its catalog")
+        XCTAssertNil(model.error, "day A's error is not shown on day B")
+        XCTAssertFalse(model.loading)
+    }
+}
+
+private final class DayBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var day = ""
+    var value: String {
+        get { lock.lock(); defer { lock.unlock() }; return day }
+        set { lock.lock(); day = newValue; lock.unlock() }
+    }
 }
 #endif

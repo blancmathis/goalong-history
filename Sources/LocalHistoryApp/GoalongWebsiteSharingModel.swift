@@ -239,8 +239,12 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             }
         } catch {
             guard generation == ticket else { return }
-            if snapshot.includeWebsites, let fallback = try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value {
-                guard generation == ticket else { return }
+            let fallback = snapshot.includeWebsites
+                ? try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value
+                : nil
+            // A newer read may own the sheet now: an old fallback, failed or not, must not touch its catalog.
+            guard generation == ticket else { return }
+            if let fallback {
                 catalog = fallback.removingApplications(where: { hiddenApplications()($0, $1) })
                 loadedIncludeWebsites = false
                 configuringPresentation = true
