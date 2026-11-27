@@ -478,8 +478,11 @@ private struct RedScreenChallenge: Identifiable {
     var stop: ((String) -> RedScreenStopResult)?
     var cancel: (() -> Void)?
     var onClose: () -> Void
+    /// Derives the password off the main actor before `stop` runs (T-057 C4). Nil in tests.
+    var deriving: BlockingController? = BlockingRuntime.shared.controller
     @State private var password = ""
     @State private var message: String?
+    @State private var busy = false
     @FocusState private var passwordFocused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -492,7 +495,7 @@ private struct RedScreenChallenge: Identifiable {
             HStack {
                 Spacer()
                 Button("Annuler") { if let cancel { cancel() } else { controller.cancelStop() }; onClose() }.buttonStyle(LHSecondaryButtonStyle()).keyboardShortcut(.cancelAction)
-                Button("Arrêter", action: submit).buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(password.isEmpty)
+                Button("Arrêter", action: submit).buttonStyle(LHPrimaryButtonStyle()).keyboardShortcut(.defaultAction).disabled(password.isEmpty || busy)
             }
         }.font(.system(size: 13)).padding(28).frame(width: 460)
             .background(LHTheme.pageBackground).foregroundStyle(LHTheme.text)
@@ -501,8 +504,18 @@ private struct RedScreenChallenge: Identifiable {
     private func submit() {
         // Enter in an empty field: nothing is sent, no try is counted (T-063).
         guard !password.isEmpty else { message = BlockingController.emptyPasswordText; return }
-        let result = stop?(password) ?? controller.stopActiveRanges(password: password)
+        guard !busy else { return }
+        let typed = password
         password = ""
+        guard let deriving else { show(stop?(typed) ?? controller.stopActiveRanges(password: typed)); return }
+        busy = true
+        Task { @MainActor in
+            let result = await deriving.withPreparedPassword(typed) { stop?(typed) ?? controller.stopActiveRanges(password: typed) }
+            busy = false
+            show(result)
+        }
+    }
+    private func show(_ result: RedScreenStopResult) {
         switch result {
         case .stopped: onClose()
         case .wrongText: message = "Texte différent."

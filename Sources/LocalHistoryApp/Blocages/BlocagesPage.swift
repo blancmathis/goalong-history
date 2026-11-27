@@ -517,7 +517,7 @@ struct BlocagesFoldView<Content: View>: View {
                 BlockingPasswordPrompt(title: "Éteindre cette règle ?", message: "Son arrêt demande le mot de passe de blocage.",
                                        actionTitle: "Éteindre",
                                        submit: { BlockRuleSwitchAction.turnOff(rule, proof: .password($0), blocking: blocking, braise: braise) },
-                                       onClose: { asking = nil })
+                                       onClose: { asking = nil }, deriving: blocking)
                 .goalongControls()
             }
         }
