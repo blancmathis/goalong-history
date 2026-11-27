@@ -165,6 +165,10 @@ struct BlockingDocument: Codable, Equatable {
     var pauseMigration: Int?
     /// Nil outside a zone change, and in a file of an older build.
     var usageDayCarry: BlockUsageDayCarry?
+    /// Top-level keys this build does not know (a newer build wrote them), written back unchanged (T-057
+    /// bugs-donnees-04): after a rollback to an older build, the next build still finds its pauses used and its migrations
+    /// done. Nil when there is none.
+    var unknownKeys: [String: BlockingJSONValue]?
 
     enum CodingKeys: String, CodingKey {
         case version, lists, sessions, usage, freeze, clock, programSkips, heldPrograms, usageHistory, passwordLock
@@ -194,6 +198,69 @@ struct BlockingDocument: Codable, Equatable {
         pauses = try c.decodeIfPresent([UUID: PauseUsage].self, forKey: .pauses)
         pauseMigration = try c.decodeIfPresent(Int.self, forKey: .pauseMigration)
         usageDayCarry = try? c.decodeIfPresent(BlockUsageDayCarry.self, forKey: .usageDayCarry)
+        let all = try decoder.container(keyedBy: BlockingJSONKey.self)
+        var unknown: [String: BlockingJSONValue] = [:]
+        for key in all.allKeys where CodingKeys(stringValue: key.stringValue) == nil {
+            unknown[key.stringValue] = try all.decode(BlockingJSONValue.self, forKey: key)
+        }
+        unknownKeys = unknown.isEmpty ? nil : unknown
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: BlockingJSONKey.self)
+        func key(_ known: CodingKeys) -> BlockingJSONKey { BlockingJSONKey(known.stringValue) }
+        try c.encode(version, forKey: key(.version))
+        try c.encode(lists, forKey: key(.lists))
+        try c.encode(sessions, forKey: key(.sessions))
+        try c.encodeIfPresent(usage, forKey: key(.usage))
+        try c.encodeIfPresent(freeze, forKey: key(.freeze))
+        try c.encodeIfPresent(clock, forKey: key(.clock))
+        try c.encodeIfPresent(programSkips, forKey: key(.programSkips))
+        try c.encodeIfPresent(heldPrograms, forKey: key(.heldPrograms))
+        try c.encodeIfPresent(usageHistory, forKey: key(.usageHistory))
+        try c.encodeIfPresent(passwordLock, forKey: key(.passwordLock))
+        try c.encodeIfPresent(pauses, forKey: key(.pauses))
+        try c.encodeIfPresent(pauseMigration, forKey: key(.pauseMigration))
+        try c.encodeIfPresent(usageDayCarry, forKey: key(.usageDayCarry))
+        // A known key always wins: an unknown value never replaces what this build writes.
+        for (name, value) in unknownKeys ?? [:] where CodingKeys(stringValue: name) == nil {
+            try c.encode(value, forKey: BlockingJSONKey(name))
+        }
+    }
+}
+
+struct BlockingJSONKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+    init(_ name: String) { stringValue = name }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+
+/// Any JSON value, kept as read (`BlockingDocument.unknownKeys`).
+indirect enum BlockingJSONValue: Codable, Equatable {
+    case null, bool(Bool), int(Int64), double(Double), string(String), array([BlockingJSONValue]), object([String: BlockingJSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let value = try? c.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? c.decode(Int64.self) { self = .int(value) }
+        else if let value = try? c.decode(Double.self) { self = .double(value) }
+        else if let value = try? c.decode(String.self) { self = .string(value) }
+        else if let value = try? c.decode([BlockingJSONValue].self) { self = .array(value) }
+        else { self = .object(try c.decode([String: BlockingJSONValue].self)) }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let value): try c.encode(value)
+        case .int(let value): try c.encode(value)
+        case .double(let value): try c.encode(value)
+        case .string(let value): try c.encode(value)
+        case .array(let value): try c.encode(value)
+        case .object(let value): try c.encode(value)
+        }
     }
 }
 
