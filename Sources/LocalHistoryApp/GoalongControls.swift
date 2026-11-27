@@ -356,10 +356,13 @@
         var accessibilityLabel: String?
         var identifier: String?
         var trailing: String?
+        /// A change of this number puts the cursor in the field (⌘F).
+        var focusRequest = 0
         @FocusState private var focused: Bool
 
         init(_ prompt: String, text: Binding<String>, accessibilityLabel: String? = nil,
-             identifier: String? = nil, trailing: String? = nil) {
+             identifier: String? = nil, trailing: String? = nil, focusRequest: Int = 0) {
+            self.focusRequest = focusRequest
             self.prompt = prompt
             _text = text
             self.accessibilityLabel = accessibilityLabel
@@ -392,6 +395,7 @@
                 }
             }
             .modifier(GoalongFieldSurface(focused: focused, focus: { focused = true }))
+            .onChange(of: focusRequest) { _ in focused = true }
         }
     }
 

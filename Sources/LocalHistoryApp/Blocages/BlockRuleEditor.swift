@@ -76,11 +76,11 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     static let alwaysLockedReason = "Une règle « Toujours » verrouillée ne s’arrêterait jamais."
     /// A range typed by hand in « Horaires » with the form of « Toujours » (every day, 00:00 → 24:00) and « Verrouillé ».
     static let hoursAlwaysLockedReason = "Tous les jours, de 00:00 à 24:00, c’est une règle « Toujours » : verrouillée, elle ne s’arrêterait jamais. Changez les heures ou le niveau d’arrêt."
-    static let focusLockReason = "Une séance Pomodoro ou avec intention s’arrête librement ou se verrouille, sans autre niveau."
-    static let focusScreenReason = "Une séance Pomodoro ou avec intention ne porte pas encore l’écran rouge ni la luminosité."
+    static let focusLockReason = "Une séance de travail s’arrête librement ou se verrouille, sans autre niveau. Pour le mot de passe, choisissez « Blocage ponctuel »."
+    static let focusScreenReason = "Une séance de travail ne porte pas l’écran rouge ni la luminosité. Pour eux, choisissez « Blocage ponctuel »."
     static let freezeScreenReason = "Tout le Mac couvre déjà l’écran."
     static let freezeLockReason = "Tout le Mac est toujours verrouillé."
-    static let wholeMacReason = "Tout le Mac ne se bloque que pendant une séance en Continu, sans intention."
+    static let wholeMacReason = "Tout le Mac ne se bloque que dans un « Blocage ponctuel »."
     /// A session started without an intention still needs one for Concentration.
     static let defaultIntent = "Séance"
 
@@ -98,6 +98,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
     var onClose: () -> Void
     /// Where « Enregistrer pour plus tard » and « Relancer » keep the sessions; renders give their own.
     let preparedStore: PreparedSessionStore
+    @State private var sessionMode: SessionMode
 
     @State private var trigger: Trigger
     @State private var draft: BlockRuleDraft
@@ -131,7 +132,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     init(subject: Subject, blocking: BlockingController?, braise: BraiseController?, focus: ConcentrationController?,
          now: Date? = nil, trigger: Trigger? = nil, draft startDraft: BlockRuleDraft? = nil, maxHeight: CGFloat? = nil, sessionDraft: FocusComposerDraft? = nil,
-         preparedStore: PreparedSessionStore = .shared, onOpenRecording: @escaping () -> Void = {},
+         preparedStore: PreparedSessionStore = .shared, sessionMode startMode: SessionMode? = nil, onOpenRecording: @escaping () -> Void = {},
          onOpenWork: @escaping () -> Void = {}, onPrepareRed: @escaping () -> Void = {}, onClose: @escaping () -> Void) {
         self.subject = subject
         self.blocking = blocking
@@ -172,6 +173,16 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         initial = start
         _trigger = State(initialValue: start.trigger)
         _sessionDraft = State(initialValue: start.session)
+        // T-057 idée 2: the app opens a new session on the last type used (« Séance de travail » the first time). A given
+        // draft (a render, a prepared session, a preset) opens on the type it already implies.
+        var firstMode = SessionMode.implied(kind: start.session.kind, intent: start.session.intent, focusAvailable: focus != nil)
+        if sessionDraft == nil, trigger == nil, startDraft == nil {
+            switch subject {
+            case .new, .session: firstMode = focus == nil ? .block : SessionMode.remembered()
+            default: break
+            }
+        }
+        _sessionMode = State(initialValue: startMode ?? firstMode)
         _draft = State(initialValue: start.draft)
         _minutes = State(initialValue: start.minutes)
         _otherDuration = State(initialValue: !Self.shortcuts.contains(start.minutes))
@@ -287,7 +298,14 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     private var intent: String { sessionDraft.intent.trimmingCharacters(in: .whitespacesAndNewlines) }
     /// Pomodoro, or an intention: the session runs in Concentration. Continu without an intention is a block.
-    var usesFocus: Bool { focus != nil && (sessionDraft.kind == .pomodoro || !intent.isEmpty) }
+    var usesFocus: Bool {
+        guard focus != nil else { return false }
+        return sessionMode == .work
+    }
+    /// The choice as a binding: « Blocage ponctuel » has no Pomodoro, so choosing it puts the rhythm back to Continu.
+    private var sessionModeChoice: Binding<SessionMode> {
+        Binding(get: { sessionMode }, set: { sessionMode = $0; if $0 == .block { sessionDraft.kind = .free } })
+    }
     private var freezing: Bool { trigger == .session && wholeMac && !usesFocus }
     private var lists: [BlockList] { blocking?.lists ?? [] }
     private var chosenIDs: [UUID] { lists.map(\.id).filter(draft.listIDs.contains) }
@@ -646,6 +664,12 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                 GoalongNote("Une séance est déjà en cours. Terminez-la pour en lancer une autre.")
                     .accessibilityIdentifier("block-rule-session-running")
             }
+            if focus != nil {
+                row("Type") {
+                    SessionModeChoice(selection: sessionModeChoice, blockUnavailable: nil, workUnavailable: nil)
+                }
+            }
+            if usesFocus {
             row("Rythme") {
                 VStack(alignment: .leading, spacing: 10) {
                     GoalongSegmentedControl("Rythme", selection: $sessionDraft.kind, options: [.free, .pomodoro],
@@ -657,18 +681,18 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
                     if sessionDraft.kind == .pomodoro { phases }
                 }
             }
+            }
             row("Pendant") { durationRow }
-            if focus != nil {
+            if focus != nil, usesFocus {
                 row("Intention") {
                     VStack(alignment: .leading, spacing: 6) {
                         TextField("", text: $sessionDraft.intent)
                             .textFieldStyle(GoalongFieldStyle())
-                            .goalongPlaceholder("Facultatif. Ex. : relire le contrat", isEmpty: sessionDraft.intent.isEmpty)
+                            .goalongPlaceholder("Facultative. Sinon la séance s’appelle « Séance »", isEmpty: sessionDraft.intent.isEmpty)
                             .accessibilityLabel("Intention, facultative")
                             .accessibilityIdentifier("concentration-intent")
                             .frame(minHeight: 32)
-                        help(usesFocus ? "Avec une intention ou en Pomodoro, la séance a son minuteur, ses repos et son bilan."
-                                       : "Sans intention, en Continu, c’est un blocage simple.")
+                        help("Ex. : relire le contrat. Elle titre la séance et son bilan.")
                     }
                 }
             }
@@ -1242,7 +1266,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         guard trigger == .session else { return nil }
         if usesFocus {
             if focus?.currentSession != nil { return nil }
-            return focusEnd(now: now).map { "Jusqu’à \(BlockingFormat.time($0))" }
+            return focusEnd(now: now).map { workSummary(end: $0) } ?? workSummary(end: nil)
         }
         if watchOnly {
             let plan = blockPlan(at: now)
@@ -1259,6 +1283,21 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
         let plan = blockPlan(at: now)
         return plan.startsLater ? BlockingFormat.period(from: plan.start, to: plan.end, now: now).capitalizedFirst
                                 : BlockingFormat.until(plan.end, now: now).capitalizedFirst
+    }
+
+    /// « Séance de travail » in one line: the intention, the timer and the end.
+    private func workSummary(end: Date?) -> String {
+        let name = intent.isEmpty ? Self.defaultIntent : "« \(intent) »"
+        let timer: String
+        if sessionDraft.kind == .pomodoro {
+            let phases = sessionDraft.mode
+            timer = "Pomodoro \(phases.workMinutes) + \(phases.shortBreakMinutes) min"
+        } else if case .open = sessionDraft.free {
+            timer = "minuteur sans fin"
+        } else {
+            timer = "minuteur \(minutes) min"
+        }
+        return ["\(name)", timer, end.map { "jusqu’à \(BlockingFormat.time($0))" }].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var sessionHoldsScreen: Bool { braise != nil && screenUnavailable == nil && draft.hasRedPart }
@@ -1292,6 +1331,7 @@ struct ObservedOptional<Object: ObservableObject, Content: View>: View {
 
     /// Every session started from this window becomes « la dernière séance ».
     private func recordLast() {
+        SessionMode.remember(sessionMode)
         preparedStore.recordLast(preparedSession(id: prepared?.id ?? UUID(), name: prepared?.name ?? ""))
     }
 

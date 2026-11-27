@@ -19,6 +19,11 @@ import AppKit
     @ObservedObject private var modules = GoalongModuleStore.shared
     @ObservedObject private var workContext = JevWorkContextStore.shared
     @State private var search = ""
+    /// T-057 idée 8: ⌘F focuses the field; a result scrolls to its item and lights it for a moment.
+    @State private var searchFocusToken = 0
+    @State private var highlighted: String?
+    @State private var scrollRequest: (id: String, serial: Int)?
+    @State private var scrollSerial = 0
     @State private var showingDeveloperProjects = false
     @StateObject private var system = GoalongSystemSourcesModel()
     @State private var pendingPrivate = false
@@ -44,7 +49,53 @@ import AppKit
             }
         }
     }
+    /// Where an index entry lives: the tag of the group that holds its control. Nil = a command with its own action.
+    private static func target(of entry: SettingsSearchEntry) -> String? {
+        switch entry.id {
+        case "storage-retention", "storage-erase": return "storage"
+        case "perm-calendar": return "permissions"
+        case "apps-exclude": return "applications"
+        case "rec-idle": return "rec-activity"
+        case "rec-private": return "rec-data"
+        case "home-login", "home-motion", "home-keyboard", "chatgpt", "privacy-stop": return entry.id
+        case "cmd-pause": return "privacy-stop"
+        case "site-daily": return "website"
+        case "adv-version": return "adv-updates"
+        default: return nil
+        }
+    }
+
+    private func open(_ entry: SettingsSearchEntry) {
+        switch entry.id {
+        case "jev": model.selectSection(.monitoring); return
+        case "cmd-report": SupportRequestController.shared.present(); return
+        case "cmd-welcome": navigationStore.showWelcome = true; return
+        default: break
+        }
+        search = ""
+        if let destination = entry.pane { pane = destination }
+        guard let id = Self.target(of: entry) else { return }
+        scrollSerial += 1
+        scrollRequest = (id, scrollSerial)
+    }
+
+    private func reveal(_ id: String, with proxy: ScrollViewProxy, serial: Int) async {
+        // The pane is rebuilt on a change: wait one layout pass before scrolling to its item.
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        proxy.scrollTo(id, anchor: .top)
+        highlighted = id
+        try? await Task.sleep(nanoseconds: 2_200_000_000)
+        if scrollSerial == serial { highlighted = nil }
+    }
+
+    /// The tag a search result scrolls to, and the light it shows there.
+    private func searchTarget<Content: View>(_ id: String, @ViewBuilder _ content: () -> Content) -> some View {
+        content().id(id)
+            .background(RoundedRectangle(cornerRadius: 12).fill(LHTheme.accent.opacity(highlighted == id ? 0.14 : 0)).padding(-8))
+    }
+
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // UI-9 (38, 42): a title, then its sentence close under it (DESIGN §7, §9).
@@ -66,6 +117,10 @@ import AppKit
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .id(pane)
+        .onChange(of: scrollSerial) { serial in
+            guard let request = scrollRequest, request.serial == serial else { return }
+            Task { await reveal(request.id, with: proxy, serial: serial) }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if pane != .home {
                 SettingsBackBar(title: pane.parent == .home ? "Retour aux réglages" : "Retour à « \(pane.parent.title) »") {
@@ -74,6 +129,8 @@ import AppKit
             }
         }
         .background(LHTheme.pageBackground)
+        .background(Button("") { pane = .home; searchFocusToken += 1 }.keyboardShortcut("f", modifiers: .command)
+            .opacity(0).accessibilityHidden(true).allowsHitTesting(false))
         .sheet(isPresented: $showingDeveloperProjects) { GoalongDeveloperProjectsSheet().goalongControls().goalongDismissOnOutsideClick() }
         .alert("Inclure la navigation privée ?", isPresented: $pendingPrivate) {
             Button("Annuler", role: .cancel) {}
@@ -83,13 +140,16 @@ import AppKit
             Button("Annuler", role: .cancel) {}
             Button("Conserver les valeurs") { var next = settingsStore.appliedSettings; next.redactAllURLQueryValues = false; _ = model.applyRecordingChoice(next) }
         } message: { Text("Les paramètres peuvent contenir des recherches ou des informations personnelles. Ils seront conservés sur ce Mac lorsque l’enregistrement des adresses est activé.") }
+        }
     }
     @ViewBuilder private var content: some View {
         switch pane {
         case .home:
-            GoalongSearchField("Rechercher un réglage…", text: $search, accessibilityLabel: "Rechercher un réglage")
-            // While searching, results come first; the three main cards return afterwards.
+            GoalongSearchField("Rechercher un réglage ou une action…", text: $search, accessibilityLabel: "Rechercher un réglage",
+                               identifier: "settings-search", focusRequest: searchFocusToken)
+            // While searching, the controls and commands that match come first (SettingsSearchIndex); the sections follow.
             if search.isEmpty { GoalongDataStatus(model: model) }
+            else { SettingsSearchResults(query: search, onOpen: open) }
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
                     ForEach(visiblePanes, id: \.self) { item in
@@ -98,11 +158,11 @@ import AppKit
                         if item != visiblePanes.last { GoalongRowDivider() }
                     }
                     // Jev is a rule of the page « Blocages » (spec-blocages-20261110 § 6): a search still finds it.
-                    if SettingsPane.matchesJev(search) {
+                    if searchIsHidden { EmptyView() } else if SettingsPane.matchesJev(search) {
                         if !visiblePanes.isEmpty { GoalongRowDivider() }
                         jevLink.accessibilityIdentifier("settings-jev")
                     }
-                    if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) && !SettingsPane.matchesJev(search)
+                    if !search.isEmpty { EmptyView() } else if visiblePanes.isEmpty && !SettingsPane.matchesStartup(search) && !SettingsPane.matchesJev(search)
                         && !GoalongMotionSettings.matches(search) && !KeyboardBacklightSettings.matches(search) {
                         Text("Aucun réglage ne correspond à cette recherche.").font(.system(size: 13))
                             .foregroundStyle(LHTheme.secondaryText)
@@ -110,9 +170,11 @@ import AppKit
                     }
                 }
             }
-            if search.isEmpty || SettingsPane.matchesStartup(search) { BackgroundContinuitySettings() }
-            if search.isEmpty || GoalongMotionSettings.matches(search) { GoalongMotionSettings() }
-            if search.isEmpty || KeyboardBacklightSettings.matches(search) { KeyboardBacklightSettings() }
+            if search.isEmpty {
+                searchTarget("home-login") { BackgroundContinuitySettings() }
+                searchTarget("home-motion") { GoalongMotionSettings() }
+                searchTarget("home-keyboard") { KeyboardBacklightSettings() }
+            }
             if search.isEmpty {
                 // UI-15A (20): the full stop, the report and the version form one group, no longer three loose items.
                 GoalongSettingsList(title: "Aide et confidentialité") {
@@ -123,7 +185,7 @@ import AppKit
                     GoalongUpdateStatusRow().font(.system(size: 13))
                         .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 10)
                     GoalongRowDivider()
-                    GoalongDisclosureGroup("Tout suspendre, pour une activité sensible") {
+                    searchTarget("privacy-stop") { GoalongDisclosureGroup("Tout suspendre, pour une activité sensible") {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("À réserver aux activités sensibles. Cet arrêt suspend l’historique, les analyses et les envois. Pour arrêter seulement les rappels, décochez « Surveillance » dans la règle ou la séance : l’historique continue.")
                                 .font(.callout).foregroundStyle(LHTheme.secondaryText)
@@ -132,7 +194,7 @@ import AppKit
                         }.padding(.top, 12)
                     }.accessibilityIdentifier("settings-privacy-stop")
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 12)
+                        .padding(.horizontal, LHTheme.cardInset).padding(.vertical, 12) }
                 }
             }
         case .recording:
@@ -150,7 +212,7 @@ import AppKit
             }
             // Details stay readable but inert while recording is off (UI-48).
             Group {
-                GoalongSettingsGroup(title: "Activité") {
+                searchTarget("rec-activity") { GoalongSettingsGroup(title: "Activité") {
                     // UI-9 (24, 44): one help sentence per setting, the rest in « En savoir plus » (DESIGN §12).
                     // UI-15A (24, 44): the app's menu, as in Activité and Historique, not the system pop-up.
                     HStack(spacing: 12) {
@@ -173,10 +235,10 @@ import AppKit
                         Label("Ce mode peut compter votre absence si vous laissez une fenêtre visible et le Mac déverrouillé.", systemImage: "exclamationmark.triangle")
                             .font(.callout).foregroundStyle(LHTheme.warning)
                     }
-                }
-                GoalongSettingsGroup(title: "Données enregistrées") {
+                } }
+                searchTarget("rec-data") { GoalongSettingsGroup(title: "Données enregistrées") {
                     RecordingChoicesView(draft: recording, columns: 1, locked: !consents.isEnabled(.localComputerHistory))
-                }
+                } }
                 // UI-9 (24, 44): inert but readable; the controls dim themselves, a group fade made the help ~2:1.
                 // R281-7: only the controls are disabled; « En savoir plus » stays usable.
                 VisibleContextControl().disabled(!consents.isEnabled(.localComputerHistory))
@@ -237,7 +299,7 @@ import AppKit
                 system.objectWillChange.send()
             }
         case .applications:
-            GoalongApplicationsSettings(model: model)
+            searchTarget("applications") { GoalongApplicationsSettings(model: model) }
         case .connections:
             LHCard(padding: 0) {
                 VStack(spacing: 0) {
@@ -250,9 +312,9 @@ import AppKit
                 }
             }
         case .website:
-            GoalongWebsiteSettings(model: model)
+            searchTarget("website") { GoalongWebsiteSettings(model: model) }
         case .chatGPT:
-            GoalongChatGPTSettings(model: model)
+            searchTarget("chatgpt") { GoalongChatGPTSettings(model: model) }
         case .work:
             GoalongWorkPage(model: model, placement: .settings)
         case .modules:
@@ -260,25 +322,25 @@ import AppKit
                 if module == .ambiance { model.ambianceModule.setEnabled(on) }
             })
         case .permissions:
-            GoalongSettingsGroup(title: "Accès nécessaires à vos choix") {
+            searchTarget("permissions") { GoalongSettingsGroup(title: "Accès nécessaires à vos choix") {
                 GoalongPermissionRow(capability: .localComputerHistory)
                 Divider()
                 GoalongPermissionRow(capability: .appleScreenTime)
                 Divider()
                 GoalongPermissionRow(capability: .aiConversations)
-            }
+            } }
             Text("Les fonctions désactivées ne demandent aucune autorisation.")
                 .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
             GoalongDisclosureGroup("Résoudre un problème") {
                 Button("Ouvrir les diagnostics d’accès") { model.selectSection(.privacy) }.buttonStyle(LHSecondaryButtonStyle()).padding(.top, 10)
             }.font(.system(size: 13))
         case .storage:
-            GoalongStorageSettings(model: model)
+            searchTarget("storage") { GoalongStorageSettings(model: model) }
         case .advanced:
             // UI-15A (58): the developer mode first, the pane's subject in view; it is two lines high,
             // so « Installer la version… » stays in view without scrolling (UI-9, 54).
             GoalongDeveloperSettings()
-            GoalongSettingsGroup(title: "Mises à jour") {
+            searchTarget("adv-updates") { GoalongSettingsGroup(title: "Mises à jour") {
                 GoalongUpdateStatusRow()
                 // T-057: perso builds only, folded: the bounded history of `make perso` hand-offs.
                 if updates.persoBuild != nil { PersoUpdateHistoryList(model: PersoUpdateStatusModel.shared) }
@@ -289,7 +351,7 @@ import AppKit
                 Text("Chaque mise à jour est signée et vérifiée avant installation ; rien ne s’installe sans votre accord. Vos réglages et votre historique sont conservés.")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
-            }
+            } }
             SupportDiagnosticsPanel()
             GoalongSettingsList(title: "Outils") {
                 GoalongSettingsLink(title: "Outils de partage et analyses", value: "", symbol: "square.and.arrow.up") { pane = .tools }
@@ -315,6 +377,8 @@ import AppKit
         if !options.contains(where: { $0.0 == current }) { options.append((current, "\(current) secondes, personnalisé")) }
         return options
     }
+    /// While a query is typed the index results carry Jev, the startup and the display rows.
+    private var searchIsHidden: Bool { !search.isEmpty }
     private var visiblePanes: [SettingsPane] {
         SettingsPane.matches(search)
     }
