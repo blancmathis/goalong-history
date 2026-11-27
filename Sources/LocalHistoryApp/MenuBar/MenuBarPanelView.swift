@@ -12,12 +12,21 @@
         var onHeightChange: (CGFloat) -> Void = { _ in }
 
         static let width: CGFloat = 340
+        /// The tallest the panel may be (the screen's visible height, less a margin). Nil = natural height, as before.
+        /// Past it, only the middle scrolls: the header and the footer stay in place and reachable.
+        var maxHeight: CGFloat? = nil
+        @State private var topHeight: CGFloat = 0
+        @State private var middleHeight: CGFloat = 0
+        @State private var footerHeight: CGFloat = 0
 
         var body: some View {
             VStack(spacing: 0) {
-                GoalongDevBanner()
-                PanelHeader(model: model)
-                PanelDivider()
+                VStack(spacing: 0) {
+                    GoalongDevBanner()
+                    PanelHeader(model: model)
+                    PanelDivider()
+                }
+                .measured { topHeight = $0 }
                 if let review = model.review {
                     // A session stopped here asks its question here, then the panel comes back. The swap is not
                     // animated: the presenter moves the window edge on LHTheme.settle, the content stays pinned.
@@ -27,17 +36,14 @@
                                          onClose: model.closeReview)
                         .id(review.sessionID)
                 } else {
-                    NowSection(model: model)
-                    LaunchSection(model: model, store: model.prepared)
-                    DayInboxSection(model: model)
-                    TodaySection(model: model)
-                    PanelDivider()
-                    AmbianceSection(model: model)
-                    if model.hasRedScreen {
-                        PanelDivider()
-                        RedScreenSection(model: model)
+                    if let cap = middleCap, middleHeight > cap {
+                        ScrollView(.vertical, showsIndicators: true) { middle.measured { middleHeight = $0 } }
+                            .frame(height: cap)
+                            .accessibilityIdentifier("menubar-scroll")
+                    } else {
+                        middle.measured { middleHeight = $0 }
                     }
-                    PanelFooter(model: model)
+                    PanelFooter(model: model).measured { footerHeight = $0 }
                 }
             }
             .frame(width: Self.width)
@@ -49,6 +55,44 @@
             .background(LHTheme.pageBackground)
             .clipped()
             .goalongControls()
+        }
+    }
+
+    extension MenuBarPanelView {
+        /// Room left for the middle: the maximum, less the header and the footer, which never scroll.
+        fileprivate var middleCap: CGFloat? { maxHeight.map { max(120, $0 - topHeight - footerHeight) } }
+
+        /// The sections between the header and the footer: what grows with rules, sessions and sounds.
+        @ViewBuilder fileprivate var middle: some View {
+            VStack(spacing: 0) {
+                NowSection(model: model)
+                LaunchSection(model: model, store: model.prepared)
+                DayInboxSection(model: model)
+                if let plan = model.dayPlanSummary {
+                    DayPlanRow(summary: plan, action: model.openDayPlan)
+                    PanelDivider()
+                }
+                TodaySection(model: model)
+                PanelDivider()
+                AmbianceSection(model: model)
+                if model.hasRedScreen {
+                    PanelDivider()
+                    RedScreenSection(model: model)
+                }
+            }
+        }
+    }
+
+    private struct MeasuredHeightKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
+
+    extension View {
+        /// Reports this view's own height (macOS 13 has no onGeometryChange).
+        fileprivate func measured(_ update: @escaping (CGFloat) -> Void) -> some View {
+            background(GeometryReader { Color.clear.preference(key: MeasuredHeightKey.self, value: $0.size.height) })
+                .onPreferenceChange(MeasuredHeightKey.self) { update($0) }
         }
     }
 
@@ -219,6 +263,10 @@
             PanelSection(title: "Aujourd’hui") {
                 Button("Voir la journée", action: model.openDay).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
             } content: {
+                if model.dayUnavailable && !model.workKnown {
+                    DayUnavailableNote(recording: { if case .active = model.tracking { return true }; return false }(),
+                                       retry: model.retryDay)
+                } else {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     // A running session owns the large figure: the day total steps down (UI-14, écran 7).
                     WorkFigure(seconds: model.workSeconds, known: model.workKnown, unavailable: model.dayUnavailable, compact: model.focusRun != nil)
@@ -228,6 +276,30 @@
                 }
                 MiniDayThread(segments: model.segments, now: model.nowFraction)
                     .padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    /// The day could not be read: said in words, with the way to try again. The thread is hidden (an empty one would
+    /// read as « no activity »). Stays until a read succeeds.
+    private struct DayUnavailableNote: View {
+        let recording: Bool
+        let retry: () -> Void
+        var body: some View {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle").font(.system(size: 13)).foregroundStyle(LHTheme.warning)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Journée indisponible").font(.system(size: 13, weight: .medium))
+                    Text(recording ? "Goalong n’a pas pu lire aujourd’hui. L’enregistrement continue."
+                         : "Goalong n’a pas pu lire aujourd’hui.")
+                        .font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: 8)
+                Button("Réessayer", action: retry).buttonStyle(LHQuietButtonStyle()).font(.system(size: 12, weight: .medium))
+                    .accessibilityIdentifier("menubar-day-retry")
             }
         }
     }
@@ -355,13 +427,17 @@
 
         var body: some View {
             HStack(spacing: 10) {
-                Image(systemName: item.lock.symbol)
+                Image(systemName: item.jevWatch == nil ? item.lock.symbol : "eye")
                     .font(.system(size: 12)).foregroundStyle(LHTheme.text)
                     .frame(width: 14)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let watch = item.jevWatch {
+                        Text(watch).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     Text(item.detail).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText).lineLimit(1)
                     if let pauses = item.pauses {
                         Text(pauses).font(.system(size: 12).monospacedDigit()).foregroundStyle(LHTheme.secondaryText).lineLimit(1)

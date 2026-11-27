@@ -114,14 +114,28 @@
             tween = nil
         }
 
-        /// Before `show`: the natural height, so the popover opens at its final size.
-        @MainActor func prepareToShow() {
+        /// Room kept under the panel's lowest edge: the arrow, the gap under the menu bar, and a margin above the Dock.
+        static let screenMargin: CGFloat = 24
+
+        /// The tallest the panel may be on `screen`: its visible height (no menu bar, no Dock), less a margin.
+        static func maxHeight(visibleHeight: CGFloat) -> CGFloat { max(240, floor(visibleHeight - screenMargin)) }
+
+        /// Before `show`: the natural height, so the popover opens at its final size. On a short screen the panel is
+        /// capped (T-057 popover-03): the middle scrolls, the header and the footer stay on screen.
+        @MainActor func prepareToShow(screen: NSScreen? = nil) {
             guard let host else { return }
             cancelTween()
+            let cap = (screen ?? NSScreen.main).map { Self.maxHeight(visibleHeight: $0.visibleFrame.height) }
+            if host.rootView.maxHeight != cap {
+                var view = host.rootView
+                view.maxHeight = cap
+                host.rootView = view
+            }
             // With no sizing options, fittingSize is wrong; ask SwiftUI for the natural height.
             // A zero proposal returns the fixed-size content height (the outer frame never shrinks it).
             let ideal = host.sizeThatFits(in: NSSize(width: MenuBarPanelView.width, height: 0))
-            if ideal.height > 0 { apply(ceil(ideal.height)) }
+            // The content measures its parts one pass later: never open taller than the cap meanwhile.
+            if ideal.height > 0 { apply(min(ceil(ideal.height), cap ?? .greatestFiniteMagnitude)) }
         }
     }
 

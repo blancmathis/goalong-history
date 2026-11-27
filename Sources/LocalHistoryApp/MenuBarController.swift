@@ -308,7 +308,7 @@
                 }
             }
             model.refresh()
-            panelPresenter.prepareToShow()
+            panelPresenter.prepareToShow(screen: button.window?.screen)
             panelDismissal.begin()
             popover.animates = !GoalongMotionPreference.reduced()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

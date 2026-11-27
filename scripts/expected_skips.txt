@@ -25,6 +25,7 @@ LocalHistoryAppTests.BlockingTimerTests/testRenderCapsules  # other: Opt-in nati
 LocalHistoryAppTests.BraisePageRenderingTests/testRenderPanelAndEditor  # other: Opt-in Braise render
 LocalHistoryAppTests.PersoUpdateStatusTests/testRenderStatusLineAndHistory  # other: Opt-in perso status render
 LocalHistoryAppTests.SettingsSearchAndSessionChoiceTests/testRenderMockups  # other: Opt-in T-057 M2 mockup render
+LocalHistoryAppTests.T057M1MockupTests/testRenderMockups  # other: Opt-in T-057 M1 mockup render
 LocalHistoryAppTests.ChatGPTRecapTests/testOptInRealDailyAgentAnalysisCompletesFromOriginalCodexSources  # GOALONG_TEST_REAL_CODEX_SOURCE_ROOT + GOALONG_TEST_REAL_AGENT_DAY
 LocalHistoryAppTests.ConcentrationHubRenderingTests/testRenderConcentrationTabs  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.ConcentrationRenderingTests/testRenderConcentrationSurfaces  # other: Opt-in native rendering with fixed data only

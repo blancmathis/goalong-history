@@ -90,6 +90,8 @@ import LocalHistoryCore
         var isRoutine: Bool { itemID == nil && slotID != nil }
     }
     @Published var dayAction: DayAction?
+    /// T-057 M1: the next step of today's plan for the « Plan du jour » row. Nil (no plan today) hides the row.
+    @Published var dayPlanSummary: DayPlanSummary?
     @Published var waitingProcessCount = 0
     @Published var reviewProcessCount = 0
     @Published var focusAvailable = false
@@ -152,6 +154,8 @@ import LocalHistoryCore
         var pauseMinutes: Int? = nil
         /// D1b: a session of the page that « + 15 min » prolongs in one click.
         var extendable = false
+        /// A running Jev watch (« Surveillance »): shown with its own eye and what Jev does, never as a block.
+        var jevWatch: String? = nil
     }
     @Published var blockingEnabled = false
     @Published var live: [LiveItem] = []
@@ -204,6 +208,7 @@ import LocalHistoryCore
     var braise: @MainActor () -> BraiseController? = { BraiseRuntime.shared.controller }
     private let onOpenSettingsPane: (SettingsPane) -> Void
     private let onOpenDay: () -> Void
+    private let onOpenDayPlan: () -> Void
     private let onShowClassicMenu: () -> Void
     private var pausedSince: Date?
     private var synchronizingVolume = false
@@ -223,7 +228,7 @@ import LocalHistoryCore
          playAmbiance: @escaping @MainActor (AmbianceController, AmbianceSource) -> Void = { $0.play($1) },
          onTogglePause: @escaping () -> Void, onOpenSection: @escaping (DashboardSection) -> Void,
          onOpenSettingsPane: ((SettingsPane) -> Void)? = nil,
-         onOpenDay: @escaping () -> Void, onShowClassicMenu: @escaping () -> Void,
+         onOpenDay: @escaping () -> Void, onOpenDayPlan: (() -> Void)? = nil, onShowClassicMenu: @escaping () -> Void,
          redScreen: (any RedScreenControlling)? = nil) {
         self.redScreenControl = redScreen
         self.state = state; self.modules = modules; self.concentration = concentration
@@ -234,7 +239,8 @@ import LocalHistoryCore
         self.playAmbiance = playAmbiance
         self.onTogglePause = onTogglePause; self.onOpenSection = onOpenSection
         self.onOpenSettingsPane = onOpenSettingsPane ?? { _ in onOpenSection(.settings) }
-        self.onOpenDay = onOpenDay; self.onShowClassicMenu = onShowClassicMenu
+        self.onOpenDay = onOpenDay; self.onOpenDayPlan = onOpenDayPlan ?? { onOpenSection(.concentration) }
+        self.onShowClassicMenu = onShowClassicMenu
         if let redScreen {
             self.redScreen = redScreen.redScreen
             redScreenWatch = redScreen.redScreenChanges.sink { [weak self] in self?.redScreen = $0 }
@@ -395,7 +401,7 @@ import LocalHistoryCore
         focusUnavailableFix = !enabled ? .modules : !localHistoryEnabled() ? .recording
             : (observing && controller == nil) ? .app : nil
         guard let controller else {
-            focusRun = nil; dayAction = nil; waitingProcessCount = 0; reviewProcessCount = 0
+            focusRun = nil; dayAction = nil; dayPlanSummary = nil; waitingProcessCount = 0; reviewProcessCount = 0
             syncReview(nil); return
         }
         controller.refresh()
@@ -426,6 +432,7 @@ import LocalHistoryCore
         let plan = controller.plan
         waitingProcessCount = FocusDayPlanner.waitingProcesses(plan: plan).count
         reviewProcessCount = (plan.processes ?? []).filter { $0.status == .readyForReview }.count
+        dayPlanSummary = DayPlanDigest.summary(plan: plan, now: clock())
         if let id = controller.currentSession?.planItemId, let item = plan.items.first(where: { $0.id == id }) {
             dayAction = DayAction(itemID: item.id, slotID: nil, title: item.title, nextAction: item.nextAction,
                                   time: nil, active: true)
@@ -439,7 +446,11 @@ import LocalHistoryCore
         } else { dayAction = nil }
     }
 
-    func openDayPlan() { onOpenSection(.concentration) }
+    /// The same view as Activity's « Plan du jour » button.
+    func openDayPlan() { onOpenDayPlan() }
+
+    /// « Réessayer » under « Journée indisponible »: reads the day again; the message stays until a read succeeds.
+    func retryDay() { refresh() }
 
     func startFocus() {
         refreshRuntimeState()
@@ -608,6 +619,10 @@ import LocalHistoryCore
             }
             var item = LiveItem(id: rule.id, title: rule.summary, detail: rule.stateText(now: now), lock: rule.lock, stop: stop,
                                 pauses: rule.pauseBudget(blocking: controller))
+            if let part = rule.jev {
+                item.jevWatch = Self.jevWatchText(part.settings)
+                if rule.lists.isEmpty && rule.red == nil { item.title = "Jev surveille" }
+            }
             if let controller {
                 let ranges = Set(rule.lists.flatMap(\.rangeIDs))
                 let blocks = controller.activeBlocks.filter { if case .program(let id) = $0.origin { return ranges.contains(id) }; return false }
@@ -631,6 +646,13 @@ import LocalHistoryCore
             Self.offerPause(&item, blocks: [block], controller: controller)
             live.append(item)
         }
+    }
+
+    /// What a running Jev watch does, in the member's words: « Rappel après 2 min hors travail, écran rouge après 5 min ».
+    static func jevWatchText(_ settings: JevInterventionSettings) -> String {
+        let reminder = settings.stages.first.map { "Rappel après \($0.afterMinutes) min hors travail" } ?? "Rappels hors travail"
+        guard settings.effectsEnabled, let last = settings.stages.last else { return reminder }
+        return "\(reminder), écran rouge après \(last.afterMinutes) min"
     }
 
     /// The first list of `blocks` with a pause to take now, as on the page (budget left, no pause running).
