@@ -241,6 +241,23 @@ struct FocusStore {
     /// Latest clock set right soon after boot (T-044 C5-05): proof recorded before it is superseded.
     func clockCorrection() throws -> BlockingClockState? { try load(BlockingClockState.self, area: nil, name: "clock-correction.json") }
     func saveClockCorrection(_ value: BlockingClockState) throws { try save(value, area: nil, name: "clock-correction.json") }
+    /// bugs-donnees-01: a refused file moves to `<name>.damaged-<seconds>.json` beside it, never over an older copy
+    /// and never deleted. The new name is no day key, so no listing reads it again.
+    func setAside(area: String?, name: String, now: Date) throws {
+        guard name.hasSuffix(".json"), let fd = try openDirectory(area, create: false) else { return }; defer { close(fd) }
+        let stem = String(name.dropLast(5)), stamp = Int(max(0, now.timeIntervalSince1970))
+        for attempt in 0..<8 {
+            let target = stem + ".damaged-\(stamp)" + (attempt == 0 ? "" : "-\(attempt)") + ".json"
+            if renameatx_np(fd, name, fd, target, UInt32(RENAME_EXCL)) == 0 { guard fsync(fd) == 0 else { throw FocusFailure.storageFailed }; return }
+            if errno == ENOENT { return }
+            guard errno == EEXIST else { throw FocusFailure.storageFailed }
+        }
+        throw FocusFailure.storageFailed
+    }
+    func setAsideSessions(_ day: String, now: Date) throws {
+        guard FocusValidation.day(day) else { throw FocusFailure.invalidArgument }
+        try setAside(area: "sessions", name: day + ".json", now: now)
+    }
     func prompts() throws -> FocusPromptState? { try load(FocusPromptState.self, area: nil, name: "prompts.json") }
     func savePrompts(_ value: FocusPromptState) throws { try save(value, area: nil, name: "prompts.json") }
     func marks() throws -> [FocusLimitMark] { try load([FocusLimitMark].self, area: nil, name: "limit-marks.json") ?? [] }

@@ -160,7 +160,11 @@ struct FocusPanel: Equatable {
         self.store = store; self.clock = clock; self.continuous = continuous; self.boot = boot; launchClock = .init(wall: clock(), continuous: continuous(), boot: boot()); self.calendar = calendar; self.blocking = blocking; self.audio = audio; self.runsTimers = runsTimers
         let day = FocusCalendar.dayKey(clock(), calendar: calendar); currentDay = day
         status = FocusStatus(since: clock()); plan = FocusPlan(day: day); promptState = FocusPromptState(day: day)
-        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); limitMarks = try store.marks(); commitments = try store.commitments()
+        try store.recover(); try store.migrateLegacyDays(calendar: calendar, now: clock()); settings = try store.settings(); commitments = try store.commitments()
+        // bugs-donnees-01: settings and commitments carry stakes and stay strict. Prompts and limit warnings only
+        // decide what is shown: a refused file is set aside and starts empty.
+        var setAside = 0
+        limitMarks = try recovering(&setAside, area: nil, name: "limit-marks.json") { try store.marks() } ?? []
         clockCorrection = (try? store.clockCorrection()).flatMap { $0.boot == launchClock.boot ? $0 : nil }
         if let proven = FocusCommitRule.anchoredNow(try? store.clockAnchor(), clock: launchClock), proven > launchClock.wall {
             launchClock.wall = proven
@@ -170,7 +174,7 @@ struct FocusPanel: Equatable {
         for i in limitMarks.indices where limitMarks[i].kind == "weekly" && FocusValidation.day(limitMarks[i].period) {
             limitMarks[i].period = FocusCalendar.weekKey(limitMarks[i].at, calendar: calendar)
         }
-        promptState = try store.prompts() ?? promptState
+        promptState = try recovering(&setAside, area: nil, name: "prompts.json") { try store.prompts() } ?? promptState
         if promptState.day != day { promptState = FocusPromptState(day: day) }
         try loadDay(day)
         // A stop that quit or module-off could not save: close it before any open session is restored.
@@ -186,6 +190,15 @@ struct FocusPanel: Equatable {
         }
         // A free open session may have started on any retained day, not only yesterday.
         var running: [FocusSession] = []
+        // bugs-donnees-01: one refused past day must not keep the whole module off. Today, yesterday (a session over
+        // midnight), a later day, and any day while a session block runs stay strict: they may hold the running,
+        // maybe locked, session.
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: clock()).map { FocusCalendar.dayKey($0, calendar: calendar) } ?? day
+        // A session phase block is saved with the manual origin: any running manual block keeps the files strict.
+        let focusBlockRuns = blocking()?.activeBlocks.contains { $0.origin == .manual || $0.origin == .focus } ?? false
+        for date in try store.sessionDays() where date < yesterday && date < day && !focusBlockRuns {
+            _ = try recovering(&setAside, area: "sessions", name: date + ".json") { try store.sessions(date) }
+        }
         try repairDuplicateSessions()
         for date in try store.sessionDays() {
             for var value in try store.sessions(date) where value.endedAt == nil {
@@ -206,7 +219,15 @@ struct FocusPanel: Equatable {
             if blocking()?.activeBlocks.contains(where: { $0.id == id }) == true { phaseBlockID = id; phaseBlockKey = phaseKey(p) }
         }
         try reconcileCommitmentBlocks(); refresh()
+        if setAside > 0 { error = Self.setAsideNotice }
         observeClockChanges()
+    }
+    static let setAsideNotice = "Des fichiers illisibles de Concentration sont mis de côté dans le dossier Focus. Rien n’est effacé."
+    /// Reads one file; a refused file is moved aside (counted) and reads as absent. Other failures still throw.
+    private func recovering<T>(_ count: inout Int, area: String?, name: String, _ read: () throws -> T?) throws -> T? {
+        do { return try read() } catch FocusFailure.storageFailed {
+            try store.setAside(area: area, name: name, now: clock()); count += 1; return nil
+        }
     }
     /// A zone change or a wake moves the evening prompt and the end-of-day limit; the timer was set with the old ones.
     /// `refresh` recomputes both from the live calendar and shows each prompt once (`promptState` keeps what was shown).
