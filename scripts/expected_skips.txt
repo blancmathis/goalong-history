@@ -48,6 +48,7 @@ LocalHistoryAppTests.GoalongWebsiteSharingRenderingTests/testRenderSharingWindow
 LocalHistoryAppTests.JevEffectsRenderingTests/testDurationBoundaryAndStrongPresetInAnIsolatedNativeWindow  # other: Opt-in synthetic window; no production settings or screen effects
 LocalHistoryAppTests.JevObservationSemanticTests/testSyntheticObservationSemantics  # other: Opt-in API evaluation with synthetic observations only
 LocalHistoryAppTests.JevProcrastinationRenderingTests/testRenderIsolatedCriteriaWithSyntheticData  # other: Opt-in native rendering with synthetic criteria only
+LocalHistoryAppTests.JevSendTransparencyTests/testRenderSyntheticTransparency  # other: Opt-in native rendering, fixtures only
 LocalHistoryAppTests.JevSemanticEvaluationTests/testExplicitSyntheticSemanticEvaluation  # other: Opt-in paid API evaluation with synthetic data only
 LocalHistoryAppTests.MenuBarPanelRenderingTests/testRenderPanelStates  # other: Opt-in native rendering with fixed data only
 LocalHistoryAppTests.MenuBarPanelResizeTraceTests/testTraceResize  # other: Opt-in frame trace of the panel resize (GOALONG_PANEL_TRACE)

@@ -58,7 +58,9 @@ struct JevRecentCheck: Identifiable {
     private var errorIsTransient = false
     private let localRoot: URL
     private var sessionAvailable = true
-    private var retryAfter = Date.distantPast
+    private var retryAfter = Date.distantPast { didSet { nextRetryAt = retryAfter > Date() ? retryAfter : nil } }
+    /// When the next automatic try happens after a failed send, for the page to show. Nil when no retry is waiting.
+    @Published private(set) var nextRetryAt: Date?
     private var settingsSignature = ""
     private var started = false
     private let inbox: JevIngress
@@ -393,7 +395,7 @@ struct JevRecentCheck: Identifiable {
                         ConcentrationRuntime.shared.controller?.error = "Les suggestions de cette séance n’ont pas pu être enregistrées."
                     }
                 }
-                self.consecutiveFailures = 0
+                self.consecutiveFailures = 0; self.nextRetryAt = nil
                 // A later success proves a 5xx/429/network failure is over; other errors stay.
                 if self.errorIsTransient { self.error = nil; self.errorIsTransient = false }
                 SupportDiagnostics.shared.recordIfChanged(.monitorCycle, component: .monitoring, values: [

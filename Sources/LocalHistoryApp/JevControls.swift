@@ -29,6 +29,7 @@ import LocalHistoryCore
                 Text("Dernier appel : \(monitor.lastRequestBytes) octets envoyés.")
                     .font(.caption.monospacedDigit())
             }
+            JevSendFieldsDisclosure(includesExcerpt: excerpts)
             GoalongDisclosureGroup("Voir le dernier contenu envoyé (sans la clé)") {
                 Text(monitor.lastPayload.isEmpty ? "Aucun contenu conservé en mémoire." : monitor.lastPayload)
                     .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
