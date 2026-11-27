@@ -91,8 +91,25 @@ struct BlockingStore {
         try save(document, now: now)
     }
 
+    /// `blocking.json` → `blocking.damaged-20261127-143005Z.json` (UTC). Never replaces an earlier copy (T-057
+    /// bugs-donnees-05): a second damage keeps the first one's evidence; a name taken gets `-2`, `-3`… Never deleted here.
     private func setAside(_ name: String, in directoryFD: Int32) -> Bool {
-        renameat(directoryFD, name, directoryFD, name.replacingOccurrences(of: ".json", with: ".damaged.json")) == 0 || errno == ENOENT
+        let stamp = Self.setAsideStamp(Date()) // wall: only a file name
+        let base = name.replacingOccurrences(of: ".json", with: "")
+        for attempt in 1...1000 {
+            let target = base + ".damaged-" + stamp + (attempt == 1 ? "" : "-\(attempt)") + ".json"
+            if renameatx_np(directoryFD, name, directoryFD, target, UInt32(RENAME_EXCL)) == 0 { return true }
+            if errno == ENOENT { return true }
+            guard errno == EEXIST else { return false }
+        }
+        return false
+    }
+
+    static func setAsideStamp(_ date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "UTC")!
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        return String(format: "%04d%02d%02d-%02d%02d%02dZ", c.year ?? 0, c.month ?? 0, c.day ?? 0,
+                      c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
     }
 
     /// nil when the file does not exist.
