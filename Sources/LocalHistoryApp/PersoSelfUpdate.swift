@@ -13,6 +13,8 @@ import GoalongGuardCore
 @MainActor final class PersoSelfUpdate { // one instance per app
     static let shared = PersoSelfUpdate()
     private let files = PersoUpdateFiles.standard
+    /// Status only (T-057 idées 5 et 6): what Settings shows; never read by the install path.
+    private let history = PersoUpdateHistory.standard
     private let launchedAt = clock_gettime_nsec_np(CLOCK_MONOTONIC)
     private var watcher: DispatchSourceFileSystemObject?
     private var busy = false
@@ -78,6 +80,10 @@ import GoalongGuardCore
         guard !busy, let request = files.pendingRequests().first else { return }
         busy = true
         if let reason = install(request) {
+            // Refused at once: received and refused together, before the result the script waits for.
+            let candidate = files.request(request).appendingPathComponent(Bundle.main.bundleURL.resolvingSymlinksInPath().lastPathComponent)
+            history.record(request, .received, commit: PersoBundleFacts.read(app: candidate).commit)
+            history.record(request, .refused, reason: reason)
             files.writeResult(request, .init(state: PersoUpdateFiles.Result.refused, reason: reason))
             busy = false
             DispatchQueue.main.async { [weak self] in self?.scan() }
@@ -104,6 +110,7 @@ import GoalongGuardCore
             return nil // the script cancelled it (or it vanished): never install it
         }
         files.writeResult(request, .init(state: PersoUpdateFiles.Result.claimed))
+        history.record(request, .received, commit: PersoBundleFacts.read(app: candidate).commit)
         // Check the copy we install, in a folder beside us (same volume, so the swap is atomic).
         let staged = PersoStage.stagedApp(for: target, request: request)
         let stageDir = staged.deletingLastPathComponent()
@@ -121,6 +128,7 @@ import GoalongGuardCore
                     guard self.files.writeResult(request, .init(state: PersoUpdateFiles.Result.accepted)) else {
                         return self.finishRefused(request, stageDir: stageDir, reason: "demande annulée")
                     }
+                    self.history.record(request, .verified)
                     self.handOver(request: request, target: target, staged: staged, stageDir: stageDir)
                 }
             }
@@ -177,6 +185,7 @@ import GoalongGuardCore
             }
             // The guard waits while the relauncher (now at the installed path) lives (installation-05).
             GoalongGuardFiles.writeLease(GuardLease.persoUpdate, seconds: GuardLease.maximumDuration, request: request)
+            self.history.record(request, .closing)
             // `finish` runs inside a main-queue block: quitting from there would hang in `terminate` (2026-11-22).
             AppDelegate.terminateFromRunLoop()
         }
@@ -184,6 +193,7 @@ import GoalongGuardCore
 
     private func finishRefused(_ request: String, stageDir: URL, reason: String) {
         try? FileManager.default.removeItem(at: stageDir)
+        history.record(request, .refused, reason: reason)
         files.writeResult(request, .init(state: PersoUpdateFiles.Result.refused, reason: reason))
         busy = false
         DispatchQueue.main.async { [weak self] in self?.scan() }

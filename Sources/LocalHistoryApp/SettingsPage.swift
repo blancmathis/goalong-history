@@ -280,6 +280,8 @@ import AppKit
             GoalongDeveloperSettings()
             GoalongSettingsGroup(title: "Mises à jour") {
                 GoalongUpdateStatusRow()
+                // T-057: perso builds only, folded: the bounded history of `make perso` hand-offs.
+                if updates.persoBuild != nil { PersoUpdateHistoryList(model: PersoUpdateStatusModel.shared) }
                 Toggle("Rechercher les mises à jour automatiquement", isOn: Binding(
                     get: { updates.automaticallyChecksForUpdates }, set: { updates.setAutomaticallyChecksForUpdates($0) })).toggleStyle(.goalongSwitch)
                     .disabled(!updates.isConfigured)
@@ -510,11 +512,14 @@ enum SettingsPane: Hashable {
                     Text(perso.label).font(.system(size: 12, design: .monospaced)).foregroundStyle(LHTheme.secondaryText)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("settings-perso-build")
+                        .task { await PersoUpdateStatusModel.shared.follow() }
                     if let notice = updates.persoNotice {
                         Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("settings-perso-notice")
                     }
+                    // T-057: the last `make perso` hand-off, its phase while it runs, the commit relaunched.
+                    PersoUpdateStatusLine(model: PersoUpdateStatusModel.shared, runningCommit: perso.commit)
                 }
             }
             Spacer(minLength: 12)

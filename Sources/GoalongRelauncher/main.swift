@@ -40,6 +40,9 @@ guard executable.lastPathComponent == "goalong-relauncher",
 // Detach from the old application's session where possible. Never register as an NSApplication.
 _ = setsid()
 let persoFiles = PersoUpdateFiles.standard
+/// Status only (T-057 idées 5 et 6): the phases Settings and `make perso` show; no decision reads it.
+let persoHistory = PersoUpdateHistory.standard
+let persoCommit = PersoBundleFacts.read(app: ownApp).commit
 /// The guard of the installed copy: a perso swap holds its lease until health or rollback (installation-05).
 let guardFiles: GuardFiles? = persoRequest == nil ? nil : {
     let info = Bundle(url: appURL)?.infoDictionary
@@ -81,6 +84,7 @@ func persoRollBack(_ reason: String, newApp: NSRunningApplication?) -> Never {
         parentAlive: { GuardProcesses.isAlive(parentPID) },
         endLease: { endLease() },
         report: { restored in
+            persoHistory.record(request, restored ? .restored : .failed, commit: persoCommit, reason: reason)
             persoFiles.writeResult(request, .init(state: PersoUpdateFiles.Result.rolledBack,
                                                   reason: restored ? reason : reason + " ; retour arrière impossible"))
         },
@@ -133,6 +137,7 @@ func awaitPersoHealth(_ app: NSRunningApplication) {
         timeline.finish()
         try? PersoSwapFinish.finish(target: target, staged: PersoStage.stagedApp(for: target, request: request), healthy: true)
         endLease()
+        persoHistory.record(request, .done, commit: persoCommit)
         persoFiles.writeResult(request, .init(state: PersoUpdateFiles.Result.installed))
         exit(0)
     }
@@ -173,6 +178,7 @@ func reopen(attempt: Int) {
 func parentGone() {
     exitWatch.cancel()
     timeline.parentExited(now: GuardSystem.continuousSeconds())
+    if let request = persoRequest { persoHistory.record(request, .relaunching, commit: persoCommit) }
     // Allow LaunchServices to retire the old registration, after actual process exit.
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { reopen(attempt: 0) }
 }

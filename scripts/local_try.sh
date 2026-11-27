@@ -193,6 +193,24 @@ fi
 # make perso with a running perso Goalong that reported health: hand the bundle to it (it installs itself, also
 # during a locked block, at most once per 10 minutes then). It re-checks the signature against its own, swaps in
 # a few seconds and rolls back unless the new build starts. Any other case uses the installer below.
+perso_history_line() { # HISTORY_JSON REQUEST_ID EXPECTED_COMMIT
+  python3 - "$@" <<'PY' 2>/dev/null
+import json, sys
+path, rid, expected = sys.argv[1:4]
+labels = {"received": "reçue", "verified": "vérifiée", "closing": "fermeture", "relaunching": "redémarrage",
+          "done": "terminée", "restored": "ancienne version restaurée", "refused": "refusée",
+          "failed": "échec, retour arrière impossible"}
+entry = next((e for e in json.load(open(path)) if e.get("id") == rid), None)
+if not entry or not entry.get("steps"):
+    sys.exit(0)
+t0 = entry["steps"][0]["at"]
+print("Goalong: " + " → ".join(labels.get(s["phase"], s["phase"]) + ("" if i == 0 else " +%d s" % round(s["at"] - t0))
+                               for i, s in enumerate(entry["steps"])))
+if entry["steps"][-1]["phase"] == "done":
+    ok = entry.get("commit") == expected
+    print("Goalong relaunched %s%s" % ((entry.get("commit") or "?")[:8], " (the commit just built)." if ok else ", NOT the commit just built (%s)." % expected[:8]))
+PY
+}
 perso_handoff() {
   local root="$HOME/Library/Application Support/LocalHistory/PersoUpdate" installed="/Applications/$APP_NAME.app"
   local exe pid id tmp request state="" reason="" t0
@@ -213,6 +231,8 @@ perso_handoff() {
   perso_handoff_wait "$request" "${GOALONG_HANDOFF_ANSWER_SECONDS:-20}" 240 handoff_claimed || {
     echo "Goalong did not answer the hand-off; using the installer." >&2; return 10; }
   state="$PERSO_HANDOFF_STATE" reason="$PERSO_HANDOFF_REASON"
+  # T-057: the phases Goalong recorded (status only, PersoUpdate/history.json), and the commit really relaunched.
+  perso_history_line "$root/history.json" "$id" "$PERSO_COMMIT" || true
   # Final answer, or Goalong still working on a claimed request: keep the request in the second case.
   case "$state" in refused|installed|rolled_back) rm -rf "$request" ;; esac
   case "$state" in
