@@ -1341,11 +1341,11 @@ extension ConcentrationController {
             result.outcome = .held; result.declared = true
         } else {
             guard FocusCommitmentRules.jokersLeft(period: period, commitments: commitments, settings: settings.jokerSettings, calendar: calendar) > 0 else { throw FocusFailure.locked }
-            result.jokerAt = clock()
+            result.jokerAt = resultMark(result)
         }
         // Persist release intent first. Relaunch/retry can finish a release without losing the joker.
         // Only an applied stake is released: none or skipped has no block to lift (T-044 B2-01).
-        if result.stake.state == .applied { result.stake = .init(state: .cancelled, blockId: result.stake.blockId, at: clock()) }
+        if result.stake.state == .applied { result.stake = .init(state: .cancelled, blockId: result.stake.blockId, at: resultMark(result)) }
         var next = commitments; next[i].result = result
         try saveCommitmentValues(next)
         try reconcileCommitmentBlocks(); refreshCommitmentCards()
@@ -1376,6 +1376,12 @@ extension ConcentrationController {
     /// never earlier than the time proven by continuous time in this boot. A clock set back cannot delay a
     /// settlement, reopen an exit or an edit. Stored dates stay in the wall frame.
     private func stakeNow() -> Date { max(clock(), realNow() ?? .distantPast) }
+    /// T-057 F2 (bugs-temps-03): the date of a mutation of a settled result (stake applied or cancelled, joker). The wall
+    /// clock, never earlier than the settlement or a previous mutation: a clock set back after a settlement dated at the
+    /// period's end would make the model refuse the save (`FocusCommitmentResult.valid`).
+    private func resultMark(_ result: FocusCommitmentResult) -> Date {
+        [clock(), result.settledAt, result.jokerAt, result.stake.at].compactMap { $0 }.max()!
+    }
     /// Latest moment proven by continuous time since a stored anchor or the launch of this boot (T-044 C2-02).
     private func realNow() -> Date? {
         let state = clockState()
@@ -1451,7 +1457,7 @@ extension ConcentrationController {
                 let active = b?.activeBlocks.first { $0.id == value.id && $0.origin == .commitment(value.id) }
                 let end = FocusCommitmentRules.stakeEnd(stake, settledAt: result.settledAt, calendar: calendar)!
                 if active != nil {
-                    if result.stake.at == nil { next[i].result?.stake.at = clock() }
+                    if result.stake.at == nil { next[i].result?.stake.at = resultMark(result) }
                 } else if result.stake.at == nil || end > stakeNow() {
                     let ids = stake.listIds.filter { b?.list($0) != nil }
                     let reason: FocusCommitmentResult.Stake.Reason?
@@ -1464,7 +1470,7 @@ extension ConcentrationController {
                         next[i].result?.stake = .init(state: .skipped, reason: reason)
                     } else {
                         try b?.startCommitmentBlock(id: value.id, listIDs: ids, until: end)
-                        next[i].result?.stake.at = clock()
+                        next[i].result?.stake.at = resultMark(result)
                     }
                 }
             }

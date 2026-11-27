@@ -54,7 +54,11 @@ import LocalHistoryQueryCLI
     private var calendar: Calendar
     private let calendarProvider: () -> Calendar
     /// Usage day kept across a zone change until its old midnight, so quotas and breaks never reset early.
-    private var usageDayCarry: (day: String, start: Date, end: Date)?
+    /// Kept in the document (T-057 F2, bugs-temps-02): a relaunch keeps it.
+    private var usageDayCarry: (day: String, start: Date, end: Date)? {
+        get { document.usageDayCarry.map { ($0.day, $0.start, $0.end) } }
+        set { document.usageDayCarry = newValue.map { BlockUsageDayCarry(day: $0.day, start: $0.start, end: $0.end) } }
+    }
     private var systemObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private let continuous: () -> Double
@@ -1411,6 +1415,7 @@ import LocalHistoryQueryCLI
             do { _ = try store.load() } catch { restoreStore(store) }
         }
         let locksBefore = (document.sessions, document.heldPrograms, document.freeze, document.lists)
+        let carryBefore = document.usageDayCarry
         syncClock()
         let now = clock()
         lastRefresh = now
@@ -1419,6 +1424,7 @@ import LocalHistoryQueryCLI
         // A lock moved by a clock jump or held by a zone change is written at once: a kill within the
         // minute must not lose it (C8-03).
         let locksChanged = locksBefore != (document.sessions, document.heldPrograms, document.freeze, document.lists)
+            || carryBefore != document.usageDayCarry
         if !storeFailed, let store, (triggersChanged || locksChanged || now.throttleElapsed(since: lastSavedAt) >= 60), hasPersistedWork {
             do { try store.save(document, now: now); lastGood = document; lastSavedAt = now }
             catch BlockingStore.Failure.floorUnavailable { error = ProtectedFloor.unsavedText } // retried at the next save

@@ -265,7 +265,11 @@ import AppleScreenTime
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = calendar; formatter.timeZone = zone
         // Oldest day not yet sent, at most 3 days back; with no history only yesterday. Never a day at or before the last attempt/success.
-        let floor = [current.lastSuccess, current.lastAttempt].compactMap { $0 }.max()
+        // T-057 F2 (bugs-temps-05): an attempt dated today or later was made while the clock ran ahead (it was a day
+        // without a record yet, or a send that failed before leaving). It is no floor once the clock is back. A success
+        // stays a floor: a day the site has is never sent again.
+        let today = formatter.string(from: now)
+        let floor = [current.lastSuccess, current.lastAttempt.flatMap { $0 < today ? $0 : nil }].compactMap { $0 }.max()
         let offsets = floor == nil ? [-1] : [-3, -2, -1]
         let candidates = offsets.compactMap { calendar.date(byAdding: .day, value: $0, to: now) }.map { formatter.string(from: $0) }
         guard let day = candidates.first(where: { floor == nil || $0 > floor! }) else { return }

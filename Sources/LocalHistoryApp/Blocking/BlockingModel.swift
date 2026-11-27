@@ -131,6 +131,14 @@ struct BlockDayUsage: Codable, Hashable {
     var earnedSessionIDs: [UUID]?
 }
 
+/// T-057 F2 (bugs-temps-02): the usage day kept across a zone change, with its absolute bounds (wall frame). Saved, so
+/// a relaunch before the old midnight never hands back a used quota or break.
+struct BlockUsageDayCarry: Codable, Hashable {
+    var day: String
+    var start: Date
+    var end: Date
+}
+
 struct BlockFreeze: Codable, Hashable {
     enum Mode: String, Codable, CaseIterable { case shield, lockScreen }
     var start: Date
@@ -155,10 +163,12 @@ struct BlockingDocument: Codable, Equatable {
     var pauses: [UUID: PauseUsage]?
     /// 1 once the lists' `BlockBreaks` were copied onto their ranges (T-050 D1, point 10).
     var pauseMigration: Int?
+    /// Nil outside a zone change, and in a file of an older build.
+    var usageDayCarry: BlockUsageDayCarry?
 
     enum CodingKeys: String, CodingKey {
         case version, lists, sessions, usage, freeze, clock, programSkips, heldPrograms, usageHistory, passwordLock
-        case pauses, pauseMigration
+        case pauses, pauseMigration, usageDayCarry
     }
     init(version: Int = currentVersion, lists: [BlockList] = [], sessions: [BlockSession] = [],
          usage: BlockDayUsage? = nil, freeze: BlockFreeze? = nil, clock: BlockingClockState? = nil,
@@ -183,6 +193,7 @@ struct BlockingDocument: Codable, Equatable {
         passwordLock = try? c.decodeIfPresent(BlockPasswordLock.self, forKey: .passwordLock)
         pauses = try c.decodeIfPresent([UUID: PauseUsage].self, forKey: .pauses)
         pauseMigration = try c.decodeIfPresent(Int.self, forKey: .pauseMigration)
+        usageDayCarry = try? c.decodeIfPresent(BlockUsageDayCarry.self, forKey: .usageDayCarry)
     }
 }
 

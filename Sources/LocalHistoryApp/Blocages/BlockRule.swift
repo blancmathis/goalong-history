@@ -91,6 +91,9 @@ enum BlockRules {
         var red: RedScreenProgram?
         /// Program ranges of the lists that block now (`BlockSession.Origin.program`).
         var runningRanges: Set<UUID> = []
+        /// T-057 F2 (bugs-temps-06): the real end (wall frame) of each program range the engine applies. A window
+        /// held across a zone change no longer matches the new zone's windows, but still runs until this end.
+        var runningRangeEnds: [UUID: Date] = [:]
         /// Program ranges the member stopped until their end (`BlockingDocument.programSkips`).
         var stoppedRanges: Set<UUID> = []
         /// Red ranges in progress with their end (`BraiseController.windows`).
@@ -119,7 +122,8 @@ enum BlockRules {
                 parts[key, default: []].append(BlockRule.ListPart(
                     id: list.id, rangeIDs: ranges.map(\.id), name: list.name,
                     kind: list.mode == .allowOnly ? .allowOnly : list.effectiveAction == .slowDown ? .slowDown : .block,
-                    state: listState(ranges, running: input.runningRanges, stopped: input.stoppedRanges, now: input.now, calendar: input.calendar),
+                    state: listState(ranges, running: input.runningRanges, runningEnds: input.runningRangeEnds, stopped: input.stoppedRanges,
+                                     now: input.now, calendar: input.calendar),
                     pause: ranges.lazy.compactMap(\.pause).first))
             }
         }
@@ -190,6 +194,10 @@ enum BlockRules {
                 if case .program(let id) = block.origin { return id }
                 return nil
             })
+            input.runningRangeEnds = Dictionary(blocking.activeBlocks.compactMap { block -> (UUID, Date)? in
+                if case .program(let id) = block.origin { return (id, blocking.wallFrame(block.end)) }
+                return nil
+            }, uniquingKeysWith: max)
             input.stoppedRanges = blocking.stoppedProgramRanges
         }
         if let braise {
@@ -229,12 +237,14 @@ enum BlockRules {
 
     /// A range inside its hours runs, even before the engine's next tick has made its block: only a stop of the
     /// member says « Arrêtée ».
-    private static func listState(_ ranges: [BlockProgramRange], running: Set<UUID>, stopped: Set<UUID>, now: Date,
-                                  calendar: Calendar) -> BlockRule.State {
+    private static func listState(_ ranges: [BlockProgramRange], running: Set<UUID>, runningEnds: [UUID: Date] = [:],
+                                  stopped: Set<UUID>, now: Date, calendar: Calendar) -> BlockRule.State {
         let windows = BlockingSchedule.windows(of: BlockProgram(ranges: ranges), at: now, calendar: calendar)
         let live = windows.filter { $0.start <= now && now < $0.end }
         let runs = live.filter { running.contains($0.rangeID) || !stopped.contains($0.rangeID) }
-        if let end = runs.map(\.end).max() { return .running(until: end) }
+        // A block the engine applies runs until its own end, whatever the windows of the current zone say.
+        let applied = ranges.compactMap { runningEnds[$0.id] }.filter { $0 > now }
+        if let end = (runs.map(\.end) + applied).max() { return .running(until: end) }
         if let end = live.map(\.end).min() { return .stopped(until: end) }
         if let start = windows.first(where: { $0.start > now })?.start { return .next(start) }
         return .idle

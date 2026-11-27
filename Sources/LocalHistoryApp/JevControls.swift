@@ -113,7 +113,7 @@ struct JevRecentChecksView: View {
         let status = NSMenuItem(title: monitor.status, action: nil, keyEquivalent: "")
         status.isEnabled = false; menu.addItem(status); menu.addItem(.separator())
         if monitor.timedBreak != nil {
-            let seconds = monitor.timedBreak?.remaining(at: Date()) ?? 0
+            let seconds = monitor.timedBreak.map { JevMonitor.remaining($0, at: Date()) } ?? 0
             menu.addItem(NSMenuItem(title: "Jev suspendu · " + GoalongUIFormat.remaining(TimeInterval(seconds)), action: nil, keyEquivalent: ""))
             let item = NSMenuItem(title: "Reprendre Jev", action: #selector(endBreak), keyEquivalent: "")
             item.target = self; menu.addItem(item)
