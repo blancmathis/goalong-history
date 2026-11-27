@@ -2,7 +2,7 @@
 import XCTest
 @testable import LocalHistoryApp
 
-/// T-057 bugs-donnees-04: `blocking.json` keeps what a newer build wrote.
+/// T-057 bugs-donnees-04 and -05: `blocking.json` keeps what a newer build wrote, and a set-aside copy is never replaced.
 final class BlockingFileKeepTests: XCTestCase {
     private func folder() throws -> URL {
         let root = URL(fileURLWithPath: "/private/tmp/blocking-keep-" + UUID().uuidString)
@@ -45,5 +45,16 @@ final class BlockingFileKeepTests: XCTestCase {
         XCTAssertEqual(try store.load(), document)
     }
 
+    /// Two damages in a row: both changed files stay set aside, under distinct timestamped names.
+    func testASecondDamageKeepsTheFirstSetAsideCopy() throws {
+        let directory = try folder(), store = BlockingStore(directory: directory)
+        try store.save(BlockingDocument())
+        try store.replaceDamaged(with: BlockingDocument(lists: [BlockList(name: "Un")]))
+        try store.replaceDamaged(with: BlockingDocument(lists: [BlockList(name: "Deux")]))
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.contains("damaged") }
+        XCTAssertEqual(names.count, 2, "\(names)")
+        XCTAssertTrue(names.allSatisfy { $0.hasPrefix("blocking.damaged-") && $0.hasSuffix(".json") }, "\(names)")
+        XCTAssertEqual(BlockingStore.setAsideStamp(Date(timeIntervalSince1970: 0)), "19700101-000000Z")
+    }
 }
 #endif
