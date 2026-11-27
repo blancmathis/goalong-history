@@ -50,7 +50,7 @@ if [[ "$PERSO" == 1 ]]; then
   PERSO_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
   # Remote-tracking refs may cover main only (narrow fetch refspec): also accept a pushed branch tip.
   if [[ -z "$(git -C "$ROOT" branch -r --contains "$PERSO_COMMIT" 2>/dev/null)" ]] \
-    && ! git -C "$ROOT" ls-remote --heads origin 2>/dev/null | grep -q "^${PERSO_COMMIT}[[:space:]]"; then
+    && ! git -C "$ROOT" ls-remote --heads origin 2>/dev/null | grep "^${PERSO_COMMIT}[[:space:]]" >/dev/null; then
     ON_REMOTE=0
   fi
 fi
