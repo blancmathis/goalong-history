@@ -13,6 +13,8 @@ struct FocusStore {
         Self(directory: channel.dataRoot(base: base).appendingPathComponent("Focus"))
     }
     static let maximumBytes = 2 * 1024 * 1024
+    /// Tests count the session day files decoded (bugs-donnees-02).
+    var onSessionsRead: ((String) -> Void)? = nil
     private func openDirectory(_ area: String?, create: Bool) throws -> Int32? {
         let path = area.map { directory.appendingPathComponent($0) } ?? directory
         guard path.isFileURL, path.path.hasPrefix("/"), !path.pathComponents.contains("..") else { throw FocusFailure.storageFailed }
@@ -77,6 +79,7 @@ struct FocusStore {
     }
     func sessions(_ day: String) throws -> [FocusSession] {
         guard FocusValidation.day(day) else { throw FocusFailure.invalidArgument }
+        onSessionsRead?(day)
         let result = try load([FocusSession].self, area: "sessions", name: day + ".json") ?? []
         guard result.count <= 200, Set(result.map(\.id)).count == result.count, result.allSatisfy(\.valid) else { throw FocusFailure.storageFailed }
         return result

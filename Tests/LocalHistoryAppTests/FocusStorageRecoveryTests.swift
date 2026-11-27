@@ -52,5 +52,32 @@ final class FocusStorageRecoveryTests: XCTestCase {
         XCTAssertThrowsError(try ConcentrationController(store: s, clock: { self.now }, blocking: { b }), "a session block runs: its session may be in that file")
         XCTAssertTrue(names(s, "sessions").contains(day + ".json"))
     }
+
+    // bugs-donnees-02
+    @MainActor func testLaunchDecodesEachDayOnceAndANewSessionReadsNoPastDay() throws {
+        final class Reads { var days: [String] = [] }
+        let reads = Reads(); var s = try store()
+        var oldest: FocusSession?
+        for n in 2...61 {
+            let date = now.addingTimeInterval(-Double(n) * 86_400), value = session(on: date)
+            try s.saveSessions([value], day: FocusCalendar.dayKey(date, calendar: .current)); if n == 61 { oldest = value }
+        }
+        s.onSessionsRead = { reads.days.append($0) }
+        let c = try ConcentrationController(store: s, clock: { self.now })
+        let today = FocusCalendar.dayKey(now, calendar: .current)
+        let pastReads = reads.days.filter { $0 != today }
+        XCTAssertEqual(pastReads.count, 60, "one decode per past day at launch, not two")
+        XCTAssertEqual(Set(pastReads).count, 60)
+        reads.days.removeAll()
+        try c.startSession(intent: "Écrire", mode: FocusMode(minutes: 5))
+        XCTAssertEqual(reads.days.filter { $0 != today }, [], "a new session scans no past day")
+        try c.stopSession()
+        reads.days.removeAll()
+        let oldestDay = FocusCalendar.dayKey(oldest!.startedAt, calendar: .current)
+        try c.recordOutcome(sessionID: oldest!.id, outcome: .done)
+        XCTAssertEqual(Set(reads.days), [oldestDay], "the indexed day only")
+        XCTAssertEqual(try s.sessions(oldestDay).first?.outcome, .done)
+        XCTAssertEqual(try s.sessionDays().count, 61, "history is never purged")
+    }
 }
 #endif
