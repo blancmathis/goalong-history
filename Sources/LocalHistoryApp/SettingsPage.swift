@@ -512,7 +512,7 @@ enum SettingsPane: Hashable {
                     Text(perso.label).font(.system(size: 12, design: .monospaced)).foregroundStyle(LHTheme.secondaryText)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("settings-perso-build")
-                        .task { await PersoUpdateStatusModel.shared.follow() }
+                        .taskWhenShown { await PersoUpdateStatusModel.shared.follow() }
                     if let notice = updates.persoNotice {
                         Text(notice).font(.system(size: 12)).foregroundStyle(LHTheme.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)

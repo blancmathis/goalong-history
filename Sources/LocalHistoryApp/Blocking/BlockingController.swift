@@ -987,9 +987,10 @@ import LocalHistoryQueryCLI
 
     func prepareDerivations(old: String?, new: String?) async {
         let snapshot = document.passwordLock
+        let createdAt = clock()
         let (match, fresh) = await Task.detached(priority: .userInitiated) { () -> (Bool?, BlockPasswordLock?) in
             let match: Bool? = (old.flatMap { $0.isEmpty ? nil : $0 }).flatMap { word in snapshot.map { $0.matches(word) } }
-            let fresh = new.flatMap { BlockPasswordLock.make($0, at: Date()) }
+            let fresh = new.flatMap { BlockPasswordLock.make($0, at: createdAt) }
             return (match, fresh)
         }.value
         if let old, let snapshot, let match, snapshot.isValid {
