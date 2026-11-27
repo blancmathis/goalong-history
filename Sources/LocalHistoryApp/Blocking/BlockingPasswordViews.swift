@@ -264,8 +264,11 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     /// Nil = done; otherwise why not.
     let submit: (String) -> String?
     let onClose: () -> Void
+    /// The controller whose password check `submit` runs: its key derivation runs off the main actor (T-057 C4).
+    var deriving: BlockingController?
     @State private var password = ""
     @State private var refusal: String?
+    @State private var busy = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -291,7 +294,7 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
                 Button(actionTitle, action: send)
                     .buttonStyle(LHPrimaryButtonStyle())
                     .keyboardShortcut(.defaultAction)
-                    .disabled(password.isEmpty)
+                    .disabled(password.isEmpty || busy)
                     .accessibilityIdentifier("blocking-password-prompt-submit")
             }
         }
@@ -302,9 +305,20 @@ private func stronger(_ a: BlockLock, _ b: BlockLock) -> BlockLock { a.strength 
     }
 
     private func send() {
+        guard !busy else { return }
         let typed = password
         password = ""
-        switch Self.answer(typed, submit: submit) {
+        guard let deriving, !typed.isEmpty else { finish(Self.answer(typed, submit: submit)); return }
+        busy = true
+        Task { @MainActor in
+            let words = await deriving.withPreparedPassword(typed) { Self.answer(typed, submit: submit) }
+            busy = false
+            finish(words)
+        }
+    }
+
+    private func finish(_ words: String?) {
+        switch words {
         case .none: onClose()
         case .some(let words): refusal = words; focused = true
         }

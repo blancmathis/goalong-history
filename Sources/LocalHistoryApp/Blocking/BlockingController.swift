@@ -996,6 +996,14 @@ import LocalHistoryQueryCLI
 
     func discardPreparedDerivations() { preparedMatch = nil; preparedNew = nil }
 
+    /// Derives `password` off the main actor, then runs `apply` (the unchanged synchronous check) right after on the
+    /// main actor. The memo never outlives the call. Same pattern as the password sheet (T-057 C4).
+    func withPreparedPassword<T>(_ password: String, _ apply: () -> T) async -> T {
+        await prepareDerivations(old: password, new: nil)
+        defer { discardPreparedDerivations() }
+        return apply()
+    }
+
     private func takePreparedMatch(_ password: String, for credential: BlockPasswordLock) -> Bool? {
         defer { preparedMatch = nil }
         guard let m = preparedMatch, m.password == password, m.salt == credential.salt, m.hash == credential.hash,
