@@ -285,6 +285,52 @@
             XCTAssertNil(runtime.alert)
         }
 
+        /// bugs-concurrence-04: « Annuler » clicked after Codex answered, before its main-thread callbacks ran:
+        /// no browser opens and « ChatGPT connecté » is never published for the cancelled attempt.
+        func testCancelDropsSignInCallbacksAlreadyQueued() throws {
+            let container = try makeContainer()
+            defer { try? FileManager.default.removeItem(at: container) }
+            let home = container.appendingPathComponent("codex-home", isDirectory: true)
+            let executable = container.appendingPathComponent("codex-fixture")
+            let closed = container.appendingPathComponent("session-closed")
+            // Signs in at once, then waits for Goalong to close the session (stdin EOF) and leaves a marker.
+            let script = """
+                #!/bin/sh
+                trap '' TERM
+                IFS= read -r initialize_request
+                printf '%s\\n' '{"id":1,"result":{"codexHome":"\(home.path)"}}'
+                IFS= read -r initialized_notification
+                IFS= read -r login_request
+                printf '%s\\n' '{"id":2,"result":{"loginId":"login-1","authUrl":"https://example.com/not-opened"}}'
+                printf '%s\\n' '{"method":"account/login/completed","params":{"loginId":"login-1","success":true}}'
+                IFS= read -r account_request
+                printf '%s\\n' '{"id":3,"result":{"account":{"type":"chatgpt","email":"test@example.com"}}}'
+                cat >/dev/null
+                touch '\(closed.path)'
+                """
+            try Data(script.utf8).write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+
+            let runtime = makeRuntime(
+                container: container, executable: executable,
+                sessionFactory: { try CodexAppServerSession(executableURL: $0, codexHomeURL: home) })
+            var opened: [URL] = []
+            runtime.authorizationOpener = { opened.append($0) }
+            runtime.connectChatGPT()
+            // The main run loop is not spun here: both callbacks stay queued until the cancel.
+            let deadline = Date().addingTimeInterval(15)
+            while !FileManager.default.fileExists(atPath: closed.path) {
+                guard Date() < deadline else { return XCTFail("the sign-in never finished") }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            XCTAssertTrue(runtime.isConnecting)
+            runtime.cancelChatGPTConnection()
+            try waitUntil { !runtime.isConnecting }
+            XCTAssertEqual(opened, [], "no browser for a cancelled attempt")
+            XCTAssertEqual(runtime.connectionState, .signedOut)
+            XCTAssertNil(runtime.alert)
+        }
+
         func testDayOverviewDoesNotWaitBehindARecapRun() throws {
             let container = try makeContainer()
             defer { try? FileManager.default.removeItem(at: container) }

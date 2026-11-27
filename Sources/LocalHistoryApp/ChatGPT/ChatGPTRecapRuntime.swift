@@ -510,6 +510,8 @@ import AppleScreenTime
         private var activeRecapRunID: UUID?
         private var activeRecapRunIsAutomatic = false
         private var connectAttemptID: UUID?
+        /// Opens the sign-in page. Tests replace it to count openings.
+        var authorizationOpener: (URL) -> Void = { _ = GoalongWorkspaceOpenPolicy.open($0, purpose: .accountAuthorization) }
         private var cancelledConnectAttemptID: UUID?  // guarded by sessionLock
         private var deviceID = ""
         private var timer: Timer?
@@ -922,15 +924,13 @@ import AppleScreenTime
                     if self.isConnectAttemptCancelled(attemptID) { throw CodexAppServerError.loginFailed("") }
                     let login = try session.beginChatGPTLogin()
                     DispatchQueue.main.async {
-                        _ = GoalongWorkspaceOpenPolicy.open(
-                            login.authorizationURL,
-                            purpose: .accountAuthorization
-                        )
+                        // « Annuler » may have been clicked since the answer: no browser for a cancelled attempt.
+                        guard self.connectAttemptID == attemptID, !self.isConnectAttemptCancelled(attemptID) else { return }
+                        self.authorizationOpener(login.authorizationURL)
                     }
                     let account = try session.waitForChatGPTLogin(loginID: login.loginID)
                     DispatchQueue.main.async {
-                        self.isConnecting = false
-                        self.connectAttemptID = nil
+                        guard self.endConnectAttempt(attemptID) else { return }
                         self.publishAccount(account)
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT connecté",
@@ -940,13 +940,7 @@ import AppleScreenTime
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        self.isConnecting = false
-                        self.connectAttemptID = nil
-                        if self.isConnectAttemptCancelled(attemptID) {
-                            self.setCancelledConnectAttempt(nil)
-                            self.connectionState = .signedOut
-                            return
-                        }
+                        guard self.endConnectAttempt(attemptID) else { return }
                         self.connectionState = .failed(GoalongUserFacingError.message(error))
                         self.alert = ChatGPTRecapAlert(
                             title: "ChatGPT n’a pas pu être connecté",
@@ -962,6 +956,18 @@ import AppleScreenTime
             guard isConnecting, let attemptID = connectAttemptID else { return }
             setCancelledConnectAttempt(attemptID)
             closeLoginSession()
+        }
+
+        /// Ends `attemptID` on the main thread. False when its result must be dropped: it was cancelled (the state
+        /// then shows the cancel, never « ChatGPT connecté ») or a newer attempt owns the state.
+        private func endConnectAttempt(_ attemptID: UUID) -> Bool {
+            guard connectAttemptID == attemptID else { return false }
+            isConnecting = false
+            connectAttemptID = nil
+            guard isConnectAttemptCancelled(attemptID) else { return true }
+            setCancelledConnectAttempt(nil)
+            connectionState = .signedOut
+            return false
         }
 
         private func setCancelledConnectAttempt(_ id: UUID?) {

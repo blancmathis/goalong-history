@@ -762,7 +762,11 @@
         private let stderrLock = NSLock()
         private var stderrData = Data()
         private let closeLock = NSLock()
+        /// Logical cancel: set by `close()`, checked before every pipe access.
         private var closed = false
+        /// Pipe accesses in progress. `close()` never closes a handle under one: the last one out does it.
+        private var activeIO = 0
+        private var handlesClosed = false
         private var globalPauseObserver: NSObjectProtocol?
 
         init(
@@ -1504,15 +1508,59 @@
                 return
             }
             closed = true
+            // A reader or writer may hold a descriptor right now: accessing a closed `FileHandle` raises an
+            // Objective-C exception that `try?` cannot catch. The last access in progress closes the handles;
+            // the caller (often the main thread) never waits for it. Terminating Codex wakes a pending poll.
+            let closeNow = activeIO == 0
             closeLock.unlock()
 
             errorPipe.fileHandleForReading.readabilityHandler = nil
-            try? inputPipe.fileHandleForWriting.close()
-            try? outputPipe.fileHandleForReading.close()
             try? errorPipe.fileHandleForReading.close()
             if process.isRunning {
                 process.terminate()
             }
+            if closeNow { closeIOHandles() }
+        }
+
+        /// Runs after each poll slice, before the read (tests: holds a reader there while `close()` runs).
+        var afterPollForTesting: (() -> Void)?
+
+        /// True once the stdin and stdout handles are physically closed (tests).
+        var ioHandlesClosedForTesting: Bool {
+            closeLock.lock()
+            defer { closeLock.unlock() }
+            return handlesClosed
+        }
+
+        /// Runs `body` with the session open, or throws when it was cancelled. The handles stay open until `body` ends.
+        private func withOpenPipes<T>(_ body: () throws -> T) throws -> T {
+            closeLock.lock()
+            guard !closed else {
+                closeLock.unlock()
+                throw CodexAppServerError.processExited(stderrText())
+            }
+            activeIO += 1
+            closeLock.unlock()
+            defer {
+                closeLock.lock()
+                activeIO -= 1
+                let closeNow = closed && activeIO == 0
+                closeLock.unlock()
+                if closeNow { closeIOHandles() }
+            }
+            return try body()
+        }
+
+        private func closeIOHandles() {
+            closeLock.lock()
+            guard !handlesClosed else {
+                closeLock.unlock()
+                return
+            }
+            handlesClosed = true
+            closeLock.unlock()
+            try? inputPipe.fileHandleForWriting.close()
+            try? outputPipe.fileHandleForReading.close()
         }
 
         private func request(
@@ -1571,13 +1619,15 @@
             operation: String
         ) throws {
             let data = try CodexAppServerWireEncoder.encode(object, limits: limits)
-            try CodexAppServerTimedWriter.write(
-                data,
-                to: inputPipe.fileHandleForWriting.fileDescriptor,
-                deadline: deadline,
-                operation: operation,
-                errorDetail: { [weak self] in self?.stderrText() ?? "" }
-            )
+            try withOpenPipes {
+                try CodexAppServerTimedWriter.write(
+                    data,
+                    to: inputPipe.fileHandleForWriting.fileDescriptor,
+                    deadline: deadline,
+                    operation: operation,
+                    errorDetail: { [weak self] in self?.stderrText() ?? "" }
+                )
+            }
         }
 
         private func nextDeferredOrMessage(
@@ -1602,35 +1652,28 @@
                 guard remaining > 0 else { throw CodexAppServerError.timeout(operation) }
                 // Short slices: closing the pipe from another thread does not wake a blocked poll.
                 let timeoutMilliseconds = Int32(min(remaining * 1_000, 200))
-                closeLock.lock()
-                let isClosed = closed
-                closeLock.unlock()
-                if isClosed { throw CodexAppServerError.processExited(stderrText()) }
-                var descriptor = pollfd(
-                    fd: outputPipe.fileHandleForReading.fileDescriptor,
-                    events: Int16(POLLIN | POLLHUP | POLLERR),
-                    revents: 0
-                )
-                let pollResult = Darwin.poll(&descriptor, 1, timeoutMilliseconds)
-                if pollResult == 0 { continue }
-                if pollResult < 0 {
-                    if errno == EINTR { continue }
-                    throw CodexAppServerError.processExited(stderrText())
+                // One slice holds the handle open from poll to read; a cancel closes it after the slice.
+                let slice: Data? = try withOpenPipes {
+                    let descriptorNumber = outputPipe.fileHandleForReading.fileDescriptor
+                    var descriptor = pollfd(fd: descriptorNumber, events: Int16(POLLIN | POLLHUP | POLLERR), revents: 0)
+                    let pollResult = Darwin.poll(&descriptor, 1, timeoutMilliseconds)
+                    afterPollForTesting?()
+                    if pollResult == 0 { return nil }
+                    if pollResult < 0 {
+                        if errno == EINTR { return nil }
+                        throw CodexAppServerError.processExited(stderrText())
+                    }
+                    var bytes = [UInt8](repeating: 0, count: 65_536)
+                    let count = bytes.withUnsafeMutableBytes { buffer in
+                        Darwin.read(descriptorNumber, buffer.baseAddress, buffer.count)
+                    }
+                    if count < 0 {
+                        if errno == EINTR || errno == EAGAIN { return nil }
+                        throw CodexAppServerError.processExited(stderrText())
+                    }
+                    return count > 0 ? Data(bytes.prefix(count)) : Data()
                 }
-
-                var bytes = [UInt8](repeating: 0, count: 65_536)
-                let count = bytes.withUnsafeMutableBytes { buffer in
-                    Darwin.read(
-                        outputPipe.fileHandleForReading.fileDescriptor,
-                        buffer.baseAddress,
-                        buffer.count
-                    )
-                }
-                if count < 0 {
-                    if errno == EINTR || errno == EAGAIN { continue }
-                    throw CodexAppServerError.processExited(stderrText())
-                }
-                let data = count > 0 ? Data(bytes.prefix(count)) : Data()
+                guard let data = slice else { continue }
                 if data.isEmpty {
                     if let message = try stdoutDecoder.finish() {
                         return message

@@ -193,6 +193,13 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
     /// The read in flight now belongs to an older generation and ends without clearing `loading`: abandon it here,
     /// or the sheet would stay on « Lecture… ». A newer `loadCatalog` sets `loading` itself.
     func connectionChanged() { generation = UUID(); loading = false; invalidate(); autoSender.stop() }
+    /// What the sheet calls on a connection, origin or token path change. The abandoned read was the one for the
+    /// chosen day: without a new read, the sheet keeps no catalog or the previous day's catalog.
+    func connectionChangedAndReload() async {
+        let abandonedRead = loading
+        connectionChanged()
+        if abandonedRead || catalog == nil { await loadCatalog() }
+    }
     func cancelPreparation() { generation = UUID(); loading = false; invalidate() }
     /// Called when `draft.includeWebsites` changes. A change the model made itself (fallback) reloads nothing.
     func includeWebsitesChanged() async {
@@ -239,8 +246,12 @@ struct GoalongWebsiteShareDraft: Equatable, Codable {
             }
         } catch {
             guard generation == ticket else { return }
-            if snapshot.includeWebsites, let fallback = try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value {
-                guard generation == ticket else { return }
+            let fallback = snapshot.includeWebsites
+                ? try? await Task.detached(priority: .userInitiated, operation: { try loader(root, snapshot.day, false) }).value
+                : nil
+            // A newer read may own the sheet now: an old fallback, failed or not, must not touch its catalog.
+            guard generation == ticket else { return }
+            if let fallback {
                 catalog = fallback.removingApplications(where: { hiddenApplications()($0, $1) })
                 loadedIncludeWebsites = false
                 configuringPresentation = true
