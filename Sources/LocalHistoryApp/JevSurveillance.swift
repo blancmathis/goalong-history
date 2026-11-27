@@ -206,6 +206,18 @@ enum JevRangeWrite: Equatable {
         return lost
     }
 
+    static let unreadableCopyPrefix = "goalong.jev.surveillance.v1.unreadable-"
+
+    /// T-057 bugs-donnees-03: an unreadable value (a newer build's, or damaged) is copied under a timestamped key before
+    /// the first write replaces it, so its free ranges and session choices can still be recovered. Never removed here.
+    private func keepUnreadableCopy() {
+        guard error != nil, let raw = defaults.object(forKey: Self.storageKey) else { return }
+        let stamp = BlockingStore.setAsideStamp(Date()) // wall: only a key name
+        var key = Self.unreadableCopyPrefix + stamp, attempt = 1
+        while defaults.object(forKey: key) != nil { attempt += 1; key = Self.unreadableCopyPrefix + stamp + "-\(attempt)" }
+        defaults.set(raw, forKey: key)
+    }
+
     /// The document exists: the migration ran on this Mac, or a block was saved.
     var exists: Bool { defaults.object(forKey: Self.storageKey) != nil }
 
@@ -222,6 +234,7 @@ enum JevRangeWrite: Equatable {
             case .unavailable: restoredNotice = ProtectedFloor.staleText
             }
         }
+        keepUnreadableCopy()
         defaults.set(data, forKey: Self.storageKey)
         document = next; error = nil
         NotificationCenter.default.post(name: .jevSurveillanceDidChange, object: self)
