@@ -35,10 +35,14 @@ perso_handoff_cancel "$r" && fail "the script cancelled a claimed request"
 
 # 4. The claim lands at the very end of the window, before any result: the cancel loses, the script keeps
 #    waiting for Goalong's final answer instead of falling back (the old state-reading code fell back here).
+#    Deterministic: the fake Goalong claims inside the script's cancel, just before its rename (a sleep-based
+#    claim at 0.9 s raced the whole-second deadline of `date +%s` and failed at random).
 r="$(new_request late)"
-( /bin/sleep 0.9; app_claim "$r"; /bin/sleep 0.5; result "$r" rolled_back "boom" ) &
+eval "real_$(declare -f perso_handoff_cancel)"
+perso_handoff_cancel() { app_claim "$1"; ( /bin/sleep 0.5; result "$1" rolled_back "boom" ) & real_perso_handoff_cancel "$1"; }
 set +e; perso_handoff_wait "$r" 1 10; rc=$?; set -e
 wait
+eval "$(declare -f real_perso_handoff_cancel | /usr/bin/sed '1s/^real_//')"; unset -f real_perso_handoff_cancel
 [[ "$rc" == 0 && "$PERSO_HANDOFF_STATE" == rolled_back && "$PERSO_HANDOFF_REASON" == boom ]] \
   || fail "late claim: rc $rc state '$PERSO_HANDOFF_STATE' (must not fall back to the installer)"
 
