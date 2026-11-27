@@ -105,6 +105,7 @@ enum SupportSourceAllowlist {
         "DashboardViewModelWebsiteRules.swift",
         "DashboardWindowController.swift",
         "DayNavigationHeader.swift",
+        "DayPlanQuickAccess.swift",
         "DerivedHistoryCleaner.swift",
         "DeviceIdentity.swift",
         "DurableSync.swift",

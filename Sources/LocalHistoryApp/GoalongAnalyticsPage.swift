@@ -29,6 +29,8 @@ struct GoalongAnalyticsPage: View {
     @ObservedObject private var work = GoalongWorkStore.shared
     @ObservedObject private var agent = GoalongWorkAgent.shared
     @ObservedObject private var consents = GoalongCapabilityConsentStore.shared
+    @ObservedObject private var dayPlan = DayPlanPresentation.shared
+    @ObservedObject private var concentrationRuntime = ConcentrationRuntime.shared
     @StateObject private var developer = GoalongDeveloperModel()
     @StateObject private var system = GoalongSystemSourcesModel()
     /// The last complete read of calls, agenda, devices, Health and note, with its day; kept while the next one runs.
@@ -123,7 +125,11 @@ struct GoalongAnalyticsPage: View {
                         guard !previewActive else { return }
                         model.selectDay(selection.day)
                         navigationStore.showingWebsiteShare = true
-                    })
+                    },
+                    // T-057 M1: the plan and the recap one click away; « Bilan » leads once today's plan is over.
+                    onPlan: previewActive || planController == nil ? nil : { openDayPlan() },
+                    onRecap: previewActive ? nil : { openRecap(selection.day) },
+                    endOfDayHint: endOfDayHint)
                 Rectangle().fill(LHTheme.separator).frame(height: 1)
             }
             ScrollViewReader { scroller in
@@ -245,6 +251,19 @@ struct GoalongAnalyticsPage: View {
         .sheet(isPresented: $showingWork) { GoalongWorkSheet(model: model).goalongControls()
             .goalongDismissOnOutsideClick(isDirty: { JevWorkContextControls.hasUnsavedDefinition },
                                           onCancel: { JevWorkContextControls.discardUnsaved(); showingWork = false }) }
+        .sheet(isPresented: $dayPlan.shown) {
+            if let controller = planController {
+                DayPlanSheet(controller: controller,
+                             onAdd: {
+                                 dayPlan.shown = false
+                                 controller.requestDayPlan()
+                                 model.selectSection(.concentration)
+                             },
+                             onRecap: { dayPlan.shown = false; openRecap(GoalongToday.now) },
+                             onClose: { dayPlan.shown = false })
+                    .goalongControls().goalongDismissOnOutsideClick()
+            }
+        }
         .sheet(isPresented: $showingClarify) { GoalongWorkClarifySheet(states: workStates).goalongControls().goalongDismissOnOutsideClick() }
         .taskWhenShown(id: "\(selectionID)|\(revision)|\(agent.isRunning)|\(work.backgroundConsent)|\(work.revision)|\(work.definition.revision)") {
             if !previewActive { workStates.load(day: selection.day, period: selection.period) }
@@ -650,6 +669,20 @@ struct GoalongAnalyticsPage: View {
         guard !previewActive else { return }
         model.selectDay(day)
         model.selectSection(.history)
+    }
+    /// Today's plan lives in Concentration: no module, no button.
+    private var planController: ConcentrationController? {
+        GoalongModuleStore.shared.isEnabled(.concentration) ? concentrationRuntime.controller : nil
+    }
+    private var endOfDayHint: String? {
+        let now = GoalongToday.now
+        guard !previewActive, Calendar.current.isDate(selection.day, inSameDayAs: now),
+              DayPlanDigest.recapIsMain(plan: planController?.plan, now: now) else { return nil }
+        return "Journée terminée"
+    }
+    private func openDayPlan() {
+        planController?.refresh()
+        dayPlan.shown = true
     }
     private func openRecap(_ day: Date) {
         guard !previewActive else { return }

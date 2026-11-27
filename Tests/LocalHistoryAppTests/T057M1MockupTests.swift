@@ -83,12 +83,12 @@ final class T057M1MockupTests: XCTestCase {
             .map { AmbianceSource(id: $0.lowercased(), title: $0, kind: .focus, isAvailable: true) }
         model.ambianceSources = sources; model.ambianceCurrent = sources[1]
 
-        let slots: [DayPlanSlotPreview] = [
-            .init(id: 0, time: "09:00 – 10:30", title: "Rédaction du rapport", state: .done),
-            .init(id: 1, time: "10:45 – 11:30", title: "Relire les retours clients", state: .done),
-            .init(id: 2, time: "14:30 – 16:00", title: "Préparer la démo", state: .planned),
-            .init(id: 3, time: "16:15 – 17:00", title: "Réponses aux e-mails", state: .planned),
-            .init(id: 4, time: "17:00 – 17:30", title: "Bilan et lendemain", state: .planned),
+        let slots: [DayPlanSlotRow] = [
+            .init(id: UUID(), time: "09:00 – 10:30", title: "Rédaction du rapport", state: .done),
+            .init(id: UUID(), time: "10:45 – 11:30", title: "Relire les retours clients", state: .done),
+            .init(id: UUID(), time: "14:30 – 16:00", title: "Préparer la démo", state: .planned),
+            .init(id: UUID(), time: "16:15 – 17:00", title: "Réponses aux e-mails", state: .planned),
+            .init(id: UUID(), time: "17:00 – 17:30", title: "Bilan et lendemain", state: .planned),
         ]
         let moment = Date(timeIntervalSince1970: 1_795_000_000)
         let navigation = GoalongActivityNavigation(day: moment, now: moment)
@@ -117,8 +117,14 @@ final class T057M1MockupTests: XCTestCase {
             try snapshot("1-plan-popover-after-\(s)", MenuBarPanelView(model: model), width: 340)
             try snapshot("1-plan-activity-before-\(s)", header(plan: false), width: 900)
             try snapshot("1-plan-activity-after-\(s)", header(plan: true), width: 900)
-            try snapshot("1-plan-view-\(s)", DayPlanView(dayTitle: "Vendredi 27 novembre", slots: slots).frame(width: 640)
+            try snapshot("1-plan-view-\(s)", DayPlanView(dayTitle: "Vendredi 27 novembre", slots: slots, onClose: {}).frame(width: 640)
                 .background(LHTheme.pageBackground).goalongControls(), width: 640)
+            var running = slots; running[2] = .init(id: slots[2].id, time: slots[2].time, title: slots[2].title, state: .active)
+            try snapshot("1-plan-view-running-\(s)", DayPlanView(dayTitle: "Vendredi 27 novembre", slots: running,
+                failure: "Une séance est déjà en cours. Terminez-la d’abord.", onClose: {}).frame(width: 640)
+                .background(LHTheme.pageBackground).goalongControls(), width: 640)
+            try snapshot("1-plan-view-empty-\(s)", DayPlanView(dayTitle: "Vendredi 27 novembre", slots: [], recapIsMain: true, onClose: {})
+                .frame(width: 640).background(LHTheme.pageBackground).goalongControls(), width: 640)
             // 4. Bilan visible
             try snapshot("4-bilan-activity-after-\(s)", header(plan: true), width: 900)
             try snapshot("4-bilan-activity-evening-\(s)", header(plan: true, evening: true), width: 900)

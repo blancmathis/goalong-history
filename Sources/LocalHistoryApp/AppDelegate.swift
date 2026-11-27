@@ -460,6 +460,12 @@ import AppleScreenTime
                         self?.dashboardViewModel.selectDay(Date())
                         self?.dashboardWindowController.show(section: .overview)
                     },
+                    onOpenDayPlan: { [weak self] in
+                        self?.menuBarController.closePanel()
+                        self?.dashboardViewModel.selectDay(Date())
+                        DayPlanPresentation.shared.shown = true
+                        self?.dashboardWindowController.show(section: .overview)
+                    },
                     onShowClassicMenu: { [weak self] in self?.menuBarController.showClassicMenu() },
                     redScreen: BraiseRuntime.shared
                 )
