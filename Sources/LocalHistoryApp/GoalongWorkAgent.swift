@@ -438,11 +438,12 @@ struct UncheckedSendable<T>: @unchecked Sendable { let value: T }
                                                                       beforeSend: beforeSend)
                     }.value
                 }
-                let after = await Task.detached(priority: .utility) { session.readAccountLimits() }.value
+                // A cancel during the answer closed the session: no new request on it. The spent tokens still count.
+                let after = operation == id ? await Task.detached(priority: .utility) { session.readAccountLimits() }.value : nil
                 // The real tokens replace the estimate when Codex reports them.
                 store.settleUsage(day: today, estimate: counted, tokens: result.tokens, weeklyAfter: after?.weeklyPercent)
-                lastLimits = after
                 guard operation == id else { return }
+                lastLimits = after
                 let assignments = try GoalongWorkClassification.apply(result.response, to: request)
                 guard store.revision == revision else {
                     throw GoalongWorkClassification.Failure.invalid("La définition ou une autorisation a changé : classement arrêté.")
