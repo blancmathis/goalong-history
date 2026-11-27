@@ -236,6 +236,21 @@ if [[ "$lock_status" -ne 3 ]] || ! grep -Fq 'scheduled' <<<"$lock_output"; then
   exit 1
 fi
 
+# bugs-mise-a-jour-02: the classic installer never force-quits either. A SIGTERM refused by a protection (a locked
+# session that began during the wait) must not end in SIGKILL and a replacement.
+set +e
+classic_kill_output="$(env -u GOALONG_LOCAL_TRY GOALONG_QUIT_WAIT_TENTHS=1 GOALONG_QUIT_PROMPT_WAIT_TENTHS=1 GOALONG_LATE_QUIT_DIR="$TEST_ROOT/late-quit-classic" GOALONG_LATE_RELAUNCH_SYNC=0 /bin/bash -c '
+  source "$1"; /usr/bin/pgrep() { return 0; }; /usr/bin/pkill() { [[ "$1" != -KILL ]] || echo KILLED; return 0; }
+  start_late_quit_watch() { :; }
+  quit_running_goalong goalong-test-never; echo REPLACED' _ "$SCRIPT_DIR/install_from_source.sh" 2>&1)"
+classic_kill_status=$?
+set -e
+if [[ "$classic_kill_status" -ne 1 ]] || [[ "$classic_kill_output" == *KILLED* ]] || [[ "$classic_kill_output" == *REPLACED* ]] \
+   || ! grep -F 'never force-quits' <<<"$classic_kill_output" >/dev/null; then
+  echo "classic install quit path force-killed Goalong or went on to replace it: $classic_kill_output" >&2
+  exit 1
+fi
+
 MARKER_FILE="$TEST_ROOT/legacy-marker"
 /usr/bin/printf '%s\n' 'captureFullContents' >"$MARKER_FILE"
 set +e
