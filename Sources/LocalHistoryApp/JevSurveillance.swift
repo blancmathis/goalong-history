@@ -40,6 +40,9 @@ struct JevSessionMark: Codable, Equatable {
     var end: Date?
     var lock: BlockLock
     var settings: JevInterventionSettings
+    /// T-057 F2 (bugs-temps-01): wall and continuous time when an `own` mark was written. In the same boot, its run
+    /// follows continuous time: a clock set back or forward neither ends nor stretches it. nil in older documents.
+    var clock: BlockingClockState? = nil
 }
 
 struct JevSurveillanceDocument: Codable, Equatable {
@@ -258,7 +261,7 @@ enum JevRangeWrite: Equatable {
 
     /// The rules and sessions that carry « Surveillance » now. Pure.
     static func active(_ document: JevSurveillanceDocument, sessions: JevRunningSessions, now: Date,
-                       calendar: Calendar = .current) -> [JevSurveillanceActivity] {
+                       calendar: Calendar = .current, clock: BlockingClockState? = nil) -> [JevSurveillanceActivity] {
         var result: [JevSurveillanceActivity] = []
         for range in document.ranges where isRunning(range, now: now, calendar: calendar) {
             if let pool = range.pause?.id, sessions.pausedPools.contains(pool) { continue }
@@ -275,14 +278,14 @@ enum JevRangeWrite: Equatable {
             switch mark.kind {
             case .focus: continue
             case .block: if sessions.blocks.contains(mark.id), !sessions.pausedSessions.contains(mark.id) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
-            case .own: if ownRuns(mark, now: now) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
+            case .own: if ownRuns(mark, now: now, clock: clock) { result.append(.init(settings: mark.settings, lock: mark.lock)) }
             }
         }
         return result
     }
 
     func active(sessions: JevRunningSessions, now: Date, calendar: Calendar = .current) -> [JevSurveillanceActivity] {
-        error == nil ? Self.active(document, sessions: sessions, now: now, calendar: calendar) : []
+        error == nil ? Self.active(document, sessions: sessions, now: now, calendar: calendar, clock: Self.clockState(now)) : []
     }
 
     /// Inside its days and hours now.
@@ -295,9 +298,23 @@ enum JevRangeWrite: Equatable {
             .first { $0.start <= now && now < $0.end }
     }
 
-    static func ownRuns(_ mark: JevSessionMark, now: Date) -> Bool {
+    static func ownRuns(_ mark: JevSessionMark, now: Date, clock: BlockingClockState? = nil) -> Bool {
         guard mark.kind == .own, let end = mark.end else { return false }
-        return (mark.start ?? .distantPast) <= now && now < end
+        let at = ownNow(mark, now: now, clock: clock)
+        return (mark.start ?? .distantPast) <= at && at < end
+    }
+
+    /// The time an `own` mark runs on: its wall date plus the continuous time elapsed since, in the same boot; the wall
+    /// clock otherwise (no anchor, or after a restart). Pure.
+    static func ownNow(_ mark: JevSessionMark, now: Date, clock: BlockingClockState?) -> Date {
+        FocusCommitRule.anchoredNow(mark.clock, clock: clock) ?? now
+    }
+
+    /// Continuous time and boot read now (wall = `now`). Tests replace `liveClock`.
+    static var liveClock: () -> (continuous: Double, boot: String) = { (BlockingClock.continuous(), BlockingClock.bootID()) }
+    static func clockState(_ now: Date) -> BlockingClockState {
+        let live = liveClock()
+        return BlockingClockState(wall: now, continuous: live.continuous, boot: live.boot)
     }
 
     /// The strongest stop of the « Surveillance » carried by these sessions; Libre without one (a focus session without a
@@ -390,7 +407,10 @@ enum JevRangeWrite: Equatable {
         }
         markRefusal = nil
         var next = error == nil ? document : JevSurveillanceDocument()
-        next.marks = Self.pruned(next.marks.filter { $0.id != mark.id }, now: now, alive: alive)
+        let clock = Self.clockState(now)
+        next.marks = Self.pruned(next.marks.filter { $0.id != mark.id }, now: now, alive: alive, clock: clock)
+        var mark = mark
+        if mark.kind == .own, mark.clock == nil { mark.clock = clock }
         next.marks.append(mark)
         if mark.kind == .focus {
             next.sessionDefault = mark.on
@@ -429,12 +449,13 @@ enum JevRangeWrite: Equatable {
     }
 
     /// The marks of sessions that still run. Pure.
-    static func pruned(_ marks: [JevSessionMark], now: Date, alive: JevRunningSessions) -> [JevSessionMark] {
+    static func pruned(_ marks: [JevSessionMark], now: Date, alive: JevRunningSessions,
+                       clock: BlockingClockState? = nil) -> [JevSessionMark] {
         marks.filter { mark in
             switch mark.kind {
             case .focus: return mark.id == alive.focus
             case .block: return alive.blocks.contains(mark.id)
-            case .own: return (mark.end ?? .distantPast) > now
+            case .own: return (mark.end ?? .distantPast) > ownNow(mark, now: now, clock: clock)
             }
         }
     }
@@ -442,13 +463,15 @@ enum JevRangeWrite: Equatable {
     /// A session with « Surveillance » and no engine session, running now.
     func runningOwn(now: Date) -> JevSessionMark? {
         guard error == nil else { return nil }
-        return document.marks.last { $0.on && Self.ownRuns($0, now: now) }
+        let clock = Self.clockState(now)
+        return document.marks.last { $0.on && Self.ownRuns($0, now: now, clock: clock) }
     }
 
     func endOwn(_ id: UUID, now: Date) {
         var next = document
         guard let index = next.marks.firstIndex(where: { $0.id == id && $0.kind == .own }) else { return }
-        next.marks[index].end = now
+        // Ends it on both clocks: the wall one and the one it runs on.
+        next.marks[index].end = min(now, Self.ownNow(next.marks[index], now: now, clock: Self.clockState(now)))
         save(next)
     }
 }

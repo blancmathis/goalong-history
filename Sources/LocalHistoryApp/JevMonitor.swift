@@ -110,7 +110,7 @@ struct JevRecentCheck: Identifiable {
             if let data = try JevLocalFiles.read("break.json", root: localRoot) {
                 let value = try JSONDecoder().decode(JevTimedBreak.self, from: data)
                 guard value.isValid else { throw JevError.invalidResponse }
-                timedBreak = value; remainingSeconds = value.remaining(at: Date())
+                timedBreak = value; remainingSeconds = Self.remaining(value, at: Date())
             }
             // No file: keep a break that is running in memory (its save may have failed);
             // the countdown still ends it through endBreak().
@@ -250,14 +250,20 @@ struct JevRecentCheck: Identifiable {
     private static func validKey(_ value: String) -> Bool {
         (8...1024).contains(value.utf8.count) && value.utf8.allSatisfy { (33...126).contains($0) }
     }
+    /// The pause's remaining seconds on the wall clock and, in its boot, on continuous time (T-057 F2, bugs-temps-01).
+    static func remaining(_ pause: JevTimedBreak, at now: Date) -> Int {
+        let live = JevSurveillanceStore.liveClock()
+        return pause.remaining(at: now, continuous: live.continuous, boot: live.boot)
+    }
     func startBreak(minutes: Int) {
         // A break pauses running reminders; with monitoring off there is nothing to pause,
         // and ending such a break must never switch monitoring on.
-        guard enabled, let value = JevTimedBreak(minutes: minutes, now: Date()) else { return }
+        guard enabled, let value = JevTimedBreak(minutes: minutes, now: Date(), continuous: BlockingClock.continuous(),
+                                                    boot: BlockingClock.bootID()) else { return }
         JevWarningPanel.shared.hide(resetPosition: true)
         // Suspend before touching disk: a failed save must never leave monitoring on.
         cancelPending(); inbox.configure(enabled: false)
-        timedBreak = value; remainingSeconds = value.remaining(at: Date())
+        timedBreak = value; remainingSeconds = Self.remaining(value, at: Date())
         do {
             try JevLocalFiles.write(try JSONEncoder().encode(value), name: "break.json", root: localRoot)
             breakStorageInvalid = false; error = nil
@@ -330,7 +336,7 @@ struct JevRecentCheck: Identifiable {
     private func tick() {
         let now = Date()
         if let timedBreak {
-            remainingSeconds = timedBreak.remaining(at: now)
+            remainingSeconds = Self.remaining(timedBreak, at: now)
             if remainingSeconds == 0, !breakStorageInvalid { endBreak() }
             return
         }

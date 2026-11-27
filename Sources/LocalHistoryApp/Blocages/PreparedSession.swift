@@ -246,7 +246,8 @@ enum RelaunchShortcut: String, Codable, CaseIterable {
             // One watch per prepared session: the mark id is the session's, so a second click while it runs
             // starts nothing more (the document replaces a mark of the same id only after its window ended).
             let running = JevSurveillanceStore.shared.document.marks.contains {
-                $0.id == session.id && $0.kind == .own && JevSurveillanceStore.ownRuns($0, now: GoalongToday.now)
+                $0.id == session.id && $0.kind == .own && JevSurveillanceStore.ownRuns($0, now: GoalongToday.now,
+                                                                                         clock: JevSurveillanceStore.clockState(GoalongToday.now))
             }
             if !running { mark(.own, id: session.id, session: session, start: plan.start, end: plan.end) }
         case .focus:

@@ -67,12 +67,23 @@ public struct JevStreak: Sendable {
 public struct JevTimedBreak: Codable, Equatable, Sendable {
     public let startedAt: Date
     public let endsAt: Date
-    public init?(minutes: Int, now: Date) {
+    /// T-057 F2 (bugs-temps-01): continuous seconds and boot at the start. In the same boot the pause also ends after its
+    /// duration of continuous time: a clock set back never stretches it. nil in older files.
+    public let startedContinuous: Double?
+    public let boot: String?
+    public init?(minutes: Int, now: Date, continuous: Double? = nil, boot: String? = nil) {
         guard (1...120).contains(minutes) else { return nil }
         startedAt = now; endsAt = now.addingTimeInterval(Double(minutes * 60))
+        startedContinuous = continuous; self.boot = boot
     }
     /// Never longer than the chosen duration, even when the clock moved back after the pause began.
-    public func remaining(at now: Date) -> Int { max(0, Int(ceil(min(endsAt.timeIntervalSince(now), endsAt.timeIntervalSince(startedAt))))) }
+    public func remaining(at now: Date, continuous: Double? = nil, boot: String? = nil) -> Int {
+        var seconds = min(endsAt.timeIntervalSince(now), endsAt.timeIntervalSince(startedAt))
+        if let startedContinuous, let continuous, let boot, boot == self.boot {
+            seconds = min(seconds, endsAt.timeIntervalSince(startedAt) - (continuous - startedContinuous))
+        }
+        return max(0, Int(ceil(seconds)))
+    }
     public var isValid: Bool {
         endsAt > startedAt && endsAt.timeIntervalSince(startedAt) <= 7200
             && startedAt.timeIntervalSince1970.isFinite && endsAt.timeIntervalSince1970.isFinite
